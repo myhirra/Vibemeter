@@ -109,7 +109,14 @@ export function Dashboard({ sessions, streak, claudeBurndown, codexBurndown, hot
       {/* Filters row */}
       <div className="flex items-center justify-between mb-4 gap-6">
         <div className="flex gap-2">
-          {TOOLS.filter((t) => t === 'all' || (toolCounts[t] ?? 0) > 0).map((t) => (
+          {TOOLS
+            .filter((t) => t === 'all' || (toolCounts[t] ?? 0) > 0)
+            .sort((a, b) => {
+              if (a === 'all') return -1;
+              if (b === 'all') return 1;
+              return (toolCounts[b] ?? 0) - (toolCounts[a] ?? 0);
+            })
+            .map((t) => (
             <button key={t} onClick={() => setToolFilter(t)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                 toolFilter === t
