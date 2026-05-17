@@ -6,4 +6,3 @@
 .next/turbopack
 .next/types/
 .next/diagnostics/
-bin/cc-wrap.ts
