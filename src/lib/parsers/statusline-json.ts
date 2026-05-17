@@ -7,9 +7,9 @@
 import fs from 'fs';
 import path from 'path';
 import { z } from 'zod';
+import { dataDir } from '../data-dir';
 
-const DATA_DIR = path.join(process.cwd(), '.data');
-export const STATUSLINE_PATH = path.join(DATA_DIR, 'statusline-latest.json');
+export const STATUSLINE_PATH = path.join(dataDir(), 'statusline-latest.json');
 
 const StatuslineSchema = z.object({
   session_id: z.string().optional(),

@@ -1,9 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-
-const DATA_DIR = path.join(process.cwd(), '.data');
-const DB_PATH = path.join(DATA_DIR, 'continuity.sqlite');
+import { dataDir } from './data-dir';
 
 function bootstrap(db: Database.Database): void {
   db.exec(`
@@ -58,8 +56,9 @@ let _db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (_db) return _db;
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-  _db = new Database(DB_PATH);
+  const dir = dataDir();
+  fs.mkdirSync(dir, { recursive: true });
+  _db = new Database(path.join(dir, 'continuity.sqlite'));
   _db.pragma('journal_mode = WAL');
   bootstrap(_db);
   return _db;

@@ -48,7 +48,7 @@ function injectMockCursorSessions<T extends { id: string; tool: string; started_
 ): T[] {
   const now = Date.now();
   const extra: T[] = [];
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 160; i++) {
     const proj = DEMO_PROJECTS[i % DEMO_PROJECTS.length];
     const start = now - (i * 2 + 1) * 2_700_000 - Math.random() * 3_600_000;
     const dur = (15 + Math.random() * 80) * 60_000;

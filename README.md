@@ -2,24 +2,72 @@
 
 > Measure your AI coding vibe. A local-first dashboard for Claude Code, Codex, and Cursor.
 
-Vibemeter scans your local AI tool session logs and shows you:
+![Vibemeter dashboard](docs/demo1.png)
 
-- **5h / 7-day rate-limit windows** — for both Claude Code (statusline) and Codex (rollout files)
-- **Spending & consumption** — Claude Code USD spent + Codex tokens used, with a 14-day trend chart
-- **Activity heatmap** — when in the week you actually write code, with peak-slot detection
-- **Day timeline** — today's sessions as horizontal ribbons, color-coded by tool
+## What you get
+
+- **5h / 7-day rate-limit windows** for both Claude Code (statusline) and Codex (rollout files)
+- **Spending & consumption** — Claude Code USD + Codex tokens, with a 14-day trend chart
+- **Activity** — hour-of-week heatmap with peak-slot detection + today's timeline ribbon
 - **Project leaderboard** — top projects by hours / sessions / tools used
-- **Achievements** — 16 unlockable milestones to gamify your AI coding life
+- **Achievements** — 16 unlockable milestones
 - **Burndown chart** — 7-day usage history with hover tooltip
 - **Sessions table** — searchable, tag-able, filterable by tool and date range
 
-Everything runs locally. No data ever leaves your machine.
-
-![Vibemeter dashboard](docs/screenshot.png)
-
----
+Everything runs locally. **No data ever leaves your machine.**
 
 ## Quick start
+
+```bash
+npx @hirra/vibemeter
+```
+
+Open <http://localhost:3000>. Vibemeter stores its data in `~/.vibemeter/`.
+
+That's it. The dashboard automatically reads from:
+
+| Tool        | Source                                                       |
+| ----------- | ------------------------------------------------------------ |
+| Claude Code | `~/.claude/projects/**/*.jsonl`                              |
+| Claude Code | `~/.claude/sessions/*.json` (active-session flag)            |
+| Codex       | `~/.codex/state_5.sqlite` (thread metadata)                  |
+| Codex       | `~/.codex/sessions/**/rollout-*.jsonl` (rate-limit windows)  |
+| Cursor      | `~/Library/Application Support/Cursor/User/workspaceStorage/**/state.vscdb` |
+
+If a tool's files don't exist, its cards just show "no data yet" — everything else still works.
+
+### Different port
+
+```bash
+PORT=8080 npx @hirra/vibemeter
+```
+
+### Demo mode
+
+Add `?demo=1` to the URL — anonymizes project names and injects mock sessions. Useful for screenshots and screen-sharing.
+
+```
+http://localhost:3000/?demo=1
+```
+
+## Claude Code 5h / 7-day cards (optional)
+
+These cards need a statusline hook. Add this to `~/.claude/settings.json`:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node -e \"const fs=require('fs'),os=require('os'),p=require('path');const d=p.join(os.homedir(),'.vibemeter');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'statusline-latest.json'),fs.readFileSync(0));\""
+  }
+}
+```
+
+Claude Code will start writing `~/.vibemeter/statusline-latest.json` on every status-line render. Vibemeter picks it up on next page load.
+
+Codex needs **no setup** — its 5h/7d data lives in `~/.codex/sessions/**/rollout-*.jsonl` already.
+
+## Run from source
 
 ```bash
 git clone https://github.com/myhirra/Vibemeter.git
@@ -28,53 +76,12 @@ npm install
 npm run dev
 ```
 
-Open <http://localhost:3000>. The dashboard reads from these locations automatically:
-
-| Tool        | Source path                                |
-| ----------- | ------------------------------------------ |
-| Claude Code | `~/.claude/projects/**/*.jsonl`            |
-| Claude Code | `~/.claude/sessions/*.json` (active flag)  |
-| Codex       | `~/.codex/state_5.sqlite` (thread metadata) |
-| Codex       | `~/.codex/sessions/**/rollout-*.jsonl` (rate limits) |
-| Cursor      | `~/Library/Application Support/Cursor/User/workspaceStorage/**/state.vscdb` |
-
-That's it. If the files exist, Vibemeter picks them up on every page load.
-
-## Claude Code 5h / 7-day cards
-
-Vibemeter reads `cost`, `rate_limits.five_hour`, and `rate_limits.seven_day` from a Claude Code statusline snapshot. Add this to your `~/.claude/settings.json` to enable the cards:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "node -e \"const fs=require('fs'),os=require('os'),p=require('path');const d=p.join(os.homedir(),'codes','Vibemeter','.data');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'statusline-latest.json'),fs.readFileSync(0));\""
-  }
-}
-```
-
-(Adjust the path to where you cloned Vibemeter.) The file `.data/statusline-latest.json` is what Vibemeter reads.
-
-If you don't set this up, the Claude Code 5h / 7-day cards just show "no data yet" — everything else still works.
-
-## Codex 5h / 7-day cards
-
-No setup needed. The Codex CLI already writes `rate_limits` events into `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Vibemeter reads the most recent one on every page load.
-
-## Filters
-
-- **Tool**: All / Claude Code / Codex / Cursor — filters every card
-- **Date**: Today / 7 days / 30 days / All time
-
-Counts update live next to each tab.
+Source mode uses `./.data/` instead of `~/.vibemeter/`. Override with `VIBEMETER_DATA_DIR=...`.
 
 ## Tech stack
 
-- Next.js 16 (App Router, Turbopack)
-- React 19
-- Tailwind v4
-- better-sqlite3 for local storage
-- No external services. No tracking. No telemetry.
+- Next.js 16 (App Router, Turbopack), React 19, Tailwind v4
+- better-sqlite3 for local storage — no external services, no telemetry
 
 ## License
 
