@@ -1,61 +1,81 @@
-# AI Coding Continuity Console — v1 local-first MVP
+# Vibemeter
 
-Keeps your AI coding sessions from "forgetting" context. v1 collects session metadata from Claude Code and displays it on a local dashboard. The hero feature — **session continuation prompt generation** — ships in Day 2.
+> Measure your AI coding vibe. A local-first dashboard for Claude Code, Codex, and Cursor.
+
+Vibemeter scans your local AI tool session logs and shows you:
+
+- **5h / 7-day rate-limit windows** — for both Claude Code (statusline) and Codex (rollout files)
+- **Spending & consumption** — Claude Code USD spent + Codex tokens used, with a 14-day trend chart
+- **Activity heatmap** — when in the week you actually write code, with peak-slot detection
+- **Day timeline** — today's sessions as horizontal ribbons, color-coded by tool
+- **Project leaderboard** — top projects by hours / sessions / tools used
+- **Achievements** — 16 unlockable milestones to gamify your AI coding life
+- **Burndown chart** — 7-day usage history with hover tooltip
+- **Sessions table** — searchable, tag-able, filterable by tool and date range
+
+Everything runs locally. No data ever leaves your machine.
+
+![Vibemeter dashboard](docs/screenshot.png)
+
+---
 
 ## Quick start
 
 ```bash
+git clone https://github.com/myhirra/Vibemeter.git
+cd Vibemeter
 npm install
 npm run dev
-# open http://localhost:3000
 ```
 
-## Import your Claude Code sessions
+Open <http://localhost:3000>. The dashboard reads from these locations automatically:
 
-Sessions are auto-imported from `~/.claude/projects/` on each `cc-wrap` invocation. To import manually at any time:
+| Tool        | Source path                                |
+| ----------- | ------------------------------------------ |
+| Claude Code | `~/.claude/projects/**/*.jsonl`            |
+| Claude Code | `~/.claude/sessions/*.json` (active flag)  |
+| Codex       | `~/.codex/state_5.sqlite` (thread metadata) |
+| Codex       | `~/.codex/sessions/**/rollout-*.jsonl` (rate limits) |
+| Cursor      | `~/Library/Application Support/Cursor/User/workspaceStorage/**/state.vscdb` |
 
-```bash
-npx tsx bin/cc-wrap.ts --version   # triggers import, then shows claude version
+That's it. If the files exist, Vibemeter picks them up on every page load.
+
+## Claude Code 5h / 7-day cards
+
+Vibemeter reads `cost`, `rate_limits.five_hour`, and `rate_limits.seven_day` from a Claude Code statusline snapshot. Add this to your `~/.claude/settings.json` to enable the cards:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "node -e \"const fs=require('fs'),os=require('os'),p=require('path');const d=p.join(os.homedir(),'codes','Vibemeter','.data');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'statusline-latest.json'),fs.readFileSync(0));\""
+  }
+}
 ```
 
-### Optional: alias `claude` to auto-import on every session
+(Adjust the path to where you cloned Vibemeter.) The file `.data/statusline-latest.json` is what Vibemeter reads.
 
-Add to `~/.zshrc` (or `~/.bashrc`):
+If you don't set this up, the Claude Code 5h / 7-day cards just show "no data yet" — everything else still works.
 
-```bash
-alias claude='npx tsx /Users/hanlu/codes/ai-sessions/bin/cc-wrap.ts'
-```
+## Codex 5h / 7-day cards
 
-Then `source ~/.zshrc`. After that, every `claude` invocation will automatically sync sessions to the local database.
+No setup needed. The Codex CLI already writes `rate_limits` events into `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Vibemeter reads the most recent one on every page load.
 
-## Dashboard
+## Filters
 
-`http://localhost:3000` shows:
+- **Tool**: All / Claude Code / Codex / Cursor — filters every card
+- **Date**: Today / 7 days / 30 days / All time
 
-- **5h window / weekly budget** — currently "no data yet" (see Known Limitations)
-- **Recent Sessions** — last 20 sessions from `~/.claude/projects/`, with project, duration, and active/done status
+Counts update live next to each tab.
 
-## Data storage
+## Tech stack
 
-All data lives in `.data/continuity.sqlite` (gitignored). Nothing leaves your machine.
+- Next.js 16 (App Router, Turbopack)
+- React 19
+- Tailwind v4
+- better-sqlite3 for local storage
+- No external services. No tracking. No telemetry.
 
-## Current limitations (Day 1)
+## License
 
-| Feature | Status |
-|---------|--------|
-| Session list | ✅ real data from `~/.claude/projects/` |
-| Active session detection | ✅ via `~/.claude/sessions/` |
-| 5h / weekly usage % | ✅ real data via `statusline-command.sh` → `statusline-latest.json` |
-| Reset time countdown | ✅ `resets_at` from Claude Code context JSON |
-| Continuation prompt | ⏳ stub — Day 2 |
-| Session summary | ⏳ stub — Day 2 |
-| `cli_args` for imported sessions | ❌ not available without wrapper; `null` |
-
-## Architecture
-
-```
-~/.claude/projects/{path}/{session-uuid}.jsonl  →  session-importer  →  SQLite
-~/.claude/sessions/{pid}.json                   →  active detection
-```
-
-Session data is parsed from Claude Code's own files (`confidence='high'`). No prompt content, source code, or API keys are stored — only session-level metadata (timestamps, cwd, git branch, session title).
+[MIT](./LICENSE)

@@ -43,6 +43,15 @@ function bootstrap(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_captured ON usage_snapshots(captured_at DESC);
   `);
+
+  // Idempotent column additions (SQLite has no ADD COLUMN IF NOT EXISTS)
+  const addCol = (table: string, col: string, def: string) => {
+    try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch { /* already exists */ }
+  };
+  addCol('sessions', 'ai_title', 'TEXT');
+  addCol('sessions', 'tags', 'TEXT DEFAULT "[]"');
+  addCol('sessions', 'codex_category', 'TEXT');
+  addCol('sessions', 'tokens_used', 'INTEGER');
 }
 
 let _db: Database.Database | null = null;

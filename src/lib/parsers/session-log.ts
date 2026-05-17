@@ -1,9 +1,3 @@
-/**
- * Parses a single ~/.claude/projects/{path}/{uuid}.jsonl file.
- * Each line is a JSON object. We extract only session-level metadata —
- * never prompt text, never source code, never API keys.
- */
-
 import fs from 'fs';
 import { z } from 'zod';
 
@@ -94,4 +88,52 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
   }
 
   return { sessionId, cwd, gitBranch, version, startedAt, lastSeenAt, aiTitle };
+}
+
+export interface ConversationTurn {
+  role: 'user' | 'assistant';
+  text: string;
+  toolNames?: string[];
+}
+
+export function readConversationTurns(jsonlPath: string, limit = 12): ConversationTurn[] {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(jsonlPath, 'utf8');
+  } catch {
+    return [];
+  }
+
+  const turns: ConversationTurn[] = [];
+
+  for (const line of raw.split('\n').filter(Boolean)) {
+    let parsed: Record<string, unknown>;
+    try { parsed = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
+
+    const type = parsed.type as string | undefined;
+    const msg = parsed.message as Record<string, unknown> | undefined;
+    if (!msg || (type !== 'user' && type !== 'assistant')) continue;
+
+    const role = msg.role as string;
+    const content = msg.content;
+
+    if (role === 'user' && typeof content === 'string' && content.trim()) {
+      turns.push({ role: 'user', text: content.trim().slice(0, 800) });
+    } else if (role === 'assistant' && Array.isArray(content)) {
+      const textParts: string[] = [];
+      const toolNames: string[] = [];
+      for (const part of content as Record<string, unknown>[]) {
+        if (part.type === 'text' && typeof part.text === 'string') {
+          textParts.push((part.text as string).slice(0, 600));
+        } else if (part.type === 'tool_use' && typeof part.name === 'string') {
+          toolNames.push(part.name as string);
+        }
+      }
+      if (textParts.length > 0 || toolNames.length > 0) {
+        turns.push({ role: 'assistant', text: textParts.join(' ').trim(), toolNames });
+      }
+    }
+  }
+
+  return turns.slice(-limit);
 }

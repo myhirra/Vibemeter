@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AI Coding Continuity Console",
-  description: "Local-first session continuity layer for Claude Code",
+  title: "Vibemeter",
+  description: "Measure your AI coding vibe — local-first dashboard for Claude Code, Codex, and Cursor",
 };
 
 export default function RootLayout({
