@@ -1,18 +1,32 @@
 {
-  "name": "vibemeter",
+  "name": "@hirra/vibemeter",
   "version": "0.1.0",
-  "private": true,
+  "description": "Local-first dashboard for your AI coding life — Claude Code, Codex, Cursor session tracking with usage windows, spending, heatmaps, and achievements.",
+  "keywords": ["claude-code", "codex", "cursor", "dashboard", "ai-coding", "session-tracking", "local-first"],
+  "homepage": "https://github.com/myhirra/Vibemeter",
+  "repository": { "type": "git", "url": "git+https://github.com/myhirra/Vibemeter.git" },
+  "license": "MIT",
+  "author": "hirra <myhirra@126.com>",
+  "type": "module",
+  "bin": {
+    "vibemeter": "bin/vibemeter.mjs"
+  },
+  "files": [
+    ".next",
+    "public",
+    "bin",
+    "docs",
+    "next.config.mjs"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "import": "tsx bin/cc-wrap.ts --version",
-    "seed": "tsx scripts/seed.ts",
-    "probe": "tsx scripts/probe-claude-code.ts"
+    "prepack": "next build"
   },
-  "bin": {
-    "cc-wrap": "bin/cc-wrap.ts"
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",

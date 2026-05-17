@@ -1,0 +1,9 @@
+# Strip from publish
+.next/cache/
+.next/dev/
+.next/trace
+.next/trace-build
+.next/turbopack
+.next/types/
+.next/diagnostics/
+bin/cc-wrap.ts
