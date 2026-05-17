@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { generateContinuationPrompt } from '@/lib/continuation/generator';
+import { getDb } from '@/lib/db';
 
 const RequestSchema = z.object({
   sessionId: z.string().uuid(),
@@ -11,10 +13,21 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: 'invalid request' }, { status: 400 });
   }
-  // TODO Day 2: read session JSONL, extract key context, call Claude API to generate prompt
-  return NextResponse.json({
-    sessionId: parsed.data.sessionId,
-    prompt: 'TODO: continuation prompt generation not yet implemented',
-    confidence: 'low',
-  });
+
+  const { sessionId } = parsed.data;
+
+  try {
+    const result = await generateContinuationPrompt(sessionId);
+
+    if (result.summary) {
+      getDb()
+        .prepare(`UPDATE sessions SET summary = ? WHERE id = ?`)
+        .run(result.summary, sessionId);
+    }
+
+    return NextResponse.json({ sessionId, ...result });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const ConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type Confidence = z.infer<typeof ConfidenceSchema>;
 
-export const ToolSchema = z.enum(['claude-code', 'codex', 'other']);
+export const ToolSchema = z.enum(['claude-code', 'codex', 'cursor', 'other']);
 export type Tool = z.infer<typeof ToolSchema>;
 
 export const ChangeTypeSchema = z.enum(['modified', 'created', 'deleted']);
@@ -18,8 +18,11 @@ export const SessionRowSchema = z.object({
   ended_at: z.number().int().nullable(),
   exit_code: z.number().int().nullable(),
   cwd: z.string().nullable(),
-  cli_args: z.string().nullable(), // JSON array string
-  summary: z.string().nullable(),  // TODO: Day 2 — populate with LLM-generated summary
+  cli_args: z.string().nullable(),
+  summary: z.string().nullable(),
+  ai_title: z.string().nullable(),
+  tags: z.string().nullable(), // JSON array string e.g. '["blocked","poc"]'
+  codex_category: z.string().nullable(),
   confidence: ConfidenceSchema,
 });
 export type SessionRow = z.infer<typeof SessionRowSchema>;

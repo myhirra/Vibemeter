@@ -12,6 +12,9 @@ import os from 'os';
 import { getDb } from '../db';
 import { parseSessionLog } from '../parsers/session-log';
 import { parseStatuslineJson } from '../parsers/statusline-json';
+import { parseCodexRateLimit } from '../parsers/codex-ratelimit';
+import { importCodexSessions } from './codex-importer';
+import { importCursorSessions } from './cursor-importer';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
@@ -66,11 +69,12 @@ export function importSessions(): ImportResult {
   const jsonlPaths = collectJsonlPaths();
 
   const upsert = db.prepare(`
-    INSERT INTO sessions (id, tool, started_at, ended_at, exit_code, cwd, cli_args, summary, confidence)
-    VALUES (@id, @tool, @started_at, @ended_at, @exit_code, @cwd, @cli_args, @summary, @confidence)
+    INSERT INTO sessions (id, tool, started_at, ended_at, exit_code, cwd, cli_args, summary, ai_title, confidence)
+    VALUES (@id, @tool, @started_at, @ended_at, @exit_code, @cwd, @cli_args, @summary, @ai_title, @confidence)
     ON CONFLICT(id) DO UPDATE SET
       ended_at   = excluded.ended_at,
       exit_code  = excluded.exit_code,
+      ai_title   = COALESCE(sessions.ai_title, excluded.ai_title),
       confidence = excluded.confidence
   `);
 
@@ -89,10 +93,11 @@ export function importSessions(): ImportResult {
         tool: 'claude-code',
         started_at: meta.startedAt,
         ended_at: isActive ? null : meta.lastSeenAt,
-        exit_code: null,  // not available from JSONL
+        exit_code: null,
         cwd: meta.cwd,
-        cli_args: null,   // not available from JSONL (wrapper-less import)
-        summary: null,    // TODO Day 2: generate from session content
+        cli_args: null,
+        summary: null,
+        ai_title: meta.aiTitle,
         confidence: 'high',
       });
       inserted++;
@@ -100,18 +105,22 @@ export function importSessions(): ImportResult {
   });
 
   importAll();
+  importCodexSessions();
+  importCursorSessions();
 
-  // Snapshot current usage from statusline-latest.json (written by statusline-command.sh)
+  const snapshotStmt = db.prepare(`
+    INSERT INTO usage_snapshots
+      (captured_at, source, window_5h_used_pct, window_weekly_used_pct,
+       reset_at_5h, reset_at_weekly, raw_output, confidence)
+    VALUES
+      (@captured_at, @source, @window_5h_used_pct, @window_weekly_used_pct,
+       @reset_at_5h, @reset_at_weekly, @raw_output, @confidence)
+  `);
+
+  // Claude Code: from statusline-latest.json written by statusline-command.sh
   const usage = parseStatuslineJson();
   if (usage) {
-    db.prepare(`
-      INSERT INTO usage_snapshots
-        (captured_at, source, window_5h_used_pct, window_weekly_used_pct,
-         reset_at_5h, reset_at_weekly, raw_output, confidence)
-      VALUES
-        (@captured_at, @source, @window_5h_used_pct, @window_weekly_used_pct,
-         @reset_at_5h, @reset_at_weekly, @raw_output, @confidence)
-    `).run({
+    snapshotStmt.run({
       captured_at: Date.now(),
       source: 'statusline',
       window_5h_used_pct: usage.window_5h_used_pct,
@@ -119,6 +128,21 @@ export function importSessions(): ImportResult {
       reset_at_5h: usage.reset_at_5h,
       reset_at_weekly: usage.reset_at_weekly,
       raw_output: usage.raw_output,
+      confidence: 'high',
+    });
+  }
+
+  // Codex: from most recent ~/.codex/sessions/*/rollout-*.jsonl rate_limits event
+  const codexUsage = parseCodexRateLimit();
+  if (codexUsage) {
+    snapshotStmt.run({
+      captured_at: Date.now(),
+      source: 'codex',
+      window_5h_used_pct: codexUsage.window_5h_used_pct,
+      window_weekly_used_pct: codexUsage.window_weekly_used_pct,
+      reset_at_5h: codexUsage.reset_at_5h,
+      reset_at_weekly: codexUsage.reset_at_weekly,
+      raw_output: null,
       confidence: 'high',
     });
   }
