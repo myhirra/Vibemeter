@@ -42,3 +42,6 @@ next-env.d.ts
 
 # local data (never commit)
 .data/
+
+# menubar build artifact
+tools/menubar/Vibemeter.app/
