@@ -3,10 +3,12 @@ import path from 'path';
 import os from 'os';
 import { getDb } from '../db';
 
-const CURSOR_WS = path.join(
+const CURSOR_BASE = path.join(
   os.homedir(),
-  'Library/Application Support/Cursor/User/workspaceStorage'
+  'Library/Application Support/Cursor/User'
 );
+const CURSOR_WS = path.join(CURSOR_BASE, 'workspaceStorage');
+const CURSOR_GLOBAL_DB = path.join(CURSOR_BASE, 'globalStorage/state.vscdb');
 
 interface ComposerEntry {
   composerId: string;
@@ -79,4 +81,47 @@ export function importCursorSessions(): void {
   });
 
   importAll();
+
+  // 2026 onwards: Cursor migrated composers to a single global `cursorDiskKV`
+  // table inside ~/Library/Application Support/Cursor/User/globalStorage/state.vscdb.
+  // Per-workspace storage above only covers pre-migration data; we read the new
+  // table here too. Upsert dedupes on composerId.
+  if (fs.existsSync(CURSOR_GLOBAL_DB)) {
+    try {
+      const gdb = new BetterSqlite(CURSOR_GLOBAL_DB, { readonly: true });
+      // Check the table exists before querying (older Cursor versions won't have it).
+      const hasTable = gdb.prepare(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='cursorDiskKV'`,
+      ).get();
+      if (hasTable) {
+        const rows = gdb.prepare(
+          `SELECT key, value FROM cursorDiskKV WHERE key LIKE 'composerData:%'`,
+        ).all() as { key: string; value: Buffer | string }[];
+
+        const importGlobal = db.transaction(() => {
+          for (const r of rows) {
+            const id = r.key.slice('composerData:'.length);
+            let data: { composerId?: string; createdAt?: number; lastUpdatedAt?: number; name?: string; text?: string };
+            try {
+              data = JSON.parse(typeof r.value === 'string' ? r.value : r.value.toString('utf8'));
+            } catch { continue; }
+            const composerId = data.composerId || id;
+            const createdAt = data.createdAt;
+            if (!composerId || !createdAt) continue;
+            const endedAt = data.lastUpdatedAt ?? createdAt;
+            const aiTitle = data.name || (data.text ? data.text.slice(0, 120) : null);
+            upsert.run({
+              id: composerId,
+              started_at: createdAt,
+              ended_at: endedAt,
+              cwd: null,
+              ai_title: aiTitle,
+            });
+          }
+        });
+        importGlobal();
+      }
+      gdb.close();
+    } catch { /* skip — corrupt or locked */ }
+  }
 }
