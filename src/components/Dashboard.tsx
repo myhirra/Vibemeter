@@ -58,6 +58,10 @@ const DATE_LABELS: Record<DatePreset, string> = {
   today: 'Today', '7d': '7 days', '30d': '30 days', all: 'All time',
 };
 
+function isToolFilter(value: string | null): value is ToolFilter {
+  return TOOLS.includes(value as ToolFilter);
+}
+
 function startOfPreset(preset: DatePreset): number {
   const now = new Date();
   if (preset === 'today') { now.setHours(0, 0, 0, 0); return now.getTime(); }
@@ -104,10 +108,12 @@ export function Dashboard({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [toolFilter, setToolFilter] = useState<ToolFilter>(initialToolFilter);
+  const queryToolFilter = searchParams.get('agent');
+  const toolFilter = isToolFilter(queryToolFilter) ? queryToolFilter : initialToolFilter;
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
   const selectedCodexAccount = useMemo(
     () => codexAccounts.find((account) => account.accountId === selectedCodexAccountId) ?? null,
     [codexAccounts, selectedCodexAccountId],
@@ -190,13 +196,11 @@ export function Dashboard({
   }
 
   function changeToolFilter(nextTool: ToolFilter) {
-    setToolFilter(nextTool);
     replaceQuery(nextTool, nextTool === 'codex' ? selectedCodexAccountId : null);
   }
 
   function changeCodexAccount(accountId: string) {
     const nextAccountId = accountId || null;
-    setToolFilter('codex');
     replaceQuery('codex', nextAccountId);
   }
 
