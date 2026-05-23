@@ -17,6 +17,7 @@ import { createRequire } from 'node:module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
+const REQUIRE_HOOK = join(__dirname, 'require-hook.cjs');
 const DEFAULT_PORT = 9527;
 const PORT = process.env.PORT ?? String(DEFAULT_PORT);
 const DATA_DIR = process.env.VIBEMETER_DATA_DIR ?? join(homedir(), '.vibemeter');
@@ -42,7 +43,14 @@ async function runNext(args) {
     process.exit(1);
   }
   return new Promise((resolveP, reject) => {
-    const p = spawn(process.execPath, [nextBin, ...args], { cwd: ROOT, stdio: 'inherit' });
+    const nodeOptions = process.env.NODE_OPTIONS
+      ? `${process.env.NODE_OPTIONS} --require ${REQUIRE_HOOK}`
+      : `--require ${REQUIRE_HOOK}`;
+    const p = spawn(process.execPath, [nextBin, ...args], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env: { ...process.env, NODE_OPTIONS: nodeOptions },
+    });
     p.on('exit', (code) => code === 0 ? resolveP() : reject(new Error(`next ${args[0]} exit ${code}`)));
     for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => p.kill(sig));
   });
