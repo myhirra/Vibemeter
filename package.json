@@ -1,10 +1,24 @@
 {
   "name": "@hirra/vibemeter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first dashboard for your AI coding life — Claude Code, Codex, Cursor session tracking with usage windows, spending, heatmaps, and achievements.",
-  "keywords": ["claude-code", "codex", "cursor", "dashboard", "ai-coding", "session-tracking", "local-first"],
+  "keywords": [
+    "claude-code",
+    "codex",
+    "cursor",
+    "dashboard",
+    "ai-coding",
+    "session-tracking",
+    "local-first"
+  ],
   "homepage": "https://github.com/myhirra/Vibemeter",
-  "repository": { "type": "git", "url": "git+https://github.com/myhirra/Vibemeter.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myhirra/Vibemeter.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "license": "MIT",
   "author": "hirra <myhirra@126.com>",
   "type": "module",
@@ -24,7 +38,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "prepack": "next build"
+    "prepack": "rm -rf .next && next build && rm -rf .next/cache .next/dev .next/diagnostics .next/trace .next/trace-build .next/turbopack"
   },
   "engines": {
     "node": ">=20"

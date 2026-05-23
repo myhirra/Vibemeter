@@ -1,10 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { getDb } from '@/lib/db';
-import { importSessions } from '@/lib/collectors/session-importer';
 import { Dashboard } from '@/components/Dashboard';
+import Link from 'next/link';
 import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements } from '@/lib/stats';
-import type { SessionRow, UsageSnapshotRow } from '@/lib/schema';
+import type { SessionRow } from '@/lib/schema';
+import { getCodexAccounts } from '@/lib/codex-auth';
+import { getLatestUsageSnapshot } from '@/lib/usage-snapshots';
 
 const DEMO_PROJECTS = [
   'kanban-board', 'pomodoro', 'weather-widget', 'recipe-box', 'mood-journal',
@@ -67,12 +69,20 @@ function injectMockCursorSessions<T extends { id: string; tool: string; started_
   return [...rows, ...extra].sort((a, b) => b.started_at - a.started_at);
 }
 
-export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ demo?: string }> }) {
+const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor']);
+
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ demo?: string; agent?: string; codexAccount?: string }> }) {
   const params = await searchParams;
   const demo = params.demo === '1' || params.demo === 'true';
+  const initialAgent = AGENTS.has(params.agent ?? '') ? params.agent as 'all' | 'claude-code' | 'codex' | 'cursor' : 'all';
 
-  importSessions();
   const db = getDb();
+  const codexAccounts = await getCodexAccounts();
+  const requestedCodexAccountId = params.codexAccount ?? null;
+  const selectedCodexAccountId =
+    requestedCodexAccountId && codexAccounts.some((account) => account.accountId === requestedCodexAccountId)
+      ? requestedCodexAccountId
+      : null;
 
   let sessions = db.prepare(`
     SELECT id, tool, started_at, ended_at, cwd, confidence, summary, ai_title, tags
@@ -85,13 +95,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     sessions = injectMockCursorSessions(sessions);
   }
 
-  type UsageRow = Pick<UsageSnapshotRow, 'window_5h_used_pct' | 'window_weekly_used_pct' | 'reset_at_5h' | 'reset_at_weekly'>;
-  const usageBySource = (source: string) => db.prepare(`
-    SELECT window_5h_used_pct, window_weekly_used_pct, reset_at_5h, reset_at_weekly
-    FROM usage_snapshots WHERE source = ? ORDER BY captured_at DESC LIMIT 1
-  `).get(source) as UsageRow | undefined;
+  const claudeUsageRow = getLatestUsageSnapshot(db, 'statusline');
+  const codexUsageRow = selectedCodexAccountId
+    ? getLatestUsageSnapshot(db, 'codex', selectedCodexAccountId)
+    : getLatestUsageSnapshot(db, 'codex');
+  const allUsageRow = db
+    .prepare(`SELECT * FROM usage_snapshots ORDER BY captured_at DESC LIMIT 1`)
+    .get() as typeof claudeUsageRow;
 
-  const toUsageInfo = (row: UsageRow | undefined) => row ? {
+  const toUsageInfo = (row: typeof claudeUsageRow) => row ? {
     window_5h_used_pct: row.window_5h_used_pct,
     window_weekly_used_pct: row.window_weekly_used_pct,
     reset_at_5h: row.reset_at_5h,
@@ -116,24 +128,37 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   return (
     <div className="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
       <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
-            <span className="text-violet-400">Vibe</span>meter
-          </h1>
-          <p className="text-zinc-600 text-xs mt-1">measure your AI coding vibe · local-first · data never leaves this machine</p>
+        <div className="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+              <span className="text-violet-400">Vibe</span>meter
+            </h1>
+            <p className="text-zinc-600 text-xs mt-1">measure your AI coding vibe · local-first · data never leaves this machine</p>
+          </div>
+          <Link
+            href="/admin"
+            className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+          >
+            Admin
+          </Link>
         </div>
 
         <Dashboard
           sessions={sessions}
           streak={activityStreak()}
+          allBurndown={burndownPoints(168)}
           claudeBurndown={burndownPoints(168, 'statusline')}
-          codexBurndown={burndownPoints(168, 'codex')}
+          codexBurndown={burndownPoints(168, 'codex', selectedCodexAccountId)}
           hotspots={fileHotspots(8)}
           spending={spendingStats()}
           timeline={timeline}
           achievements={achievements()}
-          claudeUsage={toUsageInfo(usageBySource('statusline'))}
-          codexUsage={toUsageInfo(usageBySource('codex'))}
+          allUsage={toUsageInfo(allUsageRow)}
+          claudeUsage={toUsageInfo(claudeUsageRow)}
+          codexUsage={toUsageInfo(codexUsageRow)}
+          codexAccounts={codexAccounts}
+          selectedCodexAccountId={selectedCodexAccountId}
+          initialToolFilter={initialAgent}
         />
       </div>
     </div>

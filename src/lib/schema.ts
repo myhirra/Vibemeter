@@ -32,7 +32,8 @@ export type SessionRow = z.infer<typeof SessionRowSchema>;
 export const UsageSnapshotRowSchema = z.object({
   id: z.number().int(),
   captured_at: z.number().int(),
-  source: z.enum(['claude_usage_cmd', 'statusline', 'manual']),
+  source: z.enum(['claude_usage_cmd', 'statusline', 'manual', 'codex']),
+  account_id: z.string().nullable(),
   window_5h_used_pct: z.number().nullable(),
   window_weekly_used_pct: z.number().nullable(),
   // Only set when /usage output explicitly contains a reset timestamp — never inferred
