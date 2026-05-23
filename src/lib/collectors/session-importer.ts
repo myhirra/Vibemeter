@@ -15,6 +15,8 @@ import { parseStatuslineJson } from '../parsers/statusline-json';
 import { parseCodexRateLimit } from '../parsers/codex-ratelimit';
 import { importCodexSessions } from './codex-importer';
 import { importCursorSessions } from './cursor-importer';
+import { getCurrentCodexAccount } from '../codex-auth';
+import { insertUsageSnapshot } from '../usage-snapshots';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
@@ -108,41 +110,37 @@ export function importSessions(): ImportResult {
   importCodexSessions();
   importCursorSessions();
 
-  const snapshotStmt = db.prepare(`
-    INSERT INTO usage_snapshots
-      (captured_at, source, window_5h_used_pct, window_weekly_used_pct,
-       reset_at_5h, reset_at_weekly, raw_output, confidence)
-    VALUES
-      (@captured_at, @source, @window_5h_used_pct, @window_weekly_used_pct,
-       @reset_at_5h, @reset_at_weekly, @raw_output, @confidence)
-  `);
-
   // Claude Code: from statusline-latest.json written by statusline-command.sh
   const usage = parseStatuslineJson();
   if (usage) {
-    snapshotStmt.run({
-      captured_at: Date.now(),
+    insertUsageSnapshot(db, {
+      capturedAt: Date.now(),
       source: 'statusline',
-      window_5h_used_pct: usage.window_5h_used_pct,
-      window_weekly_used_pct: usage.window_weekly_used_pct,
-      reset_at_5h: usage.reset_at_5h,
-      reset_at_weekly: usage.reset_at_weekly,
-      raw_output: usage.raw_output,
+      accountId: null,
+      window5hUsedPct: usage.window_5h_used_pct,
+      windowWeeklyUsedPct: usage.window_weekly_used_pct,
+      resetAt5h: usage.reset_at_5h,
+      resetAtWeekly: usage.reset_at_weekly,
+      rawOutput: usage.raw_output,
       confidence: 'high',
     });
   }
 
   // Codex: from most recent ~/.codex/sessions/*/rollout-*.jsonl rate_limits event
-  const codexUsage = parseCodexRateLimit();
+  const currentCodexAccount = getCurrentCodexAccount();
+  const codexUsage = parseCodexRateLimit({
+    minMtimeMs: currentCodexAccount?.authMtimeMs,
+  });
   if (codexUsage) {
-    snapshotStmt.run({
-      captured_at: Date.now(),
+    insertUsageSnapshot(db, {
+      capturedAt: Date.now(),
       source: 'codex',
-      window_5h_used_pct: codexUsage.window_5h_used_pct,
-      window_weekly_used_pct: codexUsage.window_weekly_used_pct,
-      reset_at_5h: codexUsage.reset_at_5h,
-      reset_at_weekly: codexUsage.reset_at_weekly,
-      raw_output: null,
+      accountId: currentCodexAccount?.accountId ?? null,
+      window5hUsedPct: codexUsage.window_5h_used_pct,
+      windowWeeklyUsedPct: codexUsage.window_weekly_used_pct,
+      resetAt5h: codexUsage.reset_at_5h,
+      resetAtWeekly: codexUsage.reset_at_weekly,
+      rawOutput: null,
       confidence: 'high',
     });
   }

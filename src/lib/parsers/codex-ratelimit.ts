@@ -27,45 +27,18 @@ export interface CodexUsage {
   window_weekly_used_pct: number;
   reset_at_5h: number;    // unix ms
   reset_at_weekly: number; // unix ms
+  source_mtime_ms: number;
 }
 
-function latestJsonlFile(): string | null {
-  try {
-    let best: { path: string; mtime: number } | null = null;
-    const years = fs.readdirSync(SESSIONS_DIR).sort().reverse();
-    outer: for (const year of years) {
-      const yDir = path.join(SESSIONS_DIR, year);
-      if (!fs.statSync(yDir).isDirectory()) continue;
-      const months = fs.readdirSync(yDir).sort().reverse();
-      for (const month of months) {
-        const mDir = path.join(yDir, year, month);
-        // path might be SESSIONS_DIR/year/month or SESSIONS_DIR/year/year/month depending on structure
-        const mDir2 = path.join(SESSIONS_DIR, year, month);
-        const dir = fs.existsSync(mDir2) ? mDir2 : mDir;
-        if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) continue;
-        const days = fs.readdirSync(dir).sort().reverse();
-        for (const day of days) {
-          const dDir = path.join(dir, day);
-          if (!fs.existsSync(dDir) || !fs.statSync(dDir).isDirectory()) continue;
-          const files = fs.readdirSync(dDir)
-            .filter((f) => f.endsWith('.jsonl'))
-            .map((f) => ({ path: path.join(dDir, f), mtime: fs.statSync(path.join(dDir, f)).mtimeMs }))
-            .sort((a, b) => b.mtime - a.mtime);
-          if (files.length > 0) {
-            best = files[0];
-            break outer;
-          }
-        }
-      }
-    }
-    return best?.path ?? null;
-  } catch {
-    return null;
-  }
+export interface CodexRateLimitParseOptions {
+  sessionsDir?: string;
+  minMtimeMs?: number;
 }
 
-export function parseCodexRateLimit(): CodexUsage | null {
+export function parseCodexRateLimit(options: CodexRateLimitParseOptions = {}): CodexUsage | null {
   // Find the most recently modified jsonl across all session dirs
+  const sessionsDir = options.sessionsDir ?? SESSIONS_DIR;
+  const minMtimeMs = options.minMtimeMs ?? 0;
   try {
     let bestFile: { path: string; mtime: number } | null = null as { path: string; mtime: number } | null;
     function walk(dir: string) {
@@ -74,14 +47,14 @@ export function parseCodexRateLimit(): CodexUsage | null {
         try {
           const stat = fs.statSync(full);
           if (stat.isDirectory()) { walk(full); continue; }
-          if (entry.endsWith('.jsonl') && stat.mtimeMs > (bestFile?.mtime ?? 0)) {
+          if (entry.endsWith('.jsonl') && stat.mtimeMs >= minMtimeMs && stat.mtimeMs > (bestFile?.mtime ?? 0)) {
             bestFile = { path: full, mtime: stat.mtimeMs };
           }
         } catch { /* skip */ }
       }
     }
-    if (!fs.existsSync(SESSIONS_DIR)) return null;
-    walk(SESSIONS_DIR);
+    if (!fs.existsSync(sessionsDir)) return null;
+    walk(sessionsDir);
     if (!bestFile) return null;
 
     // Read from the end — last rate_limits event wins
@@ -96,6 +69,7 @@ export function parseCodexRateLimit(): CodexUsage | null {
           window_weekly_used_pct: rl.secondary.used_percent,
           reset_at_5h: rl.primary.resets_at * 1000,
           reset_at_weekly: rl.secondary.resets_at * 1000,
+          source_mtime_ms: bestFile.mtime,
         };
       } catch { /* skip */ }
     }

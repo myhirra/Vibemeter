@@ -85,14 +85,18 @@ export interface BurndownPoint {
   pctWeekly: number | null;
 }
 
-export function burndownPoints(limitHours = 168, source?: string): BurndownPoint[] {
+export function burndownPoints(limitHours = 168, source?: string, accountId?: string | null): BurndownPoint[] {
   const since = Date.now() - limitHours * 3_600_000;
-  const q = source
+  const q = source && accountId != null
+    ? `SELECT captured_at AS ts, window_5h_used_pct AS pct5h, window_weekly_used_pct AS pctWeekly
+       FROM usage_snapshots WHERE captured_at > ? AND source = ? AND account_id = ? ORDER BY captured_at ASC`
+    : source
     ? `SELECT captured_at AS ts, window_5h_used_pct AS pct5h, window_weekly_used_pct AS pctWeekly
        FROM usage_snapshots WHERE captured_at > ? AND source = ? ORDER BY captured_at ASC`
     : `SELECT captured_at AS ts, window_5h_used_pct AS pct5h, window_weekly_used_pct AS pctWeekly
        FROM usage_snapshots WHERE captured_at > ? ORDER BY captured_at ASC`;
-  return (getDb().prepare(q).all(...(source ? [since, source] : [since])) as BurndownPoint[]);
+  const args = source && accountId != null ? [since, source, accountId] : source ? [since, source] : [since];
+  return (getDb().prepare(q).all(...args) as BurndownPoint[]);
 }
 
 export interface FileHotspot {
