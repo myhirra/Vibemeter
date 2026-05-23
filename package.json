@@ -1,6 +1,6 @@
 {
   "name": "@hirra/vibemeter",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local-first dashboard for your AI coding life — Claude Code, Codex, Cursor session tracking with usage windows, spending, heatmaps, and achievements.",
   "keywords": [
     "claude-code",
