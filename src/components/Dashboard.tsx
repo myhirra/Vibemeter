@@ -84,6 +84,16 @@ function formatResetAt(ms: number | null): string {
   return `resets at ${dateStr} (in ${rel})`;
 }
 
+function formatRemainingPercent(value: number): string {
+  const clamped = Math.max(0, Math.min(100, value));
+  return `${clamped >= 100 ? 100 : Math.floor(clamped)}%`;
+}
+
+function formatUsedPercent(value: number): string {
+  const clamped = Math.max(0, Math.min(100, value));
+  return `${clamped <= 0 ? 0 : Math.ceil(clamped)}%`;
+}
+
 function shortAccountId(value: string) {
   return value.length > 12 ? `${value.slice(0, 6)}...${value.slice(-4)}` : value;
 }
@@ -324,9 +334,9 @@ export function Dashboard({
                 {usage?.window_5h_used_pct != null ? (
                   <>
                     <p className="text-3xl font-bold text-zinc-100">
-                      {(100 - usage.window_5h_used_pct).toFixed(0)}%
+                      {formatRemainingPercent(100 - usage.window_5h_used_pct)}
                     </p>
-                    <p className="text-xs text-zinc-500 mt-1">remaining · {usage.window_5h_used_pct.toFixed(0)}% used</p>
+                    <p className="text-xs text-zinc-500 mt-1">remaining · {formatUsedPercent(usage.window_5h_used_pct)} used</p>
                     {usage.reset_at_5h && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_5h)}</p>}
                   </>
                 ) : (
@@ -340,9 +350,9 @@ export function Dashboard({
                 {usage?.window_weekly_used_pct != null ? (
                   <>
                     <p className="text-3xl font-bold text-zinc-100">
-                      {(100 - usage.window_weekly_used_pct).toFixed(0)}%
+                      {formatRemainingPercent(100 - usage.window_weekly_used_pct)}
                     </p>
-                    <p className="text-xs text-zinc-500 mt-1">remaining · {usage.window_weekly_used_pct.toFixed(0)}% used</p>
+                    <p className="text-xs text-zinc-500 mt-1">remaining · {formatUsedPercent(usage.window_weekly_used_pct)} used</p>
                     {usage.reset_at_weekly && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_weekly)}</p>}
                   </>
                 ) : (

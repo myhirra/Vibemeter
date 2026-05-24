@@ -6,6 +6,16 @@
 
 ![Vibemeter dashboard](docs/demo1.png)
 
+Website: <https://vibemeter.siney.top>
+
+Install and launch with one command:
+
+```bash
+curl -fsSL https://vibemeter.siney.top/install.sh | bash
+```
+
+The installer downloads Vibemeter from npm, registers the local background service, waits for it to start, and opens the macOS floating widget. The dashboard runs on your own machine at <http://localhost:9527>.
+
 ## What you get
 
 - **5h / 7-day rate-limit windows** for both Claude Code (statusline) and Codex (rollout files)
@@ -18,11 +28,7 @@
 
 ## Quick start
 
-```bash
-curl -fsSL https://vibemeter.siney.top/install.sh | bash
-```
-
-This installs the package globally, registers the background service, and opens the macOS floating widget. Open <http://localhost:9527> for the full dashboard. Data lives in `~/.vibemeter/`.
+The one-command installer is the recommended path for new users. It keeps everything local: data lives in `~/.vibemeter/`, and nothing is sent to Vibemeter or any cloud service.
 
 Prefer doing it manually?
 
