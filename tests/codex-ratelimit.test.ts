@@ -7,13 +7,14 @@ import test from 'node:test';
 
 import { parseCodexRateLimit } from '../src/lib/parsers/codex-ratelimit.ts';
 
-async function writeRollout(root: string, isoName: string, usedPercent: number, mtimeMs: number) {
+async function writeRollout(root: string, isoName: string, usedPercent: number, mtimeMs: number, timestamp?: string) {
   const dir = path.join(root, '2026', '05', '23');
   await mkdir(dir, { recursive: true });
   const filePath = path.join(dir, `rollout-${isoName}.jsonl`);
   await writeFile(
     filePath,
     `${JSON.stringify({
+      timestamp,
       type: 'event_msg',
       payload: {
         rate_limits: {
@@ -35,4 +36,14 @@ test('Codex rate-limit parser can ignore rollout files older than the current ac
 
   assert.equal(parseCodexRateLimit({ sessionsDir: root, minMtimeMs: 2_000 })?.window_5h_used_pct, 2);
   assert.equal(parseCodexRateLimit({ sessionsDir: root, minMtimeMs: 4_000 }), null);
+});
+
+test('Codex rate-limit parser uses the conservative recent reading across active rollout files', async () => {
+  const root = mkdtempSync(path.join(tmpdir(), 'codex-ratelimit-'));
+  await writeRollout(root, 'reset.jsonl', 0, 10_000, '2026-05-24T01:26:37.805Z');
+  await writeRollout(root, 'active.jsonl', 15, 9_000, '2026-05-24T01:25:27.779Z');
+  await writeRollout(root, 'stale.jsonl', 80, 8_000, '2026-05-24T01:10:00.000Z');
+
+  const parsed = parseCodexRateLimit({ sessionsDir: root });
+  assert.equal(parsed?.window_5h_used_pct, 15);
 });

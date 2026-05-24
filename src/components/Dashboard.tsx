@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SessionsTable } from './SessionsTable';
 import { ToolSplitCard } from './ToolSplitCard';
@@ -35,7 +36,6 @@ interface Props {
   claudeBurndown: BurndownPoint[];
   codexBurndown: BurndownPoint[];
   hotspots: FileHotspot[];
-  allUsage: UsageInfo | null;
   claudeUsage: UsageInfo | null;
   codexUsage: UsageInfo | null;
   codexAccounts: CodexAccountOption[];
@@ -95,7 +95,6 @@ export function Dashboard({
   claudeBurndown,
   codexBurndown,
   hotspots,
-  allUsage,
   claudeUsage,
   codexUsage,
   codexAccounts,
@@ -121,6 +120,14 @@ export function Dashboard({
   const selectedCodexLabel = selectedCodexAccount
     ? `codex · ${selectedCodexAccount.label}`
     : 'codex · all accounts';
+  const selectedCodexEmptyTitle = selectedCodexAccountId
+    ? 'no rate-limit snapshot for this account yet'
+    : 'no data yet';
+  const selectedCodexEmptyHint = selectedCodexAccountId
+    ? selectedCodexAccount?.isCurrent
+      ? 'use Codex once, then Refresh data'
+      : 'switch it in Admin, use Codex once, then Refresh data'
+    : 'no data yet';
 
   const since = useMemo(() => startOfPreset(datePreset), [datePreset]);
 
@@ -269,7 +276,7 @@ export function Dashboard({
             <p className="text-xs uppercase tracking-wider text-zinc-500">Codex account</p>
             <p className="mt-1 truncate text-xs text-zinc-600">
               {selectedCodexAccount
-                ? selectedCodexAccount.isCurrent ? 'current account only' : 'saved account only'
+                ? selectedCodexAccount.isCurrent ? 'current account only' : 'saved account history only'
                 : 'all saved and legacy Codex usage'}
             </p>
           </div>
@@ -290,18 +297,24 @@ export function Dashboard({
               {selectedCodexAccount ? shortAccountId(selectedCodexAccount.accountId) : 'all'}
             </span>
           </div>
+          {selectedCodexAccount && !selectedCodexAccount.isCurrent && (
+            <Link
+              href="/admin"
+              className="basis-full text-xs text-violet-300 transition-colors hover:text-violet-100"
+            >
+              Dashboard selection filters saved history only. Switch this account in Admin to collect new Codex usage.
+            </Link>
+          )}
         </div>
       )}
 
-      {/* Usage cards — source switches by tool filter */}
-      {(() => {
+      {/* Usage cards — only meaningful for agents with quota windows */}
+      {toolFilter !== 'all' && (() => {
         const usage = toolFilter === 'codex' ? codexUsage
           : toolFilter === 'claude-code' ? claudeUsage
-          : toolFilter === 'all' ? allUsage
           : null;
         const label = toolFilter === 'codex' ? selectedCodexLabel
           : toolFilter === 'claude-code' ? 'claude code'
-          : toolFilter === 'all' ? 'all agents'
           : TOOL_LABELS[toolFilter].toLowerCase();
         return (
           <>
@@ -318,7 +331,7 @@ export function Dashboard({
                   </>
                 ) : (
                   <p className="text-zinc-600 text-sm mt-1">
-                    {toolFilter === 'codex' && selectedCodexAccountId ? 'no usage snapshot for this account yet' : 'no data yet'}
+                    {toolFilter === 'codex' ? selectedCodexEmptyTitle : 'no data yet'}
                   </p>
                 )}
               </div>
@@ -334,7 +347,7 @@ export function Dashboard({
                   </>
                 ) : (
                   <p className="text-zinc-600 text-sm mt-1">
-                    {toolFilter === 'codex' && selectedCodexAccountId ? 'click Refresh data after using this account' : 'no data yet'}
+                    {toolFilter === 'codex' ? selectedCodexEmptyHint : 'no data yet'}
                   </p>
                 )}
               </div>

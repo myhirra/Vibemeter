@@ -7,6 +7,7 @@ import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimelin
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
 import { getLatestUsageSnapshot } from '@/lib/usage-snapshots';
+import { MarketingPage } from '@/components/MarketingPage';
 
 const DEMO_PROJECTS = [
   'kanban-board', 'pomodoro', 'weather-widget', 'recipe-box', 'mood-journal',
@@ -72,6 +73,10 @@ function injectMockCursorSessions<T extends { id: string; tool: string; started_
 const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor']);
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ demo?: string; agent?: string; codexAccount?: string }> }) {
+  if (process.env.VIBEMETER_SITE === 'marketing') {
+    return <MarketingPage />;
+  }
+
   const params = await searchParams;
   const demo = params.demo === '1' || params.demo === 'true';
   const initialAgent = AGENTS.has(params.agent ?? '') ? params.agent as 'all' | 'claude-code' | 'codex' | 'cursor' : 'all';
@@ -99,9 +104,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const codexUsageRow = selectedCodexAccountId
     ? getLatestUsageSnapshot(db, 'codex', selectedCodexAccountId)
     : getLatestUsageSnapshot(db, 'codex');
-  const allUsageRow = db
-    .prepare(`SELECT * FROM usage_snapshots ORDER BY captured_at DESC LIMIT 1`)
-    .get() as typeof claudeUsageRow;
 
   const toUsageInfo = (row: typeof claudeUsageRow) => row ? {
     window_5h_used_pct: row.window_5h_used_pct,
@@ -153,7 +155,6 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           spending={spendingStats()}
           timeline={timeline}
           achievements={achievements()}
-          allUsage={toUsageInfo(allUsageRow)}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}
           codexAccounts={codexAccounts}

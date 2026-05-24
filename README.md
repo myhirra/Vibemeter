@@ -19,26 +19,34 @@
 ## Quick start
 
 ```bash
-npx @hirra/vibemeter
+curl -fsSL https://vibemeter.siney.top/install.sh | bash
 ```
 
-Open <http://localhost:9527>. Data lives in `~/.vibemeter/`.
+This installs the package globally, registers the background service, and opens the macOS floating widget. Open <http://localhost:9527> for the full dashboard. Data lives in `~/.vibemeter/`.
 
-That's the whole install. Hit Ctrl-C to stop.
+Prefer doing it manually?
+
+```bash
+npm install -g @hirra/vibemeter
+vibemeter install
+vibemeter float
+```
+
+## Run in the foreground
+
+```bash
+vibemeter
+```
+
+Open <http://localhost:9527>. Hit Ctrl-C to stop.
 
 ## Run as a background service (macOS)
 
-Want it always running on login? One command:
+`vibemeter install` registers a LaunchAgent at `~/Library/LaunchAgents/com.hirra.vibemeter.plist`. It boots on login, restarts if it crashes, and writes logs to `~/.vibemeter/vibemeter.log`.
 
 ```bash
-npx @hirra/vibemeter install
-```
-
-This registers a LaunchAgent at `~/Library/LaunchAgents/com.hirra.vibemeter.plist`. It boots on login, restarts if it crashes, and writes logs to `~/.vibemeter/vibemeter.log`.
-
-```bash
-npx @hirra/vibemeter status      # see if it's loaded + tail the log
-npx @hirra/vibemeter uninstall   # remove the LaunchAgent
+vibemeter status      # see if it's loaded + tail the log
+vibemeter uninstall   # remove the LaunchAgent
 ```
 
 On Linux, run `vibemeter install` and it'll print a systemd-user unit you can drop in `~/.config/systemd/user/vibemeter.service`.
@@ -49,6 +57,7 @@ On Linux, run `vibemeter install` and it'll print a systemd-user unit you can dr
 | ---------------------- | ---------------------------------------------------- |
 | `vibemeter`            | start the server in the foreground (Ctrl-C to stop)  |
 | `vibemeter install`    | register a LaunchAgent so it runs on login (macOS)   |
+| `vibemeter float`      | open the native macOS floating widget                |
 | `vibemeter uninstall`  | remove the auto-start config                         |
 | `vibemeter status`     | show whether the daemon is loaded + tail log         |
 | `vibemeter help`       | print usage                                          |
