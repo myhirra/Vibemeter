@@ -45,3 +45,8 @@ next-env.d.ts
 
 # menubar build artifact
 tools/menubar/Vibemeter.app/
+
+# marketing/ 是私有推广素材：发文案、视频脚本、发布 playbook。
+# 不进主仓库（绝不上 GitHub），有独立的 git 仓库推到 hirra.cn。
+# 详见 CLAUDE.md / AGENTS.md。
+/marketing/
