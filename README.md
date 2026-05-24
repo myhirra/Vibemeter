@@ -6,6 +6,14 @@
 
 ![Vibemeter dashboard](docs/demo1.png)
 
+<p align="center">
+  <img src="public/float-ball.png" alt="Vibemeter floating ball" width="380">
+  &nbsp;&nbsp;
+  <img src="public/float-expanded.png" alt="Vibemeter floating widget expanded" width="380">
+</p>
+
+<p align="center"><sub>Native macOS floating widget — always-on quota ring (left) and expanded panel (right). Stays above your editor; click to refresh, click again to collapse.</sub></p>
+
 Website: <https://vibemeter.siney.top>
 
 Install and launch with one command:
@@ -61,12 +69,15 @@ On Linux, run `vibemeter install` and it'll print a systemd-user unit you can dr
 
 | Command                | What it does                                         |
 | ---------------------- | ---------------------------------------------------- |
-| `vibemeter`            | start the server in the foreground (Ctrl-C to stop)  |
-| `vibemeter install`    | register a LaunchAgent so it runs on login (macOS)   |
-| `vibemeter float`      | open the native macOS floating widget                |
-| `vibemeter uninstall`  | remove the auto-start config                         |
-| `vibemeter status`     | show whether the daemon is loaded + tail log         |
-| `vibemeter help`       | print usage                                          |
+| `vibemeter`                | start the server in the foreground (Ctrl-C to stop)  |
+| `vibemeter install`        | register a LaunchAgent so it runs on login (macOS)   |
+| `vibemeter float`          | open the native macOS floating widget                |
+| `vibemeter uninstall`      | remove the auto-start config                         |
+| `vibemeter status`         | show whether the daemon is loaded + tail log         |
+| `vibemeter notify-install` | wire voice + macOS-notification hooks (Claude+Codex) |
+| `vibemeter notify-status`  | show which voice hooks are installed                 |
+| `vibemeter notify-uninstall` | remove the voice + notification hooks              |
+| `vibemeter help`           | print usage                                          |
 
 | Env var               | Default          |
 | --------------------- | ---------------- |
@@ -103,6 +114,20 @@ These cards need a statusline hook. Add this to `~/.claude/settings.json`:
 Claude Code starts writing `~/.vibemeter/statusline-latest.json` on every status-line render. Vibemeter picks it up automatically.
 
 Codex needs **no setup** — its 5h/7d data lives in `~/.codex/sessions/**/rollout-*.jsonl` already.
+
+## Voice notifications (macOS)
+
+Want Claude Code and Codex to **speak + show a notification** the moment they finish — no more tabbing back to check? Vibemeter ships a small speaker script and wires it into both tools for you.
+
+```bash
+vibemeter notify-install
+```
+
+That adds a Stop hook to `~/.claude/settings.json` and sets `notify = [...]` in `~/.codex/config.toml` (both backed up first). When an agent finishes, you'll hear a short *"Claude / Codex {project} 完成"* and see a banner — delivered through a small bundled `Vibemeter.app` so notifications carry the Vibemeter name + icon (system will ask for notification permission the first time). If the bundle isn't built yet, Vibemeter quietly falls back to `osascript`.
+
+Toggle it from <http://localhost:9527/settings> — turn channels on/off, or remove everything with `vibemeter notify-uninstall`. If your Codex config already has a custom `notify` line, Vibemeter detects it and refuses to overwrite. The defaults use the **Tingting** Chinese voice (`say -v Tingting`); set `VIBEMETER_NOTIFY_VOICE` in the hook command to change it.
+
+The installer for new users (`curl ... | bash`) also prompts to enable this during `vibemeter install` — accept or skip, you can always change later in Settings.
 
 ## Demo mode
 
