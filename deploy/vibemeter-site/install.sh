@@ -1,9 +1,4 @@
-import { NextResponse } from 'next/server';
-
-export const dynamic = 'force-static';
-
-export function GET() {
-  const script = `#!/usr/bin/env bash
+#!/usr/bin/env bash
 set -euo pipefail
 
 if ! command -v npm >/dev/null 2>&1; then
@@ -39,12 +34,3 @@ else
   echo "Vibemeter is still starting. Open http://localhost:9527 in a moment."
   echo "Check logs with: vibemeter status"
 fi
-`;
-
-  return new NextResponse(script, {
-    headers: {
-      'Content-Type': 'text/x-shellscript; charset=utf-8',
-      'Cache-Control': 'public, max-age=300',
-    },
-  });
-}

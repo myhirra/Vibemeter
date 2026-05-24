@@ -55,62 +55,145 @@ struct FloatStats: Decodable {
     let lastSession: LastSession?
 }
 
+private func menuBarRemainingPercentText(_ remaining: Double) -> String {
+    let clamped = max(0, min(100, remaining))
+    return "\(clamped >= 100 ? 100 : Int(floor(clamped)))%"
+}
+
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }
 
 final class FloatView: NSView {
+    struct HitRects {
+        var ring: NSRect = .zero
+        var title: NSRect = .zero
+        var refresh: [NSRect] = []
+        var close: NSRect = .zero
+        var claudeToggle: NSRect = .zero
+        var codexToggle: NSRect = .zero
+    }
+
+    static let displayStyleKey = "VMFloatDisplayStyle"
+    static let agentDisplayKey = "VMFloatAgentDisplay"
+
     var stats: FloatStats?
     var statusText = "loading"
     var isExpanded = false
-    var selectedAgent = "claude-code"
+    var displayStyle = "ball"
+    var agentDisplay = "claude-code"
     var onRefresh: (() -> Void)?
     var onOpenDashboard: (() -> Void)?
     var onHide: (() -> Void)?
-    var onAgentChanged: (() -> Void)?
+    var onSettingsChanged: (() -> Void)?
     private var dragStart: NSPoint?
     private var didDrag = false
+    private var hitRects = HitRects()
 
     override var isFlipped: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    private var displayedQuota: FloatQuota? {
-        if let quota = stats?.quotas.first(where: { $0.agent == selectedAgent }) {
-            return quota
+    func loadSettings() {
+        let defaults = UserDefaults.standard
+        if let style = defaults.string(forKey: Self.displayStyleKey), style == "ball" || style == "pill" {
+            displayStyle = style
         }
-        return nil
+        if let agent = defaults.string(forKey: Self.agentDisplayKey),
+           agent == "claude-code" || agent == "codex" || agent == "both" {
+            agentDisplay = agent
+        }
     }
 
-    private var displayedWindow: (remaining: Double?, resetAt: Double?, label: String) {
-        guard let quota = displayedQuota else { return (nil, nil, "no snapshot") }
-        if let five = quota.remaining5h {
-            return (five, quota.resetAt5h, "5h remaining")
-        }
+    func setDisplayStyle(_ value: String) {
+        guard displayStyle != value else { return }
+        displayStyle = value
+        UserDefaults.standard.set(value, forKey: Self.displayStyleKey)
+        onSettingsChanged?()
+    }
+
+    func setAgentDisplay(_ value: String) {
+        guard agentDisplay != value else { return }
+        agentDisplay = value
+        UserDefaults.standard.set(value, forKey: Self.agentDisplayKey)
+        onSettingsChanged?()
+    }
+
+    private var agentsToShow: [String] {
+        if agentDisplay == "both" { return ["claude-code", "codex"] }
+        return [agentDisplay]
+    }
+
+    private func quota(for agent: String) -> FloatQuota? {
+        stats?.quotas.first(where: { $0.agent == agent })
+    }
+
+    private func quotaWindow(_ quota: FloatQuota?) -> (remaining: Double?, resetAt: Double?, label: String) {
+        guard let quota else { return (nil, nil, "no snapshot") }
+        if let five = quota.remaining5h { return (five, quota.resetAt5h, "5h remaining") }
         if let weekly = quota.remainingWeekly { return (weekly, quota.resetAtWeekly, "weekly remaining") }
         return (nil, nil, "no quota")
     }
 
-    private var displayedLive: AgentLive? {
-        stats?.liveByAgent.first(where: { $0.agent == selectedAgent })
+    private func remainingPercentText(_ remaining: Double?) -> String {
+        guard let remaining else { return "--" }
+        let clamped = max(0, min(100, remaining))
+        return "\(clamped >= 100 ? 100 : Int(floor(clamped)))%"
+    }
+
+    private func live(for agent: String) -> AgentLive? {
+        stats?.liveByAgent.first(where: { $0.agent == agent })
+    }
+
+    private var focusAgent: String {
+        if agentDisplay == "both" { return "claude-code" }
+        return agentDisplay
+    }
+
+    func preferredSize() -> NSSize {
+        if isExpanded {
+            return NSSize(width: 306, height: agentDisplay == "both" ? 372 : 260)
+        }
+        switch (displayStyle, agentDisplay) {
+        case ("pill", "both"):
+            return NSSize(width: 280, height: 96)
+        case ("pill", _):
+            return NSSize(width: 280, height: 56)
+        case (_, "both"):
+            return NSSize(width: 132, height: 220)
+        default:
+            return NSSize(width: 112, height: 112)
+        }
     }
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
+        hitRects = HitRects()
 
         let rect = bounds.insetBy(dx: 8, dy: 8)
         drawPanel(in: rect)
+
         if !isExpanded {
-            drawCollapsed(context: context, in: rect)
+            if displayStyle == "pill" {
+                drawPillsCollapsed(context: context, in: rect)
+            } else if agentDisplay == "both" {
+                drawDualBallCollapsed(context: context, in: rect)
+            } else {
+                drawBallCollapsed(context: context, in: rect, agent: agentDisplay)
+            }
             return
         }
+
         drawHeader(in: rect)
-        drawRing(context: context, in: rect)
-        drawPrimary(in: rect)
-        if isExpanded {
-            drawStats(in: rect)
-            drawFooter(in: rect)
+        if agentDisplay == "both" {
+            drawRingBlock(context: context, in: rect, agent: "claude-code", yOffset: -8)
+            drawRingBlock(context: context, in: rect, agent: "codex", yOffset: 86)
+        } else {
+            drawRingBlock(context: context, in: rect, agent: agentDisplay, yOffset: 0)
         }
+        drawStats(in: rect)
+        drawFooter(in: rect)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -136,52 +219,126 @@ final class FloatView: NSView {
     override func mouseUp(with event: NSEvent) {
         dragStart = nil
         if didDrag { return }
-        if event.clickCount == 1 {
-            let point = convert(event.locationInWindow, from: nil)
-            if !isExpanded {
-                isExpanded = true
-                resizeWindowKeepingTopRight(NSSize(width: 306, height: 260))
-                needsDisplay = true
-            } else if titleRect().contains(point) {
-                onOpenDashboard?()
-            } else if ringHitRect().contains(point) {
-                isExpanded = false
-                resizeWindowKeepingTopRight(NSSize(width: 112, height: 112))
-                needsDisplay = true
-            } else if closeButtonRect().contains(point) {
-                onHide?()
-            } else if refreshButtonRect().contains(point) {
-                onRefresh?()
-            } else if claudeButtonRect().contains(point) {
-                selectedAgent = "claude-code"
-                needsDisplay = true
-                onAgentChanged?()
-            } else if codexButtonRect().contains(point) {
-                selectedAgent = "codex"
-                needsDisplay = true
-                onAgentChanged?()
-            }
+        if event.clickCount != 1 { return }
+
+        let point = convert(event.locationInWindow, from: nil)
+
+        if hitRects.refresh.contains(where: { $0.contains(point) }) {
+            onRefresh?()
+            return
         }
+        if isExpanded {
+            if hitRects.close.contains(point) {
+                onHide?()
+                return
+            }
+            if hitRects.title.contains(point) {
+                onOpenDashboard?()
+                return
+            }
+            if hitRects.claudeToggle != .zero && hitRects.claudeToggle.contains(point) {
+                setAgentDisplay("claude-code")
+                return
+            }
+            if hitRects.codexToggle != .zero && hitRects.codexToggle.contains(point) {
+                setAgentDisplay("codex")
+                return
+            }
+            if hitRects.ring != .zero && hitRects.ring.contains(point) {
+                isExpanded = false
+                applyWindowSize()
+                needsDisplay = true
+                return
+            }
+            return
+        }
+
+        // collapsed: any click expands
+        isExpanded = true
+        applyWindowSize()
+        needsDisplay = true
     }
 
     override func rightMouseUp(with event: NSEvent) {
         let menu = NSMenu()
-        menu.addItem(withTitle: isExpanded ? "Collapse" : "Expand", action: #selector(toggleFromMenu), keyEquivalent: "e")
-        menu.addItem(withTitle: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
-        menu.addItem(withTitle: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
+        let toggle = NSMenuItem(title: isExpanded ? "Collapse" : "Expand", action: #selector(toggleFromMenu), keyEquivalent: "e")
+        toggle.target = self
+        menu.addItem(toggle)
+        let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        refresh.target = self
+        menu.addItem(refresh)
+        let dash = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
+        dash.target = self
+        menu.addItem(dash)
         menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Quit Vibemeter Float", action: #selector(quitFromMenu), keyEquivalent: "q")
+        menu.addItem(buildDisplayStyleMenuItem())
+        menu.addItem(buildAgentDisplayMenuItem())
+        menu.addItem(NSMenuItem.separator())
+        let quit = NSMenuItem(title: "Quit Vibemeter Float", action: #selector(quitFromMenu), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
+    }
+
+    func buildDisplayStyleMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Display Style", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for (title, value) in [("Ball", "ball"), ("Pill (horizontal)", "pill")] {
+            let mi = NSMenuItem(title: title, action: #selector(setDisplayStyleFromMenu(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.representedObject = value
+            mi.state = displayStyle == value ? .on : .off
+            sub.addItem(mi)
+        }
+        item.submenu = sub
+        return item
+    }
+
+    func buildAgentDisplayMenuItem() -> NSMenuItem {
+        let item = NSMenuItem(title: "Show Agents", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        let options: [(String, String)] = [
+            ("Claude only", "claude-code"),
+            ("Codex only", "codex"),
+            ("Both", "both"),
+        ]
+        for (title, value) in options {
+            let mi = NSMenuItem(title: title, action: #selector(setAgentDisplayFromMenu(_:)), keyEquivalent: "")
+            mi.target = self
+            mi.representedObject = value
+            mi.state = agentDisplay == value ? .on : .off
+            sub.addItem(mi)
+        }
+        item.submenu = sub
+        return item
     }
 
     @objc private func toggleFromMenu() {
         isExpanded.toggle()
-        resizeWindowKeepingTopRight(NSSize(width: isExpanded ? 306 : 112, height: isExpanded ? 260 : 112))
+        applyWindowSize()
         needsDisplay = true
     }
     @objc private func refreshFromMenu() { onRefresh?() }
     @objc private func openDashboardFromMenu() { onOpenDashboard?() }
     @objc private func quitFromMenu() { NSApp.terminate(nil) }
+
+    @objc private func setDisplayStyleFromMenu(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        setDisplayStyle(value)
+        applyWindowSize()
+        needsDisplay = true
+    }
+
+    @objc private func setAgentDisplayFromMenu(_ sender: NSMenuItem) {
+        guard let value = sender.representedObject as? String else { return }
+        setAgentDisplay(value)
+        applyWindowSize()
+        needsDisplay = true
+    }
+
+    func applyWindowSize() {
+        resizeWindowKeepingTopRight(preferredSize())
+    }
 
     private func drawPanel(in rect: NSRect) {
         let shadow = NSShadow()
@@ -200,18 +357,48 @@ final class FloatView: NSView {
     }
 
     private func drawHeader(in rect: NSRect) {
-        drawText("Vibemeter", rect: titleRect(in: rect), size: 13, weight: .semibold, color: NSColor.white.withAlphaComponent(0.94))
-        drawAgentSwitch(in: agentSwitchRect(in: rect))
-        drawIconButton("↻", rect: refreshButtonRect(in: rect), active: true)
-        drawText("×", rect: closeButtonGlyphRect(in: rect), size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
+        let title = NSRect(x: rect.minX + 20, y: rect.minY + 18, width: 94, height: 18)
+        drawText("Vibemeter", rect: title, size: 13, weight: .semibold, color: NSColor.white.withAlphaComponent(0.94))
+        hitRects.title = title
+
+        if agentDisplay != "both" {
+            let switchRect = NSRect(x: rect.maxX - 180, y: rect.minY + 10, width: 114, height: 27)
+            drawAgentSwitch(in: switchRect)
+            hitRects.claudeToggle = NSRect(x: switchRect.minX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
+            hitRects.codexToggle = NSRect(x: switchRect.midX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
+        }
+
+        let refreshRect = NSRect(x: rect.maxX - 59, y: rect.minY + 10, width: 27, height: 27)
+        drawIconButton("↻", rect: refreshRect, active: true)
+        hitRects.refresh.append(refreshRect)
+
+        let closeGlyph = NSRect(x: rect.maxX - 22, y: rect.minY + 14, width: 14, height: 16)
+        drawText("×", rect: closeGlyph, size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
+        hitRects.close = closeGlyph.insetBy(dx: -8, dy: -6)
     }
 
-    private func drawCollapsed(context: CGContext, in rect: NSRect) {
-        let remaining = displayedWindow.remaining
+    private func drawAgentSwitch(in rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.22).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 13.5, yRadius: 13.5).fill()
+        let isCodex = agentDisplay == "codex"
+        let activeRect = isCodex
+            ? NSRect(x: rect.midX, y: rect.minY + 2, width: rect.width / 2 - 2, height: rect.height - 4)
+            : NSRect(x: rect.minX + 2, y: rect.minY + 2, width: rect.width / 2 - 2, height: rect.height - 4)
+        NSColor(calibratedRed: 0.40, green: 0.28, blue: 0.74, alpha: 0.65).setFill()
+        NSBezierPath(roundedRect: activeRect, xRadius: 11.5, yRadius: 11.5).fill()
+        NSColor.white.withAlphaComponent(0.08).setStroke()
+        NSBezierPath(roundedRect: rect, xRadius: 13.5, yRadius: 13.5).stroke()
+        drawText("Claude", rect: NSRect(x: rect.minX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(agentDisplay == "claude-code" ? 0.92 : 0.52), alignment: .center)
+        drawText("Codex", rect: NSRect(x: rect.midX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(isCodex ? 0.92 : 0.52), alignment: .center)
+    }
+
+    private func drawBallCollapsed(context: CGContext, in rect: NSRect, agent: String) {
+        let q = quota(for: agent)
+        let remaining = quotaWindow(q).remaining
         let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius: CGFloat = min(rect.width, rect.height) / 2 - 15
-        let color = accentColor(remaining: remaining)
+        let color = ringColor(for: agent, remaining: remaining)
 
         context.setLineWidth(8)
         context.setLineCap(.round)
@@ -223,18 +410,29 @@ final class FloatView: NSView {
         context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
         context.strokePath()
 
-        let value = remaining == nil ? "--" : "\(Int(round(remaining!)))%"
+        let value = remainingPercentText(remaining)
         drawText(value, rect: NSRect(x: rect.minX + 12, y: center.y - 15, width: rect.width - 24, height: 30), size: 24, weight: .bold, color: .white, alignment: .center)
+        hitRects.ring = rect
     }
 
-    private func drawRing(context: CGContext, in rect: NSRect) {
-        let remaining = displayedWindow.remaining
-        let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
-        let center = CGPoint(x: rect.minX + 74, y: rect.minY + 99)
-        let radius: CGFloat = 43
-        let color = accentColor(remaining: remaining)
+    private func drawDualBallCollapsed(context: CGContext, in rect: NSRect) {
+        let half = rect.height / 2
+        let topRect = NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: half)
+        let bottomRect = NSRect(x: rect.minX, y: rect.minY + half, width: rect.width, height: half)
+        drawSmallBall(context: context, in: topRect, agent: "claude-code")
+        drawSmallBall(context: context, in: bottomRect, agent: "codex")
+        hitRects.ring = rect
+    }
 
-        context.setLineWidth(9)
+    private func drawSmallBall(context: CGContext, in rect: NSRect, agent: String) {
+        let q = quota(for: agent)
+        let remaining = quotaWindow(q).remaining
+        let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius: CGFloat = min(rect.width, rect.height) / 2 - 14
+        let color = ringColor(for: agent, remaining: remaining)
+
+        context.setLineWidth(6)
         context.setLineCap(.round)
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
         context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
@@ -244,45 +442,171 @@ final class FloatView: NSView {
         context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
         context.strokePath()
 
-        let inner = NSRect(x: center.x - 34, y: center.y - 34, width: 68, height: 68)
+        let value = remainingPercentText(remaining)
+        drawText(value, rect: NSRect(x: rect.minX, y: center.y - 13, width: rect.width, height: 20), size: 15, weight: .bold, color: .white, alignment: .center)
+        let letter = agent == "claude-code" ? "C" : "X"
+        drawText(letter, rect: NSRect(x: rect.minX, y: center.y + 8, width: rect.width, height: 12), size: 9, weight: .semibold, color: NSColor.white.withAlphaComponent(0.55), alignment: .center)
+    }
+
+    private func drawPillsCollapsed(context: CGContext, in rect: NSRect) {
+        let agents = agentsToShow
+        let pillHeight: CGFloat = 36
+        let gap: CGFloat = 8
+        let count = CGFloat(agents.count)
+        let totalHeight = count * pillHeight + max(0, count - 1) * gap
+        let startY = rect.minY + (rect.height - totalHeight) / 2
+
+        for (i, agent) in agents.enumerated() {
+            let y = startY + CGFloat(i) * (pillHeight + gap)
+            let pillRect = NSRect(x: rect.minX + 8, y: y, width: rect.width - 16, height: pillHeight)
+            drawAgentPill(in: pillRect, agent: agent)
+        }
+        hitRects.ring = rect
+    }
+
+    private func drawAgentPill(in rect: NSRect, agent: String) {
+        let q = quota(for: agent)
+        let remaining = quotaWindow(q).remaining
+        let color = ringColor(for: agent, remaining: remaining)
+
+        let radius = rect.height / 2
+        NSColor.black.withAlphaComponent(0.30).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+        let stroke = NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius)
+        NSColor.white.withAlphaComponent(0.08).setStroke()
+        stroke.lineWidth = 1
+        stroke.stroke()
+
+        let labelRect = NSRect(x: rect.minX + 14, y: rect.minY + 11, width: 52, height: 14)
+        drawText(toolName(agent), rect: labelRect, size: 11, weight: .semibold, color: NSColor.white.withAlphaComponent(0.88))
+
+        let pctText = remainingPercentText(remaining)
+        let pctRect = NSRect(x: rect.minX + 66, y: rect.minY + 10, width: 38, height: 15)
+        drawText(pctText, rect: pctRect, size: 12, weight: .bold, color: .white)
+
+        let iconSize: CGFloat = 22
+        let iconRect = NSRect(x: rect.maxX - iconSize - 8, y: rect.minY + (rect.height - iconSize) / 2, width: iconSize, height: iconSize)
+
+        let barX = rect.minX + 108
+        let barRight = iconRect.minX - 8
+        let barWidth = max(0, barRight - barX)
+        let barHeight: CGFloat = 8
+        let barY = rect.minY + (rect.height - barHeight) / 2
+        let trackRect = NSRect(x: barX, y: barY, width: barWidth, height: barHeight)
+        NSColor.white.withAlphaComponent(0.10).setFill()
+        NSBezierPath(roundedRect: trackRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
+        let fillWidth = barWidth * CGFloat(max(0, min(100, remaining ?? 0)) / 100)
+        if fillWidth > 0.5 {
+            color.setFill()
+            let fillRect = NSRect(x: barX, y: barY, width: fillWidth, height: barHeight)
+            NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
+        }
+
+        drawIconButton("↻", rect: iconRect, active: true)
+        hitRects.refresh.append(iconRect)
+    }
+
+    private func drawRingBlock(context: CGContext, in rect: NSRect, agent: String, yOffset: CGFloat) {
+        let dual = agentDisplay == "both"
+        let q = quota(for: agent)
+        let window = quotaWindow(q)
+        let remaining = window.remaining
+        let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
+        let center = CGPoint(x: rect.minX + 70, y: rect.minY + 99 + yOffset)
+        let radius: CGFloat = dual ? 34 : 43
+        let color = ringColor(for: agent, remaining: remaining)
+
+        context.setLineWidth(dual ? 7 : 9)
+        context.setLineCap(.round)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+        context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
+        context.strokePath()
+
+        context.setStrokeColor(color.cgColor)
+        context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
+        context.strokePath()
+
+        let innerHalf: CGFloat = dual ? 26 : 34
+        let inner = NSRect(x: center.x - innerHalf, y: center.y - innerHalf, width: innerHalf * 2, height: innerHalf * 2)
         NSColor(calibratedRed: 0.035, green: 0.037, blue: 0.045, alpha: 1).setFill()
         NSBezierPath(ovalIn: inner).fill()
 
-        let value = remaining == nil ? "--" : "\(Int(round(remaining!)))%"
-        drawText(value, rect: NSRect(x: center.x - 36, y: center.y - 16, width: 72, height: 29), size: 23, weight: .bold, color: .white, alignment: .center)
-    }
+        let value = remainingPercentText(remaining)
+        let valueSize: CGFloat = dual ? 17 : 23
+        drawText(value, rect: NSRect(x: center.x - 36, y: center.y - 13, width: 72, height: 26), size: valueSize, weight: .bold, color: .white, alignment: .center)
 
-    private func drawPrimary(in rect: NSRect) {
-        let quota = displayedQuota
-        let window = displayedWindow
-        let x = rect.minX + 138
-        drawText(quota?.label ?? selectedAgentLabel(), rect: NSRect(x: x, y: rect.minY + 72, width: 130, height: 22), size: 18, weight: .semibold, color: .white)
-        drawText(quota == nil ? statusText : window.label, rect: NSRect(x: x, y: rect.minY + 97, width: 132, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
-        drawText(resetText(window.resetAt), rect: NSRect(x: x, y: rect.minY + 118, width: 132, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
-        if let account = quota?.accountLabel, !account.isEmpty {
-            drawText(account, rect: NSRect(x: x, y: rect.minY + 139, width: 132, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
+        let x = rect.minX + 134
+        let baseY = rect.minY + (dual ? 78 : 72) + yOffset
+        drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: 140, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
+        drawText(q == nil ? statusText : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
+        drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
+        if let account = q?.accountLabel, !account.isEmpty, !dual {
+            drawText(account, rect: NSRect(x: x, y: baseY + 67, width: 140, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
+        }
+
+        if yOffset <= 0 {
+            hitRects.ring = NSRect(x: center.x - radius - 8, y: center.y - radius - 8, width: radius * 2 + 16, height: radius * 2 + 16)
         }
     }
 
     private func drawStats(in rect: NSRect) {
-        let top = rect.minY + 164
+        let dual = agentDisplay == "both"
+        let offset: CGFloat = dual ? 94 : 0
+        let top = rect.minY + 164 + offset
         drawMetric(title: "today", value: "\(stats?.todaySessions ?? 0)", rect: NSRect(x: rect.minX + 20, y: top, width: 74, height: 50))
         drawMetric(title: "total", value: "\(stats?.totalSessions ?? 0)", rect: NSRect(x: rect.minX + 104, y: top, width: 74, height: 50))
-        let weekly = displayedQuota?.remainingWeekly
-        drawMetric(title: "weekly", value: weekly == nil ? "--" : "\(Int(round(weekly!)))%", rect: NSRect(x: rect.minX + 188, y: top, width: 74, height: 50))
+        let weeklyRect = NSRect(x: rect.minX + 188, y: top, width: 74, height: 50)
+        if dual {
+            drawDualWeekly(rect: weeklyRect)
+        } else {
+            let weekly = quota(for: focusAgent)?.remainingWeekly
+            drawMetric(title: "weekly", value: remainingPercentText(weekly), rect: weeklyRect)
+        }
+    }
+
+    private func drawDualWeekly(rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.20).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
+        NSColor.white.withAlphaComponent(0.06).setStroke()
+        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).stroke()
+        drawText("weekly", rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 12), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
+        let c = quota(for: "claude-code")?.remainingWeekly
+        let x = quota(for: "codex")?.remainingWeekly
+        let cText = "C \(remainingPercentText(c))"
+        let xText = "X \(remainingPercentText(x))"
+        drawText(cText, rect: NSRect(x: rect.minX, y: rect.minY + 22, width: rect.width, height: 13), size: 11, weight: .semibold, color: .white, alignment: .center)
+        drawText(xText, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 13), size: 11, weight: .semibold, color: NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1), alignment: .center)
     }
 
     private func drawFooter(in rect: NSRect) {
-        let live = displayedLive
-        let session = live?.activeSession ?? live?.recentSession
-        let prefix = live?.state == "active" ? "active" : live?.state == "recent" ? "done" : "latest"
-        let line = session == nil ? "No recent \(selectedAgentLabel()) session" : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
+        if agentDisplay == "both" {
+            let topY = rect.maxY - 32
+            let bottomY = rect.maxY - 16
+            drawFooterLine(agent: "claude-code", rect: NSRect(x: rect.minX + 22, y: topY, width: rect.width - 44, height: 14))
+            drawFooterLine(agent: "codex", rect: NSRect(x: rect.minX + 22, y: bottomY, width: rect.width - 44, height: 14))
+            return
+        }
+        let l = live(for: focusAgent)
+        let session = l?.activeSession ?? l?.recentSession
+        let prefix = l?.state == "active" ? "active" : l?.state == "recent" ? "done" : "latest"
+        let agentName = toolName(focusAgent)
+        let line = session == nil ? "No recent \(agentName) session" : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
         drawText(line, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 32, width: rect.width - 74, height: 16), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.72))
         if let title = session?.title, !title.isEmpty {
             drawText(title, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.38))
         } else {
             drawText("double-click dashboard · drag anywhere", rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.35))
         }
+    }
+
+    private func drawFooterLine(agent: String, rect: NSRect) {
+        let l = live(for: agent)
+        let session = l?.activeSession ?? l?.recentSession
+        let prefix = l?.state == "active" ? "active" : l?.state == "recent" ? "done" : "latest"
+        let name = toolName(agent)
+        let line = session == nil ? "\(name) · no recent session" : "\(name) · \(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
+        let labelColor = agent == "codex" ? NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 0.95) : NSColor.white.withAlphaComponent(0.72)
+        drawText(line, rect: rect, size: 11, weight: .medium, color: labelColor)
     }
 
     private func drawMetric(title: String, value: String, rect: NSRect) {
@@ -294,71 +618,13 @@ final class FloatView: NSView {
         drawText(value, rect: NSRect(x: rect.minX, y: rect.minY + 25, width: rect.width, height: 20), size: 15, weight: .semibold, color: .white, alignment: .center)
     }
 
-    private func drawPill(_ text: String, rect: NSRect, active: Bool) {
-        (active ? NSColor(calibratedRed: 0.31, green: 0.19, blue: 0.62, alpha: 0.45) : NSColor.white.withAlphaComponent(0.06)).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 12, yRadius: 12).fill()
-        drawText(text, rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 13), size: 10, weight: .medium, color: NSColor.white.withAlphaComponent(0.80), alignment: .center)
-    }
-
-    private func drawAgentSwitch(in rect: NSRect) {
-        NSColor.black.withAlphaComponent(0.22).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 13.5, yRadius: 13.5).fill()
-        let activeRect = selectedAgent == "codex"
-            ? NSRect(x: rect.midX, y: rect.minY + 2, width: rect.width / 2 - 2, height: rect.height - 4)
-            : NSRect(x: rect.minX + 2, y: rect.minY + 2, width: rect.width / 2 - 2, height: rect.height - 4)
-        NSColor(calibratedRed: 0.40, green: 0.28, blue: 0.74, alpha: 0.65).setFill()
-        NSBezierPath(roundedRect: activeRect, xRadius: 11.5, yRadius: 11.5).fill()
-        NSColor.white.withAlphaComponent(0.08).setStroke()
-        NSBezierPath(roundedRect: rect, xRadius: 13.5, yRadius: 13.5).stroke()
-        drawText("Claude", rect: NSRect(x: rect.minX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(selectedAgent == "claude-code" ? 0.92 : 0.52), alignment: .center)
-        drawText("Codex", rect: NSRect(x: rect.midX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(selectedAgent == "codex" ? 0.92 : 0.52), alignment: .center)
-    }
-
     private func drawIconButton(_ text: String, rect: NSRect, active: Bool) {
         (active ? NSColor(calibratedRed: 0.31, green: 0.19, blue: 0.62, alpha: 0.55) : NSColor.white.withAlphaComponent(0.07)).setFill()
         NSBezierPath(ovalIn: rect).fill()
         NSColor.white.withAlphaComponent(active ? 0.12 : 0.08).setStroke()
         NSBezierPath(ovalIn: rect).stroke()
-        drawText(text, rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 14), size: 12, weight: .semibold, color: NSColor.white.withAlphaComponent(0.82), alignment: .center)
-    }
-
-    private func ringHitRect(in rect: NSRect? = nil) -> NSRect {
-        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        return NSRect(x: base.minX + 22, y: base.minY + 47, width: 104, height: 104)
-    }
-
-    private func titleRect(in rect: NSRect? = nil) -> NSRect {
-        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        return NSRect(x: base.minX + 20, y: base.minY + 18, width: 94, height: 18)
-    }
-
-    private func agentSwitchRect(in rect: NSRect? = nil) -> NSRect {
-        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        return NSRect(x: base.maxX - 180, y: base.minY + 10, width: 114, height: 27)
-    }
-
-    private func claudeButtonRect() -> NSRect {
-        let rect = agentSwitchRect()
-        return NSRect(x: rect.minX, y: rect.minY, width: rect.width / 2, height: rect.height)
-    }
-
-    private func codexButtonRect() -> NSRect {
-        let rect = agentSwitchRect()
-        return NSRect(x: rect.midX, y: rect.minY, width: rect.width / 2, height: rect.height)
-    }
-
-    private func refreshButtonRect(in rect: NSRect? = nil) -> NSRect {
-        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        return NSRect(x: base.maxX - 59, y: base.minY + 10, width: 27, height: 27)
-    }
-
-    private func closeButtonGlyphRect(in rect: NSRect? = nil) -> NSRect {
-        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        return NSRect(x: base.maxX - 22, y: base.minY + 14, width: 14, height: 16)
-    }
-
-    private func closeButtonRect() -> NSRect {
-        closeButtonGlyphRect().insetBy(dx: -8, dy: -6)
+        let textY = rect.minY + (rect.height - 14) / 2
+        drawText(text, rect: NSRect(x: rect.minX, y: textY, width: rect.width, height: 14), size: 12, weight: .semibold, color: NSColor.white.withAlphaComponent(0.82), alignment: .center)
     }
 
     private func resizeWindowKeepingTopRight(_ size: NSSize) {
@@ -393,6 +659,13 @@ final class FloatView: NSView {
         return NSColor.systemGreen
     }
 
+    private func ringColor(for agent: String, remaining: Double?) -> NSColor {
+        if agentDisplay == "both" && agent == "codex" {
+            return NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1)
+        }
+        return accentColor(remaining: remaining)
+    }
+
     private func resetText(_ value: Double?) -> String {
         guard let value else { return "no reset time" }
         let diff = (value / 1000) - Date().timeIntervalSince1970
@@ -407,10 +680,6 @@ final class FloatView: NSView {
         if value == "codex" { return "Codex" }
         if value == "cursor" { return "Cursor" }
         return value
-    }
-
-    private func selectedAgentLabel() -> String {
-        selectedAgent == "claude-code" ? "Claude" : "Codex"
     }
 
     private func durationText(_ ms: Double) -> String {
@@ -443,8 +712,12 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        let view = FloatView(frame: NSRect(x: 0, y: 0, width: 112, height: 112))
+        view.loadSettings()
+        let initial = view.preferredSize()
+
         let panel = FloatingPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 112, height: 112),
+            contentRect: NSRect(x: 0, y: 0, width: initial.width, height: initial.height),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -459,24 +732,27 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         panel.hasShadow = false
         panel.setFrameAutosaveName("VibemeterFloatingWindow")
 
-        let view = FloatView(frame: panel.contentView?.bounds ?? NSRect(x: 0, y: 0, width: 112, height: 112))
+        view.frame = panel.contentView?.bounds ?? NSRect(origin: .zero, size: initial)
         view.autoresizingMask = [.width, .height]
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         view.onRefresh = { [weak self] in self?.refreshNow() }
-        view.onAgentChanged = { [weak self] in self?.refreshNow() }
+        view.onSettingsChanged = { [weak self] in
+            self?.refreshNow()
+            self?.rebuildStatusMenu()
+        }
         view.onHide = { [weak self] in self?.hidePanel() }
         view.onOpenDashboard = { [weak self] in
             guard let self else { return }
             NSWorkspace.shared.open(self.pageURL.deletingLastPathComponent())
         }
 
-        setupStatusItem()
         panel.contentView = view
         placeAtTopRight(panel)
         panel.orderFrontRegardless()
         self.panel = panel
         self.contentView = view
+        setupStatusItem(initialView: view)
 
         refreshNow()
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
@@ -484,18 +760,35 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func setupStatusItem() {
+    private func setupStatusItem(initialView: FloatView) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.title = "Vibe"
-        let menu = NSMenu()
-        menu.addItem(withTitle: "Show Float", action: #selector(showPanelFromMenu), keyEquivalent: "s")
-        menu.addItem(withTitle: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
-        menu.addItem(withTitle: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(withTitle: "Quit", action: #selector(quitFromMenu), keyEquivalent: "q")
-        for item in menu.items { item.target = self }
-        item.menu = menu
         statusItem = item
+        rebuildStatusMenu()
+    }
+
+    private func rebuildStatusMenu() {
+        guard let statusItem else { return }
+        let menu = NSMenu()
+        let show = NSMenuItem(title: "Show Float", action: #selector(showPanelFromMenu), keyEquivalent: "s")
+        show.target = self
+        menu.addItem(show)
+        let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        refresh.target = self
+        menu.addItem(refresh)
+        let dash = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
+        dash.target = self
+        menu.addItem(dash)
+        menu.addItem(NSMenuItem.separator())
+        if let view = contentView {
+            menu.addItem(view.buildDisplayStyleMenuItem())
+            menu.addItem(view.buildAgentDisplayMenuItem())
+            menu.addItem(NSMenuItem.separator())
+        }
+        let quit = NSMenuItem(title: "Quit", action: #selector(quitFromMenu), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        statusItem.menu = menu
     }
 
     private func hidePanel() {
@@ -568,7 +861,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
                 let stats = try JSONDecoder().decode(FloatStats.self, from: data)
                 DispatchQueue.main.async {
                     self.contentView?.stats = stats
-                    self.contentView?.statusText = stats.quotas.contains(where: { $0.agent == self.contentView?.selectedAgent }) ? "loaded" : "no snapshot"
+                    self.contentView?.statusText = stats.quotas.isEmpty ? "no snapshot" : "loaded"
                     self.contentView?.needsDisplay = true
                     self.updateStatusItem(stats)
                     if self.panel?.isVisible == true {
@@ -585,13 +878,29 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     }
 
     private func updateStatusItem(_ stats: FloatStats) {
-        let agent = contentView?.selectedAgent ?? "claude-code"
-        let quota = stats.quotas.first(where: { $0.agent == agent })
-        if let remaining = quota?.remaining5h {
-            let prefix = agent == "claude-code" ? "C" : "X"
-            statusItem?.button?.title = "\(prefix) \(Int(round(remaining)))%"
+        guard let view = contentView else { return }
+        if view.agentDisplay == "both" {
+            let c = stats.quotas.first(where: { $0.agent == "claude-code" })?.remaining5h
+            let x = stats.quotas.first(where: { $0.agent == "codex" })?.remaining5h
+            switch (c, x) {
+            case let (cv?, xv?):
+                statusItem?.button?.title = "C \(menuBarRemainingPercentText(cv)) · X \(menuBarRemainingPercentText(xv))"
+            case let (cv?, nil):
+                statusItem?.button?.title = "C \(menuBarRemainingPercentText(cv))"
+            case let (nil, xv?):
+                statusItem?.button?.title = "X \(menuBarRemainingPercentText(xv))"
+            default:
+                statusItem?.button?.title = "Vibe"
+            }
         } else {
-            statusItem?.button?.title = "Vibe"
+            let agent = view.agentDisplay
+            let remaining = stats.quotas.first(where: { $0.agent == agent })?.remaining5h
+            if let remaining {
+                let prefix = agent == "claude-code" ? "C" : "X"
+                statusItem?.button?.title = "\(prefix) \(menuBarRemainingPercentText(remaining))"
+            } else {
+                statusItem?.button?.title = "Vibe"
+            }
         }
     }
 }

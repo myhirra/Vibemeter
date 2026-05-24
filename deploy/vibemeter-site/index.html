@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vibemeter — Local-first dashboard for Claude Code, Codex & Cursor</title>
+    <meta
+      name="description"
+      content="Track Claude Code, Codex and Cursor usage windows, spending, sessions and activity heatmap. 100% local — no telemetry, no cloud, no API calls. macOS floating widget included."
+    />
+    <meta
+      name="keywords"
+      content="claude code, codex, cursor, ai coding, usage tracker, session tracker, local-first, dashboard, macOS, anthropic, openai"
+    />
+    <link rel="canonical" href="https://vibemeter.siney.top/" />
+    <meta name="theme-color" content="#9b7cff" />
+    <meta name="author" content="hirra" />
+
+    <!-- Open Graph (Facebook / LinkedIn / 微信 / Slack) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vibemeter.siney.top/" />
+    <meta property="og:title" content="Vibemeter — Local-first AI coding meter" />
+    <meta
+      property="og:description"
+      content="Claude Code · Codex · Cursor 会话与额度仪表盘。所有数据留在本机，零遥测、零云端。Install once, track usage and sessions locally."
+    />
+    <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
+    <meta property="og:image:width" content="1440" />
+    <meta property="og:image:height" content="900" />
+    <meta property="og:image:alt" content="Vibemeter dashboard screenshot" />
+    <meta property="og:site_name" content="Vibemeter" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter / X Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vibemeter — Local-first AI coding meter" />
+    <meta
+      name="twitter:description"
+      content="Track Claude Code, Codex & Cursor usage, sessions, and activity — 100% local."
+    />
+    <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
+
+    <!-- Favicon (inline SVG with brand purple V) -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307070a'/%3E%3Cpath d='M14 18 L32 50 L50 18' stroke='%239b7cff' stroke-width='8' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
+    <link rel="apple-touch-icon" href="/og.png" />
+
+    <!-- Structured data for Google rich results -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vibemeter",
+        "description": "Local-first dashboard for Claude Code, Codex and Cursor — usage windows, spending, sessions, activity heatmap, achievements.",
+        "url": "https://vibemeter.siney.top/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows (CLI)",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "softwareVersion": "0.1.4",
+        "author": { "@type": "Person", "name": "hirra" },
+        "downloadUrl": "https://vibemeter.siney.top/install.sh",
+        "image": "https://vibemeter.siney.top/og.png",
+        "license": "https://github.com/myhirra/Vibemeter/blob/main/LICENSE"
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07070a;
+        --panel: #141419;
+        --line: rgba(255, 255, 255, 0.1);
+        --muted: rgba(244, 244, 245, 0.55);
+        --text: #f4f4f5;
+        --green: #2ee66b;
+        --purple: #9b7cff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          monospace;
+      }
+
+      main {
+        width: min(1040px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 64px 0 48px;
+      }
+
+      @media (max-width: 600px) {
+        main {
+          width: calc(100vw - 28px);
+          padding: 36px 0 40px;
+        }
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 56px;
+      }
+
+      .brand {
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .brand span {
+        color: var(--purple);
+      }
+
+      .pill {
+        border: 1px solid rgba(155, 124, 255, 0.55);
+        border-radius: 999px;
+        padding: 10px 14px;
+        color: rgba(244, 244, 245, 0.72);
+        text-decoration: none;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 48px;
+        align-items: center;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 780px;
+        font-size: clamp(34px, 6vw, 72px);
+        line-height: 1.02;
+        letter-spacing: -0.01em;
+      }
+
+      .lead {
+        margin: 24px 0 0;
+        max-width: 680px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      .install {
+        margin-top: 36px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .install code {
+        flex: 1 1 320px;
+        min-width: 0;
+      }
+
+      code {
+        display: block;
+        max-width: 100%;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101014;
+        padding: 14px 16px;
+        color: #ffffff;
+        font-size: 13.5px;
+        line-height: 1.5;
+        white-space: nowrap;
+        scrollbar-width: thin;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 8px;
+        background: var(--purple);
+        color: #09090b;
+        padding: 14px 18px;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 600px) {
+        .install {
+          flex-direction: column;
+          gap: 10px;
+        }
+        .install code {
+          flex: 1 1 auto;
+          font-size: 12.5px;
+          padding: 12px 14px;
+        }
+        .button {
+          width: 100%;
+        }
+      }
+
+      .float {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        background: rgba(20, 20, 25, 0.94);
+        padding: 18px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      }
+
+      .float-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+
+      .toggle {
+        display: flex;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.06);
+        padding: 3px;
+      }
+
+      .toggle span {
+        padding: 8px 14px;
+        border-radius: 999px;
+        color: rgba(255, 255, 255, 0.58);
+        font-size: 12px;
+      }
+
+      .toggle span:first-child {
+        background: rgba(155, 124, 255, 0.72);
+        color: white;
+      }
+
+      .meter {
+        display: grid;
+        grid-template-columns: 112px 1fr;
+        gap: 22px;
+        align-items: center;
+      }
+
+      .ring {
+        width: 112px;
+        height: 112px;
+        border-radius: 999px;
+        display: grid;
+        place-items: center;
+        background:
+          radial-gradient(circle at center, #09090d 0 50%, transparent 51%),
+          conic-gradient(var(--green) 0 82%, rgba(255, 255, 255, 0.1) 82% 100%);
+        font-size: 30px;
+        font-weight: 900;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: rgba(0, 0, 0, 0.18);
+      }
+
+      .metric b {
+        display: block;
+        margin-top: 6px;
+        font-size: 18px;
+      }
+
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      footer {
+        margin-top: 72px;
+        color: rgba(244, 244, 245, 0.38);
+        font-size: 13px;
+      }
+
+      /* 中等屏 / iPad / 小笔记本：直接堆叠，避免右侧 meter 卡片被挤、
+         左侧 install 命令换行难看。1024 以上才两列。 */
+      @media (max-width: 1024px) {
+        .hero {
+          grid-template-columns: 1fr;
+          gap: 36px;
+        }
+
+        .float {
+          max-width: 420px;
+        }
+
+        h1 {
+          max-width: 100%;
+        }
+
+        .lead {
+          max-width: 100%;
+        }
+      }
+
+      @media (max-width: 820px) {
+        header {
+          margin-bottom: 32px;
+        }
+
+        .install {
+          margin-top: 28px;
+        }
+
+        footer {
+          margin-top: 48px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="brand"><span>Vibe</span>meter</div>
+        <a class="pill" href="https://github.com/myhirra/Vibemeter">GitHub</a>
+      </header>
+
+      <section class="hero">
+        <div>
+          <h1>Local-first AI coding meter.</h1>
+          <p class="lead">
+            Track Claude Code, Codex, and Cursor sessions with usage windows,
+            local account history, and a native macOS floating meter. Data stays
+            on your machine.
+          </p>
+          <div class="install">
+            <code>curl -fsSL https://vibemeter.siney.top/install.sh | bash</code>
+            <button class="button" type="button" onclick="navigator.clipboard.writeText('curl -fsSL https://vibemeter.siney.top/install.sh | bash')">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div class="float" aria-hidden="true">
+          <div class="float-top">
+            <strong>Vibemeter</strong>
+            <div class="toggle"><span>Claude</span><span>Codex</span></div>
+          </div>
+          <div class="meter">
+            <div class="ring">82%</div>
+            <div>
+              <h2>Claude</h2>
+              <div class="muted">5h remaining</div>
+              <div class="muted">resets in 1h 22m</div>
+            </div>
+          </div>
+          <div class="metrics">
+            <div class="metric"><span class="muted">today</span><b>11</b></div>
+            <div class="metric"><span class="muted">total</span><b>342</b></div>
+            <div class="metric"><span class="muted">weekly</span><b>45%</b></div>
+          </div>
+        </div>
+      </section>
+
+      <footer>Install requires Node.js 20+ and npm. macOS users get the floating meter automatically.</footer>
+    </main>
+  </body>
+</html>
