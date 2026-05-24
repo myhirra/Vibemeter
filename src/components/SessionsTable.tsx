@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { useT } from '@/lib/i18n/client';
 
 export interface SessionEntry {
   id: string;
@@ -17,7 +18,7 @@ export interface SessionEntry {
 const PRESET_TAGS = ['blocked', 'poc', 'spike', 'review', 'done'];
 
 function formatTime(ms: number): string {
-  return new Date(ms).toLocaleString('zh-CN', {
+  return new Date(ms).toLocaleString(undefined, {
     month: '2-digit', day: '2-digit',
     hour: '2-digit', minute: '2-digit', hour12: false,
   });
@@ -26,8 +27,8 @@ function cwdBasename(cwd: string | null): string {
   if (!cwd) return '—';
   return cwd.split('/').filter(Boolean).pop() ?? cwd;
 }
-function duration(startMs: number, endMs: number | null): string {
-  if (!endMs) return 'active';
+function duration(startMs: number, endMs: number | null, activeLabel: string): string {
+  if (!endMs) return activeLabel;
   const mins = Math.round((endMs - startMs) / 60_000);
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
@@ -64,6 +65,7 @@ function TagChip({ label, onRemove }: { label: string; onRemove?: () => void }) 
 }
 
 export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
+  const t = useT();
   const [search, setSearch] = useState('');
   const [tagStates, setTagStates] = useState<Record<string, string[]>>({});
   const [tagInput, setTagInput] = useState<Record<string, string>>({});
@@ -107,31 +109,31 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800 gap-4">
-        <h2 className="text-sm font-medium text-zinc-300 shrink-0">Recent Sessions</h2>
+        <h2 className="text-sm font-medium text-zinc-300 shrink-0">{t('card.sessions.recent')}</h2>
         <input
           type="text"
-          placeholder="search project / title…"
+          placeholder={t('card.sessions.search')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="flex-1 max-w-xs bg-zinc-800 border border-zinc-700 rounded px-3 py-1 text-xs text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
         />
         <span className="text-xs text-zinc-500 shrink-0">
-          {sessions.filter((s) => !s.ended_at).length} active · {filtered.length}/{sessions.length}
+          {t('card.sessions.activeCount', { active: sessions.filter((s) => !s.ended_at).length, shown: filtered.length, total: sessions.length })}
         </span>
       </div>
 
       {filtered.length === 0 ? (
-        <p className="px-5 py-8 text-zinc-600 text-sm text-center">No sessions match.</p>
+        <p className="px-5 py-8 text-zinc-600 text-sm text-center">{t('card.sessions.noMatch')}</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-zinc-500 border-b border-zinc-800">
-              <th className="px-4 py-2 text-left font-normal">started</th>
-              <th className="px-4 py-2 text-left font-normal">tool</th>
-              <th className="px-4 py-2 text-left font-normal">project · title</th>
-              <th className="px-4 py-2 text-left font-normal">dur</th>
-              <th className="px-4 py-2 text-left font-normal">status</th>
-              <th className="px-4 py-2 text-left font-normal">tags</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.started')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.tool')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.project')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.duration')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.status')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.tags')}</th>
             </tr>
           </thead>
           <tbody>
@@ -159,16 +161,16 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                       )}
                     </td>
                     <td className="px-4 py-2 text-zinc-500 tabular-nums text-xs">
-                      {duration(s.started_at, s.ended_at ?? null)}
+                      {duration(s.started_at, s.ended_at ?? null, t('card.sessions.active'))}
                     </td>
                     <td className="px-4 py-2">
                       {isActive ? (
                         <span className="inline-flex items-center gap-1 text-emerald-400 text-xs">
                           <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
-                          active
+                          {t('card.sessions.active')}
                         </span>
                       ) : (
-                        <span className="text-zinc-700 text-xs">done</span>
+                        <span className="text-zinc-700 text-xs">{t('card.sessions.done')}</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
@@ -186,7 +188,7 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                                 if (e.key === 'Enter') { addTag(s, tagInput[s.id] ?? ''); }
                                 if (e.key === 'Escape') setTagOpen(null);
                               }}
-                              placeholder="tag…"
+                              placeholder={t('card.sessions.tagPlaceholder')}
                               className="w-16 bg-zinc-800 border border-zinc-600 rounded px-1 py-0.5 text-xs text-zinc-200 focus:outline-none"
                             />
                             <div className="flex gap-1">

@@ -1,8 +1,10 @@
 'use client';
 
 import type { FileHotspot } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 export function FileHotspots({ data }: { data: FileHotspot[] }) {
+  const t = useT();
   if (data.length === 0) return null;
 
   const max = data[0].changes;
@@ -14,7 +16,7 @@ export function FileHotspots({ data }: { data: FileHotspot[] }) {
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">file hotspots</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.hotspots.title')}</p>
       <div className="space-y-2">
         {data.map((f) => (
           <div key={f.path}>
@@ -24,7 +26,7 @@ export function FileHotspots({ data }: { data: FileHotspot[] }) {
                 {basename(f.path)}
               </span>
               <span className="text-zinc-500 tabular-nums ml-2 shrink-0">
-                {f.changes}× · {f.sessions} sessions
+                {f.changes}× · {f.sessions} {t('card.hotspots.sessions')}
               </span>
             </div>
             <div className="h-1 bg-zinc-800 rounded">

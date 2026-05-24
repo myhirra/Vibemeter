@@ -2,24 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { FloatQuota, FloatStats } from '@/lib/float-stats';
+import { useT } from '@/lib/i18n/client';
 
-function formatReset(ms: number | null) {
-  if (!ms) return 'unknown reset';
+function formatReset(ms: number | null, t: (k: string, v?: Record<string, string | number>) => string) {
+  if (!ms) return t('float.unknownReset');
   const diff = ms - Date.now();
-  if (diff <= 0) return 'snapshot expired';
+  if (diff <= 0) return t('float.snapshotExpired');
   const hours = Math.floor(diff / 3_600_000);
   const minutes = Math.floor((diff % 3_600_000) / 60_000);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
 }
 
-function formatAge(ms: number | null) {
-  if (!ms) return 'no snapshot';
+function formatAge(ms: number | null, t: (k: string, v?: Record<string, string | number>) => string) {
+  if (!ms) return t('float.noSnapshot');
   const diff = Math.max(0, Date.now() - ms);
   const minutes = Math.floor(diff / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  return `${Math.floor(minutes / 60)}h ago`;
+  if (minutes < 1) return t('float.justNow');
+  if (minutes < 60) return t('float.minAgo', { n: minutes });
+  return t('float.hourAgo', { n: Math.floor(minutes / 60) });
 }
 
 function toolLabel(tool: string) {
@@ -50,6 +51,7 @@ function formatUsedPercent(value: number | null | undefined) {
 }
 
 export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
+  const t = useT();
   const [stats, setStats] = useState(initialStats);
   const [expanded, setExpanded] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -103,7 +105,7 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
                 {formatRemainingPercent(remaining)}
               </span>
               <span className="mt-1 block text-[11px] text-zinc-500">
-                {primary ? '5h remaining' : 'no quota'}
+                {primary ? t('float.fiveHRemain') : t('float.noQuota')}
               </span>
             </span>
           </span>
@@ -116,14 +118,14 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
             disabled={busy}
             className="rounded-full border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-100 transition-colors hover:bg-violet-500/20 disabled:opacity-50"
           >
-            {busy ? 'Refreshing' : 'Refresh'}
+            {busy ? t('float.refreshing') : t('float.refresh')}
           </button>
           <a
             href="/"
             target="_blank"
             className="rounded-full border border-zinc-700 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100"
           >
-            Dashboard
+            {t('common.dashboard')}
           </a>
         </div>
 
@@ -132,29 +134,29 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-xs text-zinc-500">
-                  {primary?.accountLabel ?? 'current quota'}
+                  {primary?.accountLabel ?? t('float.currentQuota')}
                 </p>
                 <p className="mt-1 text-sm font-medium text-zinc-100">
-                  {primary ? `${formatUsedPercent(primary.used5h)} used` : 'No snapshot'}
+                  {primary ? t('float.usedPct', { pct: formatUsedPercent(primary.used5h) }) : t('float.usedNo')}
                 </p>
               </div>
               <div className="text-right text-xs text-zinc-500">
-                <p>{formatReset(primary?.resetAt5h ?? null)}</p>
-                <p className="mt-1">{formatAge(primary?.capturedAt ?? null)}</p>
+                <p>{formatReset(primary?.resetAt5h ?? null, t)}</p>
+                <p className="mt-1">{formatAge(primary?.capturedAt ?? null, t)}</p>
               </div>
             </div>
 
             <div className="mt-3 grid grid-cols-3 gap-2">
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">today</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statToday')}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-100">{stats.todaySessions}</p>
               </div>
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">total</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statTotal')}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-100">{stats.totalSessions}</p>
               </div>
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">weekly</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statWeekly')}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-100">{formatRemainingPercent(primary?.remainingWeekly)}</p>
               </div>
             </div>
@@ -167,13 +169,13 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
                 </div>
               ))}
               {stats.todayByTool.length === 0 && (
-                <p className="text-xs text-zinc-600">No sessions today</p>
+                <p className="text-xs text-zinc-600">{t('float.noToday')}</p>
               )}
             </div>
 
             {stats.lastSession && (
               <div className="mt-3 border-t border-zinc-800 pt-3">
-                <p className="text-[10px] uppercase tracking-wider text-zinc-600">latest</p>
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.latest')}</p>
                 <p className="mt-1 truncate text-xs text-zinc-300">
                   {toolLabel(stats.lastSession.tool)} · {stats.lastSession.project}
                 </p>

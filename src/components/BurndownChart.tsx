@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import type { BurndownPoint } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 const W = 560, H = 120, PL = 32, PR = 8, PT = 4, PB = 4;
 
@@ -25,6 +26,7 @@ interface HoverState {
 }
 
 export function BurndownChart({ data, label = 'claude code' }: { data: BurndownPoint[]; label?: string }) {
+  const t = useT();
   const svgRef = useRef<SVGSVGElement>(null);
   const [hover, setHover] = useState<HoverState | null>(null);
 
@@ -54,8 +56,8 @@ export function BurndownChart({ data, label = 'claude code' }: { data: BurndownP
   if (data.length < 2) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">usage history (7d) · {label}</p>
-        <p className="text-zinc-600 text-sm">not enough data yet</p>
+        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{t('card.burndown.header', { label })}</p>
+        <p className="text-zinc-600 text-sm">{t('card.burndown.notEnough')}</p>
       </div>
     );
   }
@@ -68,7 +70,7 @@ export function BurndownChart({ data, label = 'claude code' }: { data: BurndownP
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5 relative">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">usage history (7d) · {label}</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.burndown.header', { label })}</p>
 
       <svg
         ref={svgRef}
@@ -124,10 +126,10 @@ export function BurndownChart({ data, label = 'claude code' }: { data: BurndownP
         >
           <p className="text-zinc-400 mb-1">{fmtTs(hover.point.ts)}</p>
           {hover.point.pct5h != null && (
-            <p className="text-violet-400">5h: {hover.point.pct5h.toFixed(0)}% used</p>
+            <p className="text-violet-400">{t('card.burndown.legend5h')}: {hover.point.pct5h.toFixed(0)}% {t('card.burndown.tipUsed')}</p>
           )}
           {hover.point.pctWeekly != null && (
-            <p className="text-emerald-400">7day: {hover.point.pctWeekly.toFixed(0)}% used</p>
+            <p className="text-emerald-400">{t('card.burndown.legend7d')}: {hover.point.pctWeekly.toFixed(0)}% {t('card.burndown.tipUsed')}</p>
           )}
         </div>
       )}
@@ -135,8 +137,8 @@ export function BurndownChart({ data, label = 'claude code' }: { data: BurndownP
       <div className="flex items-center justify-between mt-1 text-xs text-zinc-600">
         <span>{fmtTs(minTs)}</span>
         <div className="flex gap-4">
-          <span className="text-violet-400">— 5h {last5h != null ? `(${last5h.toFixed(0)}% used)` : ''}</span>
-          <span className="text-emerald-400">-- 7day {lastWeekly != null ? `(${lastWeekly.toFixed(0)}% used)` : ''}</span>
+          <span className="text-violet-400">— {t('card.burndown.legend5h')} {last5h != null ? `(${last5h.toFixed(0)}% ${t('card.burndown.tipUsed')})` : ''}</span>
+          <span className="text-emerald-400">-- {t('card.burndown.legend7d')} {lastWeekly != null ? `(${lastWeekly.toFixed(0)}% ${t('card.burndown.tipUsed')})` : ''}</span>
         </div>
         <span>{fmtTs(maxTs)}</span>
       </div>

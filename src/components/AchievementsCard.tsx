@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { Achievement } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 function fmtProgress(a: Achievement): string {
   if (!a.progress) return '';
@@ -15,7 +16,16 @@ function fmtProgress(a: Achievement): string {
 }
 
 export function AchievementsCard({ data }: { data: Achievement[] }) {
+  const t = useT();
   const [showAll, setShowAll] = useState(false);
+  const tt = (id: string, fallback: string) => {
+    const out = t(`achv.${id}.title`);
+    return out === `achv.${id}.title` ? fallback : out;
+  };
+  const td = (id: string, fallback: string) => {
+    const out = t(`achv.${id}.desc`);
+    return out === `achv.${id}.desc` ? fallback : out;
+  };
   const unlocked = data.filter((a) => a.unlocked);
   const locked = data.filter((a) => !a.unlocked).sort((a, b) => {
     const pa = a.progress ? a.progress.current / a.progress.target : 0;
@@ -30,8 +40,8 @@ export function AchievementsCard({ data }: { data: Achievement[] }) {
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
       <div className="flex items-center justify-between mb-3">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider">achievements</p>
-        <p className="text-xs text-zinc-600">{unlocked.length} / {data.length} unlocked</p>
+        <p className="text-xs text-zinc-500 uppercase tracking-wider">{t('card.achievements.title')}</p>
+        <p className="text-xs text-zinc-600">{t('card.achievements.unlocked', { n: unlocked.length, total: data.length })}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -48,7 +58,7 @@ export function AchievementsCard({ data }: { data: Achievement[] }) {
             >
               <div className="flex items-center justify-between gap-2">
                 <span className={`text-xs font-medium ${a.unlocked ? 'text-amber-300' : 'text-zinc-500'}`}>
-                  {a.unlocked ? '★' : '☆'} {a.title}
+                  {a.unlocked ? '★' : '☆'} {tt(a.id, a.title)}
                 </span>
                 <span className="text-[10px] text-zinc-600 tabular-nums shrink-0">
                   {fmtProgress(a)}
@@ -57,7 +67,7 @@ export function AchievementsCard({ data }: { data: Achievement[] }) {
               <div className="h-0.5 bg-zinc-800 rounded mt-1.5 overflow-hidden">
                 <div className={`h-full ${a.unlocked ? 'bg-amber-500' : 'bg-zinc-600'}`} style={{ width: `${pct}%` }} />
               </div>
-              <p className="text-[10px] text-zinc-600 mt-1 truncate">{a.description}</p>
+              <p className="text-[10px] text-zinc-600 mt-1 truncate">{td(a.id, a.description)}</p>
             </div>
           );
         })}
@@ -68,7 +78,7 @@ export function AchievementsCard({ data }: { data: Achievement[] }) {
           onClick={() => setShowAll(!showAll)}
           className="w-full mt-3 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-800 rounded py-1"
         >
-          {showAll ? 'show less' : `show all (${data.length})`}
+          {showAll ? t('card.achievements.showLess') : t('card.achievements.showAll', { n: data.length })}
         </button>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import type { SessionEntry } from './SessionsTable';
+import { useT } from '@/lib/i18n/client';
 
 interface ProjectRow {
   project: string;
@@ -29,6 +30,7 @@ const TOOL_DOT: Record<string, string> = {
 };
 
 export function ProjectLeaderboard({ sessions, limit = 10 }: { sessions: SessionEntry[]; limit?: number }) {
+  const t = useT();
   const rows = useMemo(() => {
     const map = new Map<string, ProjectRow>();
     for (const s of sessions) {
@@ -49,15 +51,15 @@ export function ProjectLeaderboard({ sessions, limit = 10 }: { sessions: Session
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">project leaderboard</p>
-        <p className="text-zinc-600 text-sm">no projects yet</p>
+        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.leaderboard.title')}</p>
+        <p className="text-zinc-600 text-sm">{t('card.leaderboard.noProjects')}</p>
       </div>
     );
   }
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">project leaderboard</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.leaderboard.title')}</p>
       <div className="space-y-1.5">
         {rows.map((r, i) => (
           <div key={r.project} className="group">

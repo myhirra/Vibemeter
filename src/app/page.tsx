@@ -8,6 +8,9 @@ import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
 import { getLatestUsageSnapshot } from '@/lib/usage-snapshots';
 import { MarketingPage } from '@/components/MarketingPage';
+import { LocaleSwitcher } from '@/components/LocaleSwitcher';
+import { getServerLocale } from '@/lib/i18n/server';
+import { t } from '@/lib/i18n';
 
 const DEMO_PROJECTS = [
   'kanban-board', 'pomodoro', 'weather-widget', 'recipe-box', 'mood-journal',
@@ -77,6 +80,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     return <MarketingPage />;
   }
 
+  const locale = await getServerLocale();
   const params = await searchParams;
   const demo = params.demo === '1' || params.demo === 'true';
   const initialAgent = AGENTS.has(params.agent ?? '') ? params.agent as 'all' | 'claude-code' | 'codex' | 'cursor' : 'all';
@@ -135,14 +139,23 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
               <span className="text-violet-400">Vibe</span>meter
             </h1>
-            <p className="text-zinc-600 text-xs mt-1">measure your AI coding vibe · local-first · data never leaves this machine</p>
+            <p className="text-zinc-600 text-xs mt-1">{t(locale, 'header.tagline')}</p>
           </div>
-          <Link
-            href="/admin"
-            className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-          >
-            Admin
-          </Link>
+          <div className="flex items-center gap-2">
+            <LocaleSwitcher />
+            <Link
+              href="/settings"
+              className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+            >
+              {t(locale, 'common.settings')}
+            </Link>
+            <Link
+              href="/admin"
+              className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
+            >
+              {t(locale, 'common.admin')}
+            </Link>
+          </div>
         </div>
 
         <Dashboard

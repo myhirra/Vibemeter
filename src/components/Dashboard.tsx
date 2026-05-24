@@ -13,6 +13,7 @@ import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
   window_5h_used_pct: number | null;
@@ -48,14 +49,20 @@ interface Props {
 
 const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const;
 type ToolFilter = typeof TOOLS[number];
-const TOOL_LABELS: Record<ToolFilter, string> = {
-  all: 'All', 'claude-code': 'Claude Code', codex: 'Codex', cursor: 'Cursor',
+const TOOL_LABEL_KEYS: Record<ToolFilter, string> = {
+  all: 'dashboard.toolAll',
+  'claude-code': 'dashboard.toolClaude',
+  codex: 'dashboard.toolCodex',
+  cursor: 'dashboard.toolCursor',
 };
 
 const DATE_PRESETS = ['today', '7d', '30d', 'all'] as const;
 type DatePreset = typeof DATE_PRESETS[number];
-const DATE_LABELS: Record<DatePreset, string> = {
-  today: 'Today', '7d': '7 days', '30d': '30 days', all: 'All time',
+const DATE_LABEL_KEYS: Record<DatePreset, string> = {
+  today: 'dashboard.dateToday2',
+  '7d': 'dashboard.date7days',
+  '30d': 'dashboard.date30days',
+  all: 'dashboard.dateAlltime',
 };
 
 function isToolFilter(value: string | null): value is ToolFilter {
@@ -70,18 +77,18 @@ function startOfPreset(preset: DatePreset): number {
   return 0;
 }
 
-function formatResetAt(ms: number | null): string {
+function formatResetAt(ms: number | null, t: (k: string, v?: Record<string, string | number>) => string): string {
   if (!ms) return '';
   const diff = ms - Date.now();
-  if (diff <= 0) return 'resetting…';
+  if (diff <= 0) return t('dashboard.resetting');
   const d = new Date(ms);
-  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
   const isToday = new Date().toDateString() === d.toDateString();
   const dateStr = isToday ? time : `${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')} ${time}`;
   const h = Math.floor(diff / 3_600_000);
   const m = Math.floor((diff % 3_600_000) / 60_000);
   const rel = h > 0 ? `${h}h ${m}m` : `${m}m`;
-  return `resets at ${dateStr} (in ${rel})`;
+  return t('dashboard.resetsAt', { date: dateStr, rel });
 }
 
 function formatRemainingPercent(value: number): string {
@@ -114,6 +121,7 @@ export function Dashboard({
   timeline,
   achievements,
 }: Props) {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -128,16 +136,16 @@ export function Dashboard({
     [codexAccounts, selectedCodexAccountId],
   );
   const selectedCodexLabel = selectedCodexAccount
-    ? `codex · ${selectedCodexAccount.label}`
-    : 'codex · all accounts';
+    ? `${t('dashboard.codexLabelPrefix')} · ${selectedCodexAccount.label}`
+    : t('dashboard.codexLabel');
   const selectedCodexEmptyTitle = selectedCodexAccountId
-    ? 'no rate-limit snapshot for this account yet'
-    : 'no data yet';
+    ? t('dashboard.noSnapshot')
+    : t('dashboard.noData');
   const selectedCodexEmptyHint = selectedCodexAccountId
     ? selectedCodexAccount?.isCurrent
-      ? 'use Codex once, then Refresh data'
-      : 'switch it in Admin, use Codex once, then Refresh data'
-    : 'no data yet';
+      ? t('dashboard.useCodexThenRefresh')
+      : t('dashboard.switchAdminThenUse')
+    : t('dashboard.noData');
 
   const since = useMemo(() => startOfPreset(datePreset), [datePreset]);
 
@@ -179,13 +187,13 @@ export function Dashboard({
     try {
       const response = await fetch('/api/import-sessions', { method: 'POST' });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error ?? 'Refresh failed');
+      if (!response.ok) throw new Error(payload.error ?? t('dashboard.refreshFailed'));
       setRefreshState('done');
-      setRefreshMessage(`scanned ${payload.scanned ?? 0} logs in ${Math.round((payload.durationMs ?? 0) / 100) / 10}s`);
+      setRefreshMessage(t('dashboard.scanned', { n: payload.scanned ?? 0, seconds: Math.round((payload.durationMs ?? 0) / 100) / 10 }));
       router.refresh();
     } catch (error) {
       setRefreshState('error');
-      setRefreshMessage(error instanceof Error ? error.message : 'Refresh failed');
+      setRefreshMessage(error instanceof Error ? error.message : t('dashboard.refreshFailed'));
     }
   }
 
@@ -227,22 +235,22 @@ export function Dashboard({
       <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
         <div className="flex flex-wrap gap-2">
           {TOOLS
-            .filter((t) => t === 'all' || (toolCounts[t] ?? 0) > 0)
+            .filter((tool) => tool === 'all' || (toolCounts[tool] ?? 0) > 0)
             .sort((a, b) => {
               if (a === 'all') return -1;
               if (b === 'all') return 1;
               return (toolCounts[b] ?? 0) - (toolCounts[a] ?? 0);
             })
-            .map((t) => (
-            <button key={t} onClick={() => changeToolFilter(t)}
+            .map((tool) => (
+            <button key={tool} onClick={() => changeToolFilter(tool)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                toolFilter === t
+                toolFilter === tool
                   ? 'bg-zinc-700 border-zinc-500 text-zinc-100'
                   : 'border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
               }`}
             >
-              {TOOL_LABELS[t]}
-              <span className="ml-1.5 text-zinc-600 tabular-nums">{toolCounts[t] ?? 0}</span>
+              {t(TOOL_LABEL_KEYS[tool])}
+              <span className="ml-1.5 text-zinc-600 tabular-nums">{toolCounts[tool] ?? 0}</span>
             </button>
           ))}
         </div>
@@ -256,7 +264,7 @@ export function Dashboard({
                   : 'border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
               }`}
             >
-              {DATE_LABELS[p]}
+              {t(DATE_LABEL_KEYS[p])}
             </button>
           ))}
           </div>
@@ -266,7 +274,7 @@ export function Dashboard({
             disabled={refreshState === 'refreshing'}
             className="text-xs px-3 py-1.5 rounded-full border border-violet-500/40 bg-violet-500/10 text-violet-100 transition-colors hover:bg-violet-500/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {refreshState === 'refreshing' ? 'Refreshing...' : 'Refresh data'}
+            {refreshState === 'refreshing' ? t('dashboard.refreshing') : t('dashboard.refreshData')}
           </button>
         </div>
       </div>
@@ -283,11 +291,11 @@ export function Dashboard({
       {toolFilter === 'codex' && codexAccounts.length > 0 && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-3">
           <div className="min-w-0">
-            <p className="text-xs uppercase tracking-wider text-zinc-500">Codex account</p>
+            <p className="text-xs uppercase tracking-wider text-zinc-500">{t('dashboard.codexAccount')}</p>
             <p className="mt-1 truncate text-xs text-zinc-600">
               {selectedCodexAccount
-                ? selectedCodexAccount.isCurrent ? 'current account only' : 'saved account history only'
-                : 'all saved and legacy Codex usage'}
+                ? selectedCodexAccount.isCurrent ? t('dashboard.codexCurrentOnly') : t('dashboard.codexSavedOnly')
+                : t('dashboard.codexAllUsage')}
             </p>
           </div>
           <div className="flex min-w-0 items-center gap-2">
@@ -296,15 +304,15 @@ export function Dashboard({
               onChange={(event) => changeCodexAccount(event.target.value)}
               className="max-w-72 rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 outline-none transition-colors hover:border-zinc-500 focus:border-violet-500"
             >
-              <option value="">All Codex accounts</option>
+              <option value="">{t('dashboard.codexAccountAll')}</option>
               {codexAccounts.map((account) => (
                 <option key={account.accountId} value={account.accountId}>
-                  {account.label} · {account.planType ?? 'unknown'}{account.isCurrent ? ' · current' : ''}
+                  {account.label} · {account.planType ?? t('common.unknown')}{account.isCurrent ? ' · current' : ''}
                 </option>
               ))}
             </select>
             <span className="hidden shrink-0 text-xs text-zinc-600 sm:inline">
-              {selectedCodexAccount ? shortAccountId(selectedCodexAccount.accountId) : 'all'}
+              {selectedCodexAccount ? shortAccountId(selectedCodexAccount.accountId) : t('dashboard.short')}
             </span>
           </div>
           {selectedCodexAccount && !selectedCodexAccount.isCurrent && (
@@ -312,7 +320,7 @@ export function Dashboard({
               href="/admin"
               className="basis-full text-xs text-violet-300 transition-colors hover:text-violet-100"
             >
-              Dashboard selection filters saved history only. Switch this account in Admin to collect new Codex usage.
+              {t('dashboard.codexSwitchHint')}
             </Link>
           )}
         </div>
@@ -324,40 +332,40 @@ export function Dashboard({
           : toolFilter === 'claude-code' ? claudeUsage
           : null;
         const label = toolFilter === 'codex' ? selectedCodexLabel
-          : toolFilter === 'claude-code' ? 'claude code'
-          : TOOL_LABELS[toolFilter].toLowerCase();
+          : toolFilter === 'claude-code' ? t('dashboard.claudeCodeLower')
+          : t(TOOL_LABEL_KEYS[toolFilter]).toLowerCase();
         return (
           <>
             <div className="grid grid-cols-2 gap-4 mb-4">
               <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">5h window · {label}</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{t('dashboard.window5h')} · {label}</p>
                 {usage?.window_5h_used_pct != null ? (
                   <>
                     <p className="text-3xl font-bold text-zinc-100">
                       {formatRemainingPercent(100 - usage.window_5h_used_pct)}
                     </p>
-                    <p className="text-xs text-zinc-500 mt-1">remaining · {formatUsedPercent(usage.window_5h_used_pct)} used</p>
-                    {usage.reset_at_5h && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_5h)}</p>}
+                    <p className="text-xs text-zinc-500 mt-1">{t('dashboard.remaining')} · {formatUsedPercent(usage.window_5h_used_pct)} {t('dashboard.used')}</p>
+                    {usage.reset_at_5h && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_5h, t)}</p>}
                   </>
                 ) : (
                   <p className="text-zinc-600 text-sm mt-1">
-                    {toolFilter === 'codex' ? selectedCodexEmptyTitle : 'no data yet'}
+                    {toolFilter === 'codex' ? selectedCodexEmptyTitle : t('dashboard.noData')}
                   </p>
                 )}
               </div>
               <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">7-day budget · {label}</p>
+                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{t('dashboard.window7d')} · {label}</p>
                 {usage?.window_weekly_used_pct != null ? (
                   <>
                     <p className="text-3xl font-bold text-zinc-100">
                       {formatRemainingPercent(100 - usage.window_weekly_used_pct)}
                     </p>
-                    <p className="text-xs text-zinc-500 mt-1">remaining · {formatUsedPercent(usage.window_weekly_used_pct)} used</p>
-                    {usage.reset_at_weekly && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_weekly)}</p>}
+                    <p className="text-xs text-zinc-500 mt-1">{t('dashboard.remaining')} · {formatUsedPercent(usage.window_weekly_used_pct)} {t('dashboard.used')}</p>
+                    {usage.reset_at_weekly && <p className="text-xs text-zinc-600 mt-1">{formatResetAt(usage.reset_at_weekly, t)}</p>}
                   </>
                 ) : (
                   <p className="text-zinc-600 text-sm mt-1">
-                    {toolFilter === 'codex' ? selectedCodexEmptyHint : 'no data yet'}
+                    {toolFilter === 'codex' ? selectedCodexEmptyHint : t('dashboard.noData')}
                   </p>
                 )}
               </div>
@@ -381,7 +389,7 @@ export function Dashboard({
       <div className="mb-4">
         <BurndownChart
           data={toolFilter === 'codex' ? codexBurndown : toolFilter === 'claude-code' ? claudeBurndown : allBurndown}
-          label={toolFilter === 'codex' ? selectedCodexLabel : toolFilter === 'claude-code' ? 'claude code' : 'all agents'}
+          label={toolFilter === 'codex' ? selectedCodexLabel : toolFilter === 'claude-code' ? t('dashboard.claudeCodeLower') : t('dashboard.allAgents')}
         />
       </div>
 
