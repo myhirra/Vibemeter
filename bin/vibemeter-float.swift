@@ -436,6 +436,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private var contentView: FloatView?
     private var timer: Timer?
     private var statusItem: NSStatusItem?
+    private var refreshInFlight = false
 
     init(pageURL: URL) {
         self.pageURL = pageURL
@@ -468,8 +469,8 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         view.autoresizingMask = [.width, .height]
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
-        view.onRefresh = { [weak self] in self?.refreshNow(importFirst: true) }
-        view.onAgentChanged = { [weak self] in self?.refreshNow(importFirst: true) }
+        view.onRefresh = { [weak self] in self?.refreshNow() }
+        view.onAgentChanged = { [weak self] in self?.refreshNow() }
         view.onHide = { [weak self] in self?.hidePanel() }
         view.onOpenDashboard = { [weak self] in
             guard let self else { return }
@@ -483,9 +484,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         self.panel = panel
         self.contentView = view
 
-        refreshNow(importFirst: true)
-        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            self?.refreshNow(importFirst: true)
+        refreshNow()
+        timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.refreshNow()
         }
     }
 
@@ -513,11 +514,11 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             placeAtTopRight(panel)
         }
         panel.orderFrontRegardless()
-        refreshNow(importFirst: true)
+        refreshNow()
     }
 
     @objc private func refreshFromMenu() {
-        refreshNow(importFirst: true)
+        refreshNow()
         showPanelFromMenu()
     }
 
@@ -543,18 +544,25 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         panel.setFrameOrigin(origin)
     }
 
-    private func refreshNow(importFirst: Bool = false) {
-        if importFirst {
-            var request = URLRequest(url: importURL)
-            request.httpMethod = "POST"
-            URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
-                self?.refreshNow()
-            }.resume()
-            return
-        }
+    private func refreshNow() {
+        if refreshInFlight { return }
+        refreshInFlight = true
 
-        URLSession.shared.dataTask(with: apiURL) { [weak self] data, _, _ in
+        var components = URLComponents(url: apiURL, resolvingAgainstBaseURL: false)!
+        components.queryItems = [
+            URLQueryItem(name: "refresh", value: "usage"),
+            URLQueryItem(name: "t", value: "\(Int(Date().timeIntervalSince1970 * 1000))"),
+        ]
+        var request = URLRequest(url: components.url!)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+
+        URLSession.shared.dataTask(with: request) { [weak self] data, _, _ in
             guard let self else { return }
+            defer {
+                DispatchQueue.main.async {
+                    self.refreshInFlight = false
+                }
+            }
             guard let data else {
                 DispatchQueue.main.async {
                     self.contentView?.statusText = "api unavailable"
