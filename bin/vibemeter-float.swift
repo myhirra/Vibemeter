@@ -143,24 +143,24 @@ final class FloatView: NSView {
                 isExpanded = true
                 resizeWindowKeepingTopRight(NSSize(width: 306, height: 260))
                 needsDisplay = true
-            } else if NSRect(x: 20, y: 18, width: 94, height: 18).contains(point) {
+            } else if titleRect().contains(point) {
                 onOpenDashboard?()
             } else if foldButtonRect().contains(point) {
                 isExpanded = false
                 resizeWindowKeepingTopRight(NSSize(width: 112, height: 112))
                 needsDisplay = true
-            } else if NSRect(x: bounds.width - 27, y: 18, width: 22, height: 27).contains(point) {
+            } else if closeButtonRect().contains(point) {
                 onHide?()
-            } else if NSRect(x: bounds.width - 47, y: 18, width: 27, height: 27).contains(point) {
+            } else if refreshButtonRect().contains(point) {
                 onRefresh?()
-            } else if NSRect(x: bounds.width - 161, y: 18, width: 57, height: 27).contains(point) {
+            } else if claudeButtonRect().contains(point) {
                 selectedAgent = "claude-code"
-                onAgentChanged?()
                 needsDisplay = true
-            } else if NSRect(x: bounds.width - 104, y: 18, width: 57, height: 27).contains(point) {
+                onAgentChanged?()
+            } else if codexButtonRect().contains(point) {
                 selectedAgent = "codex"
-                onAgentChanged?()
                 needsDisplay = true
+                onAgentChanged?()
             }
         }
     }
@@ -201,10 +201,10 @@ final class FloatView: NSView {
     }
 
     private func drawHeader(in rect: NSRect) {
-        drawText("Vibemeter", rect: NSRect(x: rect.minX + 20, y: rect.minY + 18, width: 94, height: 18), size: 13, weight: .semibold, color: NSColor.white.withAlphaComponent(0.94))
-        drawAgentSwitch(in: NSRect(x: rect.maxX - 180, y: rect.minY + 10, width: 114, height: 27))
-        drawIconButton("↻", rect: NSRect(x: rect.maxX - 59, y: rect.minY + 10, width: 27, height: 27), active: true)
-        drawText("×", rect: NSRect(x: rect.maxX - 22, y: rect.minY + 14, width: 14, height: 16), size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
+        drawText("Vibemeter", rect: titleRect(in: rect), size: 13, weight: .semibold, color: NSColor.white.withAlphaComponent(0.94))
+        drawAgentSwitch(in: agentSwitchRect(in: rect))
+        drawIconButton("↻", rect: refreshButtonRect(in: rect), active: true)
+        drawText("×", rect: closeButtonGlyphRect(in: rect), size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
     }
 
     private func drawCollapsed(context: CGContext, in rect: NSRect) {
@@ -331,6 +331,40 @@ final class FloatView: NSView {
         let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
         let y = base.minY + 96
         return NSRect(x: base.maxX - 38, y: y, width: 26, height: 26)
+    }
+
+    private func titleRect(in rect: NSRect? = nil) -> NSRect {
+        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
+        return NSRect(x: base.minX + 20, y: base.minY + 18, width: 94, height: 18)
+    }
+
+    private func agentSwitchRect(in rect: NSRect? = nil) -> NSRect {
+        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
+        return NSRect(x: base.maxX - 180, y: base.minY + 10, width: 114, height: 27)
+    }
+
+    private func claudeButtonRect() -> NSRect {
+        let rect = agentSwitchRect()
+        return NSRect(x: rect.minX, y: rect.minY, width: rect.width / 2, height: rect.height)
+    }
+
+    private func codexButtonRect() -> NSRect {
+        let rect = agentSwitchRect()
+        return NSRect(x: rect.midX, y: rect.minY, width: rect.width / 2, height: rect.height)
+    }
+
+    private func refreshButtonRect(in rect: NSRect? = nil) -> NSRect {
+        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
+        return NSRect(x: base.maxX - 59, y: base.minY + 10, width: 27, height: 27)
+    }
+
+    private func closeButtonGlyphRect(in rect: NSRect? = nil) -> NSRect {
+        let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
+        return NSRect(x: base.maxX - 22, y: base.minY + 14, width: 14, height: 16)
+    }
+
+    private func closeButtonRect() -> NSRect {
+        closeButtonGlyphRect().insetBy(dx: -8, dy: -6)
     }
 
     private func resizeWindowKeepingTopRight(_ size: NSSize) {
