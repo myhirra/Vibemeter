@@ -65,6 +65,45 @@ export interface ImportResult {
   skipped: number;
 }
 
+export function importUsageSnapshots(): void {
+  const db = getDb();
+
+  // Claude Code: from statusline-latest.json written by statusline-command.sh
+  const usage = parseStatuslineJson();
+  if (usage) {
+    insertUsageSnapshot(db, {
+      capturedAt: Date.now(),
+      source: 'statusline',
+      accountId: null,
+      window5hUsedPct: usage.window_5h_used_pct,
+      windowWeeklyUsedPct: usage.window_weekly_used_pct,
+      resetAt5h: usage.reset_at_5h,
+      resetAtWeekly: usage.reset_at_weekly,
+      rawOutput: usage.raw_output,
+      confidence: 'high',
+    });
+  }
+
+  // Codex: from ~/.codex/sessions/*/rollout-*.jsonl rate_limits events
+  const currentCodexAccount = getCurrentCodexAccount();
+  const codexUsage = parseCodexRateLimit({
+    minMtimeMs: currentCodexAccount?.authMtimeMs,
+  });
+  if (codexUsage) {
+    insertUsageSnapshot(db, {
+      capturedAt: Date.now(),
+      source: 'codex',
+      accountId: currentCodexAccount?.accountId ?? null,
+      window5hUsedPct: codexUsage.window_5h_used_pct,
+      windowWeeklyUsedPct: codexUsage.window_weekly_used_pct,
+      resetAt5h: codexUsage.reset_at_5h,
+      resetAtWeekly: codexUsage.reset_at_weekly,
+      rawOutput: null,
+      confidence: 'high',
+    });
+  }
+}
+
 export function importSessions(): ImportResult {
   const db = getDb();
   const activeIds = getActiveSessionIds();
@@ -110,40 +149,7 @@ export function importSessions(): ImportResult {
   importCodexSessions();
   importCursorSessions();
 
-  // Claude Code: from statusline-latest.json written by statusline-command.sh
-  const usage = parseStatuslineJson();
-  if (usage) {
-    insertUsageSnapshot(db, {
-      capturedAt: Date.now(),
-      source: 'statusline',
-      accountId: null,
-      window5hUsedPct: usage.window_5h_used_pct,
-      windowWeeklyUsedPct: usage.window_weekly_used_pct,
-      resetAt5h: usage.reset_at_5h,
-      resetAtWeekly: usage.reset_at_weekly,
-      rawOutput: usage.raw_output,
-      confidence: 'high',
-    });
-  }
-
-  // Codex: from most recent ~/.codex/sessions/*/rollout-*.jsonl rate_limits event
-  const currentCodexAccount = getCurrentCodexAccount();
-  const codexUsage = parseCodexRateLimit({
-    minMtimeMs: currentCodexAccount?.authMtimeMs,
-  });
-  if (codexUsage) {
-    insertUsageSnapshot(db, {
-      capturedAt: Date.now(),
-      source: 'codex',
-      accountId: currentCodexAccount?.accountId ?? null,
-      window5hUsedPct: codexUsage.window_5h_used_pct,
-      windowWeeklyUsedPct: codexUsage.window_weekly_used_pct,
-      resetAt5h: codexUsage.reset_at_5h,
-      resetAtWeekly: codexUsage.reset_at_weekly,
-      rawOutput: null,
-      confidence: 'high',
-    });
-  }
+  importUsageSnapshots();
 
   return { scanned: jsonlPaths.length, inserted, skipped };
 }
