@@ -6,7 +6,7 @@
     <title>Vibemeter — Local-first dashboard for Claude Code, Codex & Cursor</title>
     <meta
       name="description"
-      content="Track Claude Code, Codex and Cursor usage windows, spending, sessions and activity heatmap. 100% local — no telemetry, no cloud, no API calls. macOS floating widget included."
+      content="Track Claude Code, Codex and Cursor usage from local files. Vibemeter includes a dashboard, macOS floating meter, and optional voice notifications. No telemetry, no cloud."
     />
     <meta
       name="keywords"
@@ -54,7 +54,7 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Vibemeter",
-        "description": "Local-first dashboard for Claude Code, Codex and Cursor — usage windows, spending, sessions, activity heatmap, achievements.",
+        "description": "Local-first dashboard for Claude Code, Codex and Cursor usage, with a macOS floating meter and optional voice notifications.",
         "url": "https://vibemeter.siney.top/",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows (CLI)",
@@ -106,10 +106,6 @@
       }
 
       header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 24px;
         margin-bottom: 56px;
       }
 
@@ -120,14 +116,6 @@
 
       .brand span {
         color: var(--purple);
-      }
-
-      .pill {
-        border: 1px solid rgba(155, 124, 255, 0.55);
-        border-radius: 999px;
-        padding: 10px 14px;
-        color: rgba(244, 244, 245, 0.72);
-        text-decoration: none;
       }
 
       .hero {
@@ -151,6 +139,19 @@
         color: var(--muted);
         font-size: 18px;
         line-height: 1.7;
+      }
+
+      .bullets {
+        margin: 22px 0 0;
+        padding: 0;
+        list-style: none;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.8;
+      }
+
+      .bullets strong {
+        color: var(--text);
       }
 
       .install {
@@ -208,85 +209,75 @@
         }
       }
 
-      .float {
-        width: 100%;
+      .shot {
+        overflow: hidden;
         border: 1px solid var(--line);
-        border-radius: 26px;
-        background: rgba(20, 20, 25, 0.94);
-        padding: 18px;
+        border-radius: 14px;
+        background: var(--panel);
         box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
       }
 
-      .float-top {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 18px;
-      }
-
-      .toggle {
-        display: flex;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.06);
-        padding: 3px;
-      }
-
-      .toggle span {
-        padding: 8px 14px;
-        border-radius: 999px;
-        color: rgba(255, 255, 255, 0.58);
-        font-size: 12px;
-      }
-
-      .toggle span:first-child {
-        background: rgba(155, 124, 255, 0.72);
-        color: white;
-      }
-
-      .meter {
-        display: grid;
-        grid-template-columns: 112px 1fr;
-        gap: 22px;
-        align-items: center;
-      }
-
-      .ring {
-        width: 112px;
-        height: 112px;
-        border-radius: 999px;
-        display: grid;
-        place-items: center;
-        background:
-          radial-gradient(circle at center, #09090d 0 50%, transparent 51%),
-          conic-gradient(var(--green) 0 82%, rgba(255, 255, 255, 0.1) 82% 100%);
-        font-size: 30px;
-        font-weight: 900;
-      }
-
-      .metrics {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 10px;
-        margin-top: 18px;
-      }
-
-      .metric {
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        padding: 12px;
-        background: rgba(0, 0, 0, 0.18);
-      }
-
-      .metric b {
+      .shot img {
         display: block;
-        margin-top: 6px;
-        font-size: 18px;
+        width: 100%;
+        height: auto;
+      }
+
+      .shots {
+        display: grid;
+        gap: 18px;
       }
 
       .muted {
         color: var(--muted);
         font-size: 12px;
+      }
+
+      .details {
+        margin-top: 44px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .card h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .card p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .local {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr 0.72fr;
+        gap: 12px;
+      }
+
+      .paths {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .paths code {
+        display: inline-block;
+        padding: 8px 10px;
+        color: rgba(244, 244, 245, 0.68);
+        font-size: 11px;
       }
 
       footer {
@@ -303,7 +294,7 @@
           gap: 36px;
         }
 
-        .float {
+        .shots {
           max-width: 420px;
         }
 
@@ -313,6 +304,11 @@
 
         .lead {
           max-width: 100%;
+        }
+
+        .details,
+        .local {
+          grid-template-columns: 1fr;
         }
       }
 
@@ -335,17 +331,21 @@
     <main>
       <header>
         <div class="brand"><span>Vibe</span>meter</div>
-        <a class="pill" href="https://github.com/myhirra/Vibemeter">GitHub</a>
       </header>
 
       <section class="hero">
         <div>
           <h1>Local-first AI coding meter.</h1>
           <p class="lead">
-            Track Claude Code, Codex, and Cursor sessions with usage windows,
-            local account history, and a native macOS floating meter. Data stays
-            on your machine.
+            Track Claude Code, Codex, and Cursor usage from local files. Dashboard,
+            macOS floating meter, and optional voice notifications when long-running
+            agents finish. Data stays on your machine.
           </p>
+          <ul class="bullets">
+            <li><strong>No cloud:</strong> no telemetry, no account, no remote API.</li>
+            <li><strong>Quota view:</strong> 5h / 7-day windows for Claude Code and Codex.</li>
+            <li><strong>macOS helper:</strong> floating meter plus spoken completion alerts.</li>
+          </ul>
           <div class="install">
             <code>curl -fsSL https://vibemeter.siney.top/install.sh | bash</code>
             <button class="button" type="button" onclick="navigator.clipboard.writeText('curl -fsSL https://vibemeter.siney.top/install.sh | bash')">
@@ -354,28 +354,48 @@
           </div>
         </div>
 
-        <div class="float" aria-hidden="true">
-          <div class="float-top">
-            <strong>Vibemeter</strong>
-            <div class="toggle"><span>Claude</span><span>Codex</span></div>
+        <div class="shots" aria-hidden="true">
+          <div class="shot">
+            <img src="/float-expanded.png" alt="Vibemeter expanded floating meter" width="520" height="360" />
           </div>
-          <div class="meter">
-            <div class="ring">82%</div>
-            <div>
-              <h2>Claude</h2>
-              <div class="muted">5h remaining</div>
-              <div class="muted">resets in 1h 22m</div>
-            </div>
-          </div>
-          <div class="metrics">
-            <div class="metric"><span class="muted">today</span><b>11</b></div>
-            <div class="metric"><span class="muted">total</span><b>342</b></div>
-            <div class="metric"><span class="muted">weekly</span><b>45%</b></div>
+          <div class="shot">
+            <img src="/float-collapsed.png" alt="Vibemeter collapsed progress bar" width="520" height="260" />
           </div>
         </div>
       </section>
 
-      <footer>Install requires Node.js 20+ and npm. macOS users get the floating meter automatically.</footer>
+      <section class="details" aria-label="Vibemeter features">
+        <div class="card">
+          <h3>Usage windows</h3>
+          <p>Claude Code and Codex 5h / 7-day quota snapshots, plus a burndown chart for recent history.</p>
+        </div>
+        <div class="card">
+          <h3>Work history</h3>
+          <p>Sessions, projects, activity heatmap, spend, tokens, and a small achievement layer for daily review.</p>
+        </div>
+        <div class="card">
+          <h3>macOS helper</h3>
+          <p>Floating meter for quick quota checks. Optional voice notification when Claude Code or Codex completes.</p>
+        </div>
+      </section>
+
+      <section class="local" aria-label="Local data and notifications">
+        <div class="card">
+          <h3>Data stays local</h3>
+          <p>Vibemeter reads files your tools already write. No account, no telemetry, no cloud database.</p>
+          <div class="paths">
+            <code>~/.claude/projects/**/*.jsonl</code>
+            <code>~/.codex/state_5.sqlite</code>
+            <code>Cursor workspaceStorage</code>
+          </div>
+        </div>
+        <div class="card">
+          <h3>Voice notifications</h3>
+          <p>On macOS, the settings page can install Claude Code hooks and Codex notify config, with backups before changes.</p>
+        </div>
+      </section>
+
+      <footer>Install requires Node.js 20+ and npm. Voice notifications are macOS-only.</footer>
     </main>
   </body>
 </html>

@@ -38,6 +38,7 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "deploy:marketing": "bash scripts/deploy-marketing.sh",
     "prepack": "rm -rf .next && next build && rm -rf .next/cache .next/dev .next/diagnostics .next/trace .next/trace-build .next/turbopack"
   },
   "engines": {
