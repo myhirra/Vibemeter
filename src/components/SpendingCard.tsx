@@ -1,6 +1,7 @@
 'use client';
 
 import type { SpendingStats } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 function fmtTokens(n: number): string {
   if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`;
@@ -12,6 +13,7 @@ function fmtTokens(n: number): string {
 type ToolFilter = 'all' | 'claude-code' | 'codex' | 'cursor';
 
 export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFilter: ToolFilter }) {
+  const t = useT();
   const showClaude = toolFilter === 'all' || toolFilter === 'claude-code';
   const showCodex  = toolFilter === 'all' || toolFilter === 'codex';
 
@@ -21,34 +23,34 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
   if (!showClaude && !showCodex) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">spending / consumption</p>
-        <p className="text-zinc-600 text-sm">no spending data for cursor</p>
+        <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.spending.title')}</p>
+        <p className="text-zinc-600 text-sm">{t('card.spending.noCursor')}</p>
       </div>
     );
   }
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">spending / consumption</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.spending.title')}</p>
 
       {/* Totals row */}
       <div className="flex gap-6 mb-4">
         {showClaude && (
           <div>
             <p className="text-xl font-bold text-violet-400">${data.claudeTotalUsd.toFixed(2)}</p>
-            <p className="text-xs text-zinc-600 mt-0.5">claude code total</p>
+            <p className="text-xs text-zinc-600 mt-0.5">{t('card.spending.claudeCost')}</p>
           </div>
         )}
         {showCodex && (
           <div>
             <p className="text-xl font-bold text-emerald-400">{fmtTokens(data.codexTotalTokens)}</p>
-            <p className="text-xs text-zinc-600 mt-0.5">codex tokens</p>
+            <p className="text-xs text-zinc-600 mt-0.5">{t('card.spending.codexTokens')}</p>
           </div>
         )}
       </div>
 
       {/* 14-day bar chart */}
-      <p className="text-xs text-zinc-600 mb-2">last 14 days</p>
+      <p className="text-xs text-zinc-600 mb-2">{t('card.spending.last14d')}</p>
       <div className="flex items-end gap-px h-16">
         {data.daily.map((d) => {
           const claudePct = showClaude ? (d.claudeUsd / maxClaude) * 100 : 0;
@@ -82,12 +84,12 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
       <div className="flex gap-4 mt-2">
         {showClaude && (
           <span className="flex items-center gap-1 text-xs text-zinc-600">
-            <span className="w-2 h-2 rounded-sm bg-violet-500/70 inline-block" /> claude ($)
+            <span className="w-2 h-2 rounded-sm bg-violet-500/70 inline-block" /> {t('card.spending.legendClaude')}
           </span>
         )}
         {showCodex && (
           <span className="flex items-center gap-1 text-xs text-zinc-600">
-            <span className="w-2 h-2 rounded-sm bg-emerald-600/60 inline-block" /> codex (tokens)
+            <span className="w-2 h-2 rounded-sm bg-emerald-600/60 inline-block" /> {t('card.spending.legendCodex')}
           </span>
         )}
       </div>

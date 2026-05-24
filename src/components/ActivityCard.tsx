@@ -3,8 +3,9 @@
 import { useState, useMemo } from 'react';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, TimelineSession } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
-const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DOW_KEYS = ['card.activity.dayMon', 'card.activity.dayTue', 'card.activity.dayWed', 'card.activity.dayThu', 'card.activity.dayFri', 'card.activity.daySat', 'card.activity.daySun'];
 const LANE_HEIGHT = 28;
 const LANE_GAP = 4;
 
@@ -83,6 +84,8 @@ interface Props {
 }
 
 export function ActivityCard({ sessions, streak, timeline }: Props) {
+  const t = useT();
+  const DOW = DOW_KEYS.map((k) => t(k));
   const [view, setView] = useState<'pattern' | 'today'>('pattern');
   const [hover, setHover] = useState<{ s: TimelineSession; x: number; y: number } | null>(null);
 
@@ -115,28 +118,28 @@ export function ActivityCard({ sessions, streak, timeline }: Props) {
       {/* Header: title + tabs + streak stats */}
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
         <div className="flex items-center gap-3">
-          <p className="text-xs text-zinc-500 uppercase tracking-wider">activity</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider">{t('card.activity.title')}</p>
           <div className="flex gap-1">
             <button onClick={() => setView('pattern')}
               className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                 view === 'pattern'
                   ? 'bg-zinc-700 border-zinc-500 text-zinc-100'
                   : 'border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
-              }`}>pattern</button>
+              }`}>{t('card.activity.viewPattern')}</button>
             <button onClick={() => setView('today')}
               className={`text-xs px-2.5 py-1 rounded border transition-colors ${
                 view === 'today'
                   ? 'bg-zinc-700 border-zinc-500 text-zinc-100'
                   : 'border-zinc-800 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600'
-              }`}>today</button>
+              }`}>{t('card.activity.viewToday')}</button>
           </div>
         </div>
         <div className="flex items-center gap-4 text-xs">
-          <div><span className="text-base font-bold text-zinc-100 tabular-nums">{streak.current}</span><span className="text-zinc-500 ml-1">day streak</span></div>
-          <div><span className="text-base font-bold text-zinc-300 tabular-nums">{streak.longest}</span><span className="text-zinc-500 ml-1">longest</span></div>
-          <div><span className="text-base font-bold text-zinc-300 tabular-nums">{streak.totalDays}</span><span className="text-zinc-500 ml-1">active days</span></div>
+          <div><span className="text-base font-bold text-zinc-100 tabular-nums">{streak.current}</span><span className="text-zinc-500 ml-1">{t('card.activity.dayStreak')}</span></div>
+          <div><span className="text-base font-bold text-zinc-300 tabular-nums">{streak.longest}</span><span className="text-zinc-500 ml-1">{t('card.activity.longest')}</span></div>
+          <div><span className="text-base font-bold text-zinc-300 tabular-nums">{streak.totalDays}</span><span className="text-zinc-500 ml-1">{t('card.activity.activeDays')}</span></div>
           <div className="border-l border-zinc-800 pl-4">
-            <span className="text-base font-bold text-violet-400 tabular-nums">{totalHours.toFixed(0)}h</span><span className="text-zinc-500 ml-1">total</span>
+            <span className="text-base font-bold text-violet-400 tabular-nums">{totalHours.toFixed(0)}h</span><span className="text-zinc-500 ml-1">{t('card.activity.total')}</span>
           </div>
         </div>
       </div>
@@ -144,7 +147,7 @@ export function ActivityCard({ sessions, streak, timeline }: Props) {
       {view === 'pattern' ? (
         <>
           <p className="text-xs text-zinc-600 mb-2">
-            peak slot: {DOW[peak.dow]} {peak.hour.toString().padStart(2, '0')}:00 ({fmtMins(peak.minutes)})
+            {t('card.activity.peakSlotFmt', { day: DOW[peak.dow], hour: peak.hour.toString().padStart(2, '0'), mins: fmtMins(peak.minutes) })}
           </p>
           <div className="flex gap-1 text-xs">
             <div className="w-8 shrink-0"></div>
@@ -173,23 +176,23 @@ export function ActivityCard({ sessions, streak, timeline }: Props) {
             </div>
           ))}
           <div className="flex items-center gap-2 mt-3 text-[10px] text-zinc-600">
-            <span>less</span>
+            <span>{t('card.activity.less')}</span>
             <span className="w-3 h-3 rounded-sm bg-zinc-900 border border-zinc-800" />
             <span className="w-3 h-3 rounded-sm bg-violet-900/40" />
             <span className="w-3 h-3 rounded-sm bg-violet-800/60" />
             <span className="w-3 h-3 rounded-sm bg-violet-700" />
             <span className="w-3 h-3 rounded-sm bg-violet-600" />
             <span className="w-3 h-3 rounded-sm bg-violet-400" />
-            <span>more</span>
+            <span>{t('card.activity.more')}</span>
           </div>
         </>
       ) : (
         <>
           <p className="text-xs text-zinc-600 mb-2">
-            {timeline.dateLabel} · {valid.length} sessions · {totalActiveHours.toFixed(1)}h active
+            {t('card.activity.dayHeader', { date: timeline.dateLabel, n: valid.length, hours: totalActiveHours.toFixed(1) })}
           </p>
           {valid.length === 0 ? (
-            <p className="text-zinc-600 text-sm py-4">no sessions today</p>
+            <p className="text-zinc-600 text-sm py-4">{t('card.activity.noToday')}</p>
           ) : (
             <>
               <div className="relative h-4 mb-1">

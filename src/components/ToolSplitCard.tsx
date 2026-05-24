@@ -1,6 +1,7 @@
 'use client';
 
 import type { ToolSplit } from '@/lib/stats';
+import { useT } from '@/lib/i18n/client';
 
 function fmtHours(ms: number) {
   const h = ms / 3_600_000;
@@ -15,12 +16,13 @@ const TOOL_COLOR: Record<string, string> = {
 };
 
 export function ToolSplitCard({ data }: { data: ToolSplit[] }) {
+  const t = useT();
   const total = data.reduce((s, d) => s + d.sessions, 0);
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">tool split</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.toolSplit.title')}</p>
       {data.length === 0 ? (
-        <p className="text-zinc-600 text-sm">no data</p>
+        <p className="text-zinc-600 text-sm">{t('common.empty')}</p>
       ) : (
         <>
           {/* Stacked bar */}
@@ -41,12 +43,12 @@ export function ToolSplitCard({ data }: { data: ToolSplit[] }) {
                   <span className="text-zinc-300">{d.tool === 'claude-code' ? 'claude code' : d.tool}</span>
                 </div>
                 <span className="text-zinc-500 tabular-nums">
-                  {d.sessions} sessions · {fmtHours(d.totalMs)} · {d.pct}%
+                  {d.sessions} {t('card.toolSplit.sessions')} · {fmtHours(d.totalMs)} · {d.pct}%
                 </span>
               </div>
             ))}
           </div>
-          <p className="text-xs text-zinc-600 mt-2">{total} total sessions</p>
+          <p className="text-xs text-zinc-600 mt-2">{t('card.toolSplit.totalSessions', { n: total })}</p>
         </>
       )}
     </div>
