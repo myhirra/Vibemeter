@@ -36,44 +36,62 @@ export interface CodexRateLimitParseOptions {
 }
 
 export function parseCodexRateLimit(options: CodexRateLimitParseOptions = {}): CodexUsage | null {
-  // Find the most recently modified jsonl across all session dirs
+  // Codex can keep multiple rollout files active at once. Near-identical token_count
+  // events can disagree briefly after a reset, so use the most conservative recent
+  // reading across all rollout files instead of trusting one latest file.
   const sessionsDir = options.sessionsDir ?? SESSIONS_DIR;
   const minMtimeMs = options.minMtimeMs ?? 0;
   try {
-    let bestFile: { path: string; mtime: number } | null = null as { path: string; mtime: number } | null;
+    const files: { path: string; mtime: number }[] = [];
     function walk(dir: string) {
       for (const entry of fs.readdirSync(dir)) {
         const full = path.join(dir, entry);
         try {
           const stat = fs.statSync(full);
           if (stat.isDirectory()) { walk(full); continue; }
-          if (entry.endsWith('.jsonl') && stat.mtimeMs >= minMtimeMs && stat.mtimeMs > (bestFile?.mtime ?? 0)) {
-            bestFile = { path: full, mtime: stat.mtimeMs };
+          if (entry.endsWith('.jsonl') && stat.mtimeMs >= minMtimeMs) {
+            files.push({ path: full, mtime: stat.mtimeMs });
           }
         } catch { /* skip */ }
       }
     }
     if (!fs.existsSync(sessionsDir)) return null;
     walk(sessionsDir);
-    if (!bestFile) return null;
+    if (files.length === 0) return null;
 
-    // Read from the end — last rate_limits event wins
-    const lines = fs.readFileSync(bestFile.path, 'utf8').split('\n').filter(Boolean).reverse();
-    for (const line of lines) {
-      try {
-        const obj = JSON.parse(line) as { payload?: { rate_limits?: RateLimits } };
-        const rl = obj?.payload?.rate_limits;
-        if (!rl?.primary || !rl?.secondary) continue;
-        return {
-          window_5h_used_pct: rl.primary.used_percent,
-          window_weekly_used_pct: rl.secondary.used_percent,
-          reset_at_5h: rl.primary.resets_at * 1000,
-          reset_at_weekly: rl.secondary.resets_at * 1000,
-          source_mtime_ms: bestFile.mtime,
-        };
-      } catch { /* skip */ }
+    const readings: { timestampMs: number; mtime: number; limits: RateLimits }[] = [];
+    for (const file of files) {
+      const lines = fs.readFileSync(file.path, 'utf8').split('\n').filter(Boolean);
+      for (const line of lines) {
+        try {
+          const obj = JSON.parse(line) as { timestamp?: string; payload?: { rate_limits?: RateLimits } };
+          const rl = obj?.payload?.rate_limits;
+          if (!rl?.primary || !rl?.secondary) continue;
+          const timestampMs = obj.timestamp ? Date.parse(obj.timestamp) : file.mtime;
+          readings.push({ timestampMs: Number.isFinite(timestampMs) ? timestampMs : file.mtime, mtime: file.mtime, limits: rl });
+        } catch { /* skip */ }
+      }
     }
-    return null;
+    if (readings.length === 0) return null;
+
+    const latestTimestamp = Math.max(...readings.map((reading) => reading.timestampMs));
+    const recent = readings.filter((reading) => latestTimestamp - reading.timestampMs <= 5 * 60_000);
+    const best = recent.reduce((current, next) => {
+      if (next.limits.primary.used_percent > current.limits.primary.used_percent) return next;
+      if (
+        next.limits.primary.used_percent === current.limits.primary.used_percent
+        && next.timestampMs > current.timestampMs
+      ) return next;
+      return current;
+    }, recent[0]);
+
+    return {
+      window_5h_used_pct: best.limits.primary.used_percent,
+      window_weekly_used_pct: best.limits.secondary.used_percent,
+      reset_at_5h: best.limits.primary.resets_at * 1000,
+      reset_at_weekly: best.limits.secondary.resets_at * 1000,
+      source_mtime_ms: best.mtime,
+    };
   } catch {
     return null;
   }

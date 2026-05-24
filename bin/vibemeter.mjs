@@ -4,12 +4,13 @@
  *
  *   vibemeter            start the server in the foreground
  *   vibemeter install    register as a LaunchAgent so it boots on login (macOS)
+ *   vibemeter float      open the desktop floating widget
  *   vibemeter uninstall  remove the LaunchAgent
  *   vibemeter status     show whether the daemon is loaded / running
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
 import { homedir, platform } from 'node:os';
@@ -18,6 +19,7 @@ import { createRequire } from 'node:module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const REQUIRE_HOOK = join(__dirname, 'require-hook.cjs');
+const FLOAT_SWIFT = join(__dirname, 'vibemeter-float.swift');
 const DEFAULT_PORT = 9527;
 const PORT = process.env.PORT ?? String(DEFAULT_PORT);
 const DATA_DIR = process.env.VIBEMETER_DATA_DIR ?? join(homedir(), '.vibemeter');
@@ -169,6 +171,48 @@ function macStatus() {
   }
 }
 
+function resolveFloatBinary() {
+  if (!existsSync(FLOAT_SWIFT)) return null;
+  const binary = join(DATA_DIR, 'vibemeter-float-window');
+  const needsBuild = !existsSync(binary) || statSync(binary).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs;
+  if (!needsBuild) return binary;
+
+  const result = spawnSync('/usr/bin/swiftc', [FLOAT_SWIFT, '-o', binary], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  return result.status === 0 ? binary : null;
+}
+
+function openFloat() {
+  const url = `http://localhost:${PORT}/float`;
+  if (platform() === 'darwin') {
+    const binary = resolveFloatBinary();
+    const native = binary
+      ? spawn(binary, [url], {
+          detached: true,
+          stdio: 'ignore',
+          env: { ...process.env, VIBEMETER_DATA_DIR: DATA_DIR },
+        })
+      : null;
+    if (native) {
+      native.unref();
+      console.log(`✓ Opened Vibemeter floating window (${url})`);
+      return;
+    }
+
+    const app = spawnSync('open', ['-na', 'Google Chrome', '--args', `--app=${url}`, '--window-size=260,380'], { stdio: 'inherit' });
+    if (app.status === 0) return;
+    spawnSync('open', [url], { stdio: 'inherit' });
+    return;
+  }
+  if (platform() === 'linux') {
+    spawnSync('xdg-open', [url], { stdio: 'inherit' });
+    return;
+  }
+  console.log(url);
+}
+
 function linuxInstallHint() {
   const scriptPath = resolvePath(fileURLToPath(import.meta.url));
   const unitPath = join(homedir(), '.config', 'systemd', 'user', 'vibemeter.service');
@@ -188,6 +232,7 @@ Vibemeter — local AI coding dashboard
 Usage:
   vibemeter             start the server in the foreground (Ctrl-C to stop)
   vibemeter install     run on login + keep alive (macOS LaunchAgent)
+  vibemeter float       open the desktop floating widget
   vibemeter uninstall   remove the auto-start config
   vibemeter status      show whether the daemon is loaded + tail logs
   vibemeter help        this message
@@ -208,6 +253,9 @@ switch (cmd) {
     if (platform() === 'darwin') macInstall();
     else if (platform() === 'linux') linuxInstallHint();
     else { console.error('Auto-start install not implemented for this platform yet.'); process.exit(1); }
+    break;
+  case 'float':
+    openFloat();
     break;
   case 'uninstall':
     if (platform() === 'darwin') macUninstall();
