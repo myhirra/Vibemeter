@@ -1,5 +1,6 @@
 import Cocoa
 import Foundation
+import UserNotifications
 
 struct FloatQuota: Decodable {
     let agent: String
@@ -905,7 +906,58 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     }
 }
 
-let urlString = CommandLine.arguments.dropFirst().first ?? "http://localhost:9527/float"
+// ── --notify mode ────────────────────────────────────────────────────────
+// Usage: Vibemeter --notify "<title>" "<body>" ["<thread-id>"]
+// Posts a native UNUserNotificationCenter banner from the Vibemeter bundle
+// and exits. Because this binary lives inside Vibemeter.app, the system can
+// resolve our CFBundleIdentifier and accept the request — a plain `swiftc`
+// output without a bundle would be silently dropped.
+func runNotifyMode(title: String, body: String, threadId: String?) -> Never {
+    let center = UNUserNotificationCenter.current()
+    let group = DispatchGroup()
+
+    var deliveryFinished = false
+
+    group.enter()
+    center.requestAuthorization(options: [.alert, .sound]) { _, _ in
+        let content = UNMutableNotificationContent()
+        content.title = title
+        if !body.isEmpty { content.body = body }
+        if let threadId, !threadId.isEmpty { content.threadIdentifier = threadId }
+
+        let request = UNNotificationRequest(
+            identifier: "vibemeter-notify-\(Int(Date().timeIntervalSince1970 * 1000))",
+            content: content,
+            trigger: nil
+        )
+        center.add(request) { _ in
+            deliveryFinished = true
+            group.leave()
+        }
+    }
+
+    // Allow the request to be delivered; exit even if authorization is denied
+    // so the calling hook doesn't block forever.
+    _ = group.wait(timeout: .now() + 2.0)
+    if !deliveryFinished {
+        fputs("Vibemeter notify: authorization or delivery timeout\n", stderr)
+        exit(2)
+    }
+    // Give the notification system a brief moment to enqueue before we tear
+    // down — exiting too fast occasionally drops the banner.
+    Thread.sleep(forTimeInterval: 0.15)
+    exit(0)
+}
+
+let rawArgs = Array(CommandLine.arguments.dropFirst())
+if let first = rawArgs.first, first == "--notify" {
+    let title = rawArgs.count > 1 ? rawArgs[1] : "Vibemeter"
+    let body = rawArgs.count > 2 ? rawArgs[2] : ""
+    let threadId = rawArgs.count > 3 ? rawArgs[3] : nil
+    runNotifyMode(title: title, body: body, threadId: threadId)
+}
+
+let urlString = rawArgs.first ?? "http://localhost:9527/float"
 guard let url = URL(string: urlString) else {
     fputs("Invalid Vibemeter float URL: \(urlString)\n", stderr)
     exit(1)
