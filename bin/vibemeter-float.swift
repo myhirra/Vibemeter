@@ -111,7 +111,6 @@ final class FloatView: NSView {
             drawStats(in: rect)
             drawFooter(in: rect)
         }
-        drawFoldButton(in: rect)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -145,7 +144,7 @@ final class FloatView: NSView {
                 needsDisplay = true
             } else if titleRect().contains(point) {
                 onOpenDashboard?()
-            } else if foldButtonRect().contains(point) {
+            } else if ringHitRect().contains(point) {
                 isExpanded = false
                 resizeWindowKeepingTopRight(NSSize(width: 112, height: 112))
                 needsDisplay = true
@@ -323,14 +322,9 @@ final class FloatView: NSView {
         drawText(text, rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 14), size: 12, weight: .semibold, color: NSColor.white.withAlphaComponent(0.82), alignment: .center)
     }
 
-    private func drawFoldButton(in rect: NSRect) {
-        drawIconButton(isExpanded ? "⌄" : "⌃", rect: foldButtonRect(in: rect), active: false)
-    }
-
-    private func foldButtonRect(in rect: NSRect? = nil) -> NSRect {
+    private func ringHitRect(in rect: NSRect? = nil) -> NSRect {
         let base = rect ?? bounds.insetBy(dx: 8, dy: 8)
-        let y = base.minY + 96
-        return NSRect(x: base.maxX - 38, y: y, width: 26, height: 26)
+        return NSRect(x: base.minX + 22, y: base.minY + 47, width: 104, height: 104)
     }
 
     private func titleRect(in rect: NSRect? = nil) -> NSRect {
