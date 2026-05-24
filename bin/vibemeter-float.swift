@@ -68,6 +68,7 @@ final class FloatView: NSView {
     var onRefresh: (() -> Void)?
     var onOpenDashboard: (() -> Void)?
     var onHide: (() -> Void)?
+    var onAgentChanged: (() -> Void)?
     private var dragStart: NSPoint?
     private var didDrag = false
 
@@ -154,9 +155,11 @@ final class FloatView: NSView {
                 onRefresh?()
             } else if NSRect(x: bounds.width - 161, y: 18, width: 57, height: 27).contains(point) {
                 selectedAgent = "claude-code"
+                onAgentChanged?()
                 needsDisplay = true
             } else if NSRect(x: bounds.width - 104, y: 18, width: 57, height: 27).contains(point) {
                 selectedAgent = "codex"
+                onAgentChanged?()
                 needsDisplay = true
             }
         }
@@ -432,6 +435,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
         view.onRefresh = { [weak self] in self?.refreshNow(importFirst: true) }
+        view.onAgentChanged = { [weak self] in self?.refreshNow(importFirst: true) }
         view.onHide = { [weak self] in self?.hidePanel() }
         view.onOpenDashboard = { [weak self] in
             guard let self else { return }
@@ -446,7 +450,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         self.contentView = view
 
         refreshNow(importFirst: true)
-        timer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+        timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
             self?.refreshNow(importFirst: true)
         }
     }
@@ -475,6 +479,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             placeAtTopRight(panel)
         }
         panel.orderFrontRegardless()
+        refreshNow(importFirst: true)
     }
 
     @objc private func refreshFromMenu() {
