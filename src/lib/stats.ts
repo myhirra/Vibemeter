@@ -368,6 +368,151 @@ export function sessionInsight(): SessionInsight {
   };
 }
 
+export interface CacheBreakdownRow {
+  project: string;
+  sessions: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  /** cache_read / (input + cache_creation + cache_read) — 0..100 */
+  hitRatePct: number;
+}
+
+export interface CacheStats {
+  /** Total across Claude Code sessions in the configured window. */
+  totalInput: number;
+  totalCacheCreation: number;
+  totalCacheRead: number;
+  totalOutput: number;
+  /** % of incoming tokens served from cache. */
+  hitRatePct: number;
+  /**
+   * Money saved vs. fully uncached (1.0x) — cache_read costs 0.1x, so saved ≈ 0.9 * cache_read tokens.
+   * Returned as a unit-less multiplier of "input tokens equivalent saved".
+   */
+  inputTokensSaved: number;
+  sessionsAnalyzed: number;
+  topProjects: CacheBreakdownRow[];
+  worstSessions: Array<{
+    id: string;
+    project: string;
+    aiTitle: string | null;
+    startedAt: number;
+    hitRatePct: number;
+    inputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+    transcriptPath: string | null;
+  }>;
+  /** One-sentence hint generated from the numbers; UI can show this verbatim. */
+  hint: string;
+}
+
+function ratePct(read: number, input: number, creation: number): number {
+  const denom = read + input + creation;
+  if (denom <= 0) return 0;
+  return Math.round((read / denom) * 100);
+}
+
+export function cacheStats(windowDays = 30): CacheStats {
+  const db = getDb();
+  const since = Date.now() - windowDays * 86_400_000;
+
+  const totals = db.prepare(`
+    SELECT
+      COALESCE(SUM(input_tokens), 0)          AS input,
+      COALESCE(SUM(cache_creation_tokens), 0) AS creation,
+      COALESCE(SUM(cache_read_tokens), 0)     AS read,
+      COALESCE(SUM(output_tokens), 0)         AS output,
+      COUNT(*)                                AS sessions
+    FROM sessions
+    WHERE tool = 'claude-code'
+      AND started_at > ?
+      AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
+  `).get(since) as { input: number; creation: number; read: number; output: number; sessions: number };
+
+  const hitRatePct = ratePct(totals.read, totals.input, totals.creation);
+  // cache_read costs 0.1x of normal input tokens → saved ≈ 0.9 * cache_read tokens worth of input
+  const inputTokensSaved = Math.round(totals.read * 0.9);
+
+  const projectRows = db.prepare(`
+    SELECT cwd,
+           COUNT(*) AS sessions,
+           COALESCE(SUM(input_tokens), 0)          AS input,
+           COALESCE(SUM(cache_creation_tokens), 0) AS creation,
+           COALESCE(SUM(cache_read_tokens), 0)     AS read,
+           COALESCE(SUM(output_tokens), 0)         AS output
+    FROM sessions
+    WHERE tool = 'claude-code'
+      AND started_at > ?
+      AND cwd IS NOT NULL
+      AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
+    GROUP BY cwd
+    ORDER BY (input + creation + read) DESC
+    LIMIT 8
+  `).all(since) as { cwd: string; sessions: number; input: number; creation: number; read: number; output: number }[];
+
+  const topProjects: CacheBreakdownRow[] = projectRows.map((r) => ({
+    project: r.cwd.split('/').filter(Boolean).pop() ?? '—',
+    sessions: r.sessions,
+    inputTokens: r.input,
+    cacheCreationTokens: r.creation,
+    cacheReadTokens: r.read,
+    outputTokens: r.output,
+    hitRatePct: ratePct(r.read, r.input, r.creation),
+  }));
+
+  const worstRows = db.prepare(`
+    SELECT id, cwd, ai_title, started_at,
+           COALESCE(input_tokens, 0)          AS input,
+           COALESCE(cache_creation_tokens, 0) AS creation,
+           COALESCE(cache_read_tokens, 0)     AS read
+    FROM sessions
+    WHERE tool = 'claude-code'
+      AND started_at > ?
+      AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
+      AND (input_tokens + cache_creation_tokens + cache_read_tokens) > 50000
+    ORDER BY (CAST(cache_read_tokens AS REAL) /
+             NULLIF(input_tokens + cache_creation_tokens + cache_read_tokens, 0)) ASC,
+             (input_tokens + cache_creation_tokens + cache_read_tokens) DESC
+    LIMIT 5
+  `).all(since) as { id: string; cwd: string | null; ai_title: string | null; started_at: number; input: number; creation: number; read: number }[];
+
+  const worstSessions = worstRows.map((r) => ({
+    id: r.id,
+    project: r.cwd?.split('/').filter(Boolean).pop() ?? '—',
+    aiTitle: r.ai_title,
+    startedAt: r.started_at,
+    hitRatePct: ratePct(r.read, r.input, r.creation),
+    inputTokens: r.input,
+    cacheCreationTokens: r.creation,
+    cacheReadTokens: r.read,
+    transcriptPath: transcriptPathFor('claude-code', r.cwd, r.id),
+  }));
+
+  const hint = (() => {
+    if (totals.sessions === 0) return '';
+    if (hitRatePct >= 75) return 'cache-hint-strong';
+    if (hitRatePct >= 50) return 'cache-hint-ok';
+    if (hitRatePct >= 25) return 'cache-hint-low';
+    return 'cache-hint-bad';
+  })();
+
+  return {
+    totalInput: totals.input,
+    totalCacheCreation: totals.creation,
+    totalCacheRead: totals.read,
+    totalOutput: totals.output,
+    hitRatePct,
+    inputTokensSaved,
+    sessionsAnalyzed: totals.sessions,
+    topProjects,
+    worstSessions,
+    hint,
+  };
+}
+
 export interface Achievement {
   id: string;
   title: string;

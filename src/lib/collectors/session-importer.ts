@@ -16,6 +16,7 @@ import { parseCodexRateLimit } from '../parsers/codex-ratelimit';
 import { importCodexSessions } from './codex-importer';
 import { importCursorSessions } from './cursor-importer';
 import { getCurrentCodexAccount } from '../codex-auth';
+import { scanGitCommits } from '../git/scan';
 import { getLatestUsageSnapshot, insertUsageSnapshot } from '../usage-snapshots';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
@@ -129,13 +130,28 @@ export function importSessions(): ImportResult {
   const jsonlPaths = collectJsonlPaths();
 
   const upsert = db.prepare(`
-    INSERT INTO sessions (id, tool, started_at, ended_at, exit_code, cwd, cli_args, summary, ai_title, confidence)
-    VALUES (@id, @tool, @started_at, @ended_at, @exit_code, @cwd, @cli_args, @summary, @ai_title, @confidence)
+    INSERT INTO sessions (
+      id, tool, started_at, ended_at, exit_code, cwd, cli_args, summary, ai_title, confidence,
+      input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens,
+      peak_context_tokens, last_context_tokens, last_turn_at
+    )
+    VALUES (
+      @id, @tool, @started_at, @ended_at, @exit_code, @cwd, @cli_args, @summary, @ai_title, @confidence,
+      @input_tokens, @cache_creation_tokens, @cache_read_tokens, @output_tokens,
+      @peak_context_tokens, @last_context_tokens, @last_turn_at
+    )
     ON CONFLICT(id) DO UPDATE SET
-      ended_at   = excluded.ended_at,
-      exit_code  = excluded.exit_code,
-      ai_title   = COALESCE(sessions.ai_title, excluded.ai_title),
-      confidence = excluded.confidence
+      ended_at              = excluded.ended_at,
+      exit_code             = excluded.exit_code,
+      ai_title              = COALESCE(sessions.ai_title, excluded.ai_title),
+      confidence            = excluded.confidence,
+      input_tokens          = excluded.input_tokens,
+      cache_creation_tokens = excluded.cache_creation_tokens,
+      cache_read_tokens     = excluded.cache_read_tokens,
+      output_tokens         = excluded.output_tokens,
+      peak_context_tokens   = excluded.peak_context_tokens,
+      last_context_tokens   = excluded.last_context_tokens,
+      last_turn_at          = excluded.last_turn_at
   `);
 
   let inserted = 0;
@@ -159,6 +175,13 @@ export function importSessions(): ImportResult {
         summary: null,
         ai_title: meta.aiTitle,
         confidence: 'high',
+        input_tokens: meta.inputTokens || null,
+        cache_creation_tokens: meta.cacheCreationTokens || null,
+        cache_read_tokens: meta.cacheReadTokens || null,
+        output_tokens: meta.outputTokens || null,
+        peak_context_tokens: meta.peakContextTokens,
+        last_context_tokens: meta.lastContextTokens,
+        last_turn_at: meta.lastTurnAt,
       });
       inserted++;
     }
@@ -169,6 +192,9 @@ export function importSessions(): ImportResult {
   importCursorSessions();
 
   importUsageSnapshots();
+
+  // Best-effort git linkage; never fail the import if git isn't available.
+  try { scanGitCommits(db); } catch { /* skip */ }
 
   return { scanned: jsonlPaths.length, inserted, skipped };
 }

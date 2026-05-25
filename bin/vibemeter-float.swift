@@ -72,6 +72,16 @@ struct AgentLive: Decodable {
     let recentSession: LiveSession?
 }
 
+struct ActiveContext: Decodable {
+    let sessionId: String
+    let project: String
+    let tokens: Int
+    let limit: Int
+    let pct: Int
+    let capturedAt: Double
+    let warning: Bool
+}
+
 struct FloatStats: Decodable {
     let generatedAt: Double
     let primary: FloatQuota?
@@ -82,6 +92,7 @@ struct FloatStats: Decodable {
     let sessionStatsByAgent: [AgentSessionStats]?
     let todayByTool: [ToolCount]
     let lastSession: LastSession?
+    let activeContext: ActiveContext?
     let pausedUntil: Double?
     let codexAccounts: [CodexAccountRef]?
 }
@@ -714,10 +725,53 @@ final class FloatView: NSView {
         let agentName = toolName(focusAgent)
         let line = session == nil ? "No recent \(agentName) session" : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
         drawText(line, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 32, width: rect.width - 74, height: 16), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.72))
-        if let title = session?.title, !title.isEmpty {
+
+        if focusAgent == "claude-code", let ctx = stats?.activeContext {
+            drawContextBar(in: NSRect(x: rect.minX + 22, y: rect.maxY - 16, width: rect.width - 44, height: 12), ctx: ctx)
+        } else if let title = session?.title, !title.isEmpty {
             drawText(title, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.38))
         } else {
             drawText("double-click dashboard · drag anywhere", rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.35))
+        }
+    }
+
+    private func contextColor(pct: Int) -> NSColor {
+        if pct >= 90 { return NSColor.systemPink }
+        if pct >= 80 { return NSColor.systemOrange }
+        if pct >= 60 { return NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1) }
+        return NSColor.systemGreen
+    }
+
+    private func formatTokens(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return "\(n / 1_000)k" }
+        return String(n)
+    }
+
+    private func drawContextBar(in rect: NSRect, ctx: ActiveContext) {
+        let labelRect = NSRect(x: rect.minX, y: rect.minY, width: 50, height: rect.height)
+        drawText("context", rect: labelRect, size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.50))
+
+        let tokensText = "\(formatTokens(ctx.tokens))/\(formatTokens(ctx.limit))"
+        let tokensWidth: CGFloat = 78
+        let tokensRect = NSRect(x: rect.maxX - tokensWidth, y: rect.minY, width: tokensWidth, height: rect.height)
+        let tokensColor = ctx.warning ? NSColor.systemOrange : NSColor.white.withAlphaComponent(0.62)
+        drawText(tokensText, rect: tokensRect, size: 9, weight: .medium, color: tokensColor, alignment: .right)
+
+        let barX = labelRect.maxX + 6
+        let barRight = tokensRect.minX - 6
+        let barWidth = max(0, barRight - barX)
+        let barHeight: CGFloat = 5
+        let barY = rect.minY + (rect.height - barHeight) / 2
+        let trackRect = NSRect(x: barX, y: barY, width: barWidth, height: barHeight)
+        NSColor.white.withAlphaComponent(0.10).setFill()
+        NSBezierPath(roundedRect: trackRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
+        let pct = max(0, min(100, ctx.pct))
+        let fillWidth = barWidth * CGFloat(pct) / 100
+        if fillWidth > 0.5 {
+            contextColor(pct: pct).setFill()
+            let fillRect = NSRect(x: barX, y: barY, width: fillWidth, height: barHeight)
+            NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
         }
     }
 

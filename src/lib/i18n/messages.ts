@@ -158,6 +158,11 @@ const zh: Messages = {
   'card.sessions.active': '进行中',
   'card.sessions.done': '完成',
   'card.sessions.tagPlaceholder': '标签…',
+  'card.sessions.commitsBadge': '→ {n} commits',
+  'card.sessions.commitsBadgeTitle': '本次会话期间产生了 {n} 个 git commit · 点击展开',
+  'card.sessions.commitsLoading': '正在读取 commits…',
+  'card.sessions.commitsError': '读取 commits 失败',
+  'card.sessions.commitsEmpty': '暂无关联 commit',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter · 管理',
@@ -325,6 +330,8 @@ const zh: Messages = {
   'float.actionOpenTranscript': 'Open transcript',
   'float.actionSwitch': 'Switch Codex',
   'float.paused': 'Paused · {n}m left',
+  'float.context': 'context',
+  'float.contextWarn': '/compact soon',
 
   // ── session insight card ──────────────────────────────────────────────
   'card.insight.title': '会话洞察',
@@ -338,6 +345,23 @@ const zh: Messages = {
   'card.insight.valueSub': '本月 Claude Code 累计 API 等价成本',
   'card.insight.valuePlan': '相当于 {plan} 订阅的 {x}×',
   'card.insight.valueTip': '计算方式：本月从 Claude Code statusline 抓到每个 session 的最大 cost.total_cost_usd 并求和，得到 API 等价成本 {cost}；再除以 {plan} 的月费 {price}，所以是 {x}×。它不是实际扣费。',
+
+  // ── cache hit-rate card ───────────────────────────────────────────────
+  'card.cache.title': 'Cache 命中率',
+  'card.cache.window30d': '近 30 天 · {n} 个 Claude Code 会话',
+  'card.cache.hitRate': '总命中率',
+  'card.cache.legendRead': '命中',
+  'card.cache.legendCreate': '建缓存',
+  'card.cache.legendInput': '新输入',
+  'card.cache.saved': '相当于省下约 {tokens} input tokens（按 cache_read 0.1× 计）',
+  'card.cache.byProject': '项目排行',
+  'card.cache.worstSessions': '命中率最低的会话',
+  'card.cache.openTranscript': '查看',
+  'card.cache.empty': '还没有可分析的 Claude Code session — 跑一次 Claude Code 再回来。',
+  'card.cache.cache-hint-strong': '命中率不错。继续把长系统提示和 CLAUDE.md 内容稳定在前文。',
+  'card.cache.cache-hint-ok': '一般。避免在每次 prompt 顶部插入变化内容，把稳定上下文（CLAUDE.md / 大文件）置前。',
+  'card.cache.cache-hint-low': '偏低。一个常见原因是工具列表 / 系统提示 / CWD 中含每次都变化的字段（时间戳、随机 ID）。',
+  'card.cache.cache-hint-bad': '很低。检查是否频繁切项目 / 改 system prompt — 这些都会让 cache 失效，每条 prompt 都全价。',
 
   // ── feature vote popup ────────────────────────────────────────────────
   'vote.title': '你最想解决哪个痛点？',
@@ -503,6 +527,11 @@ const en: Messages = {
   'card.sessions.active': 'active',
   'card.sessions.done': 'done',
   'card.sessions.tagPlaceholder': 'tag…',
+  'card.sessions.commitsBadge': '→ {n} commits',
+  'card.sessions.commitsBadgeTitle': '{n} git commits produced during this session · click to expand',
+  'card.sessions.commitsLoading': 'Loading commits…',
+  'card.sessions.commitsError': 'Failed to load commits',
+  'card.sessions.commitsEmpty': 'No linked commits',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter Admin',
@@ -670,6 +699,8 @@ const en: Messages = {
   'float.actionOpenTranscript': '打开 transcript',
   'float.actionSwitch': '切 Codex',
   'float.paused': '静音中 · 还剩 {n} 分钟',
+  'float.context': '上下文',
+  'float.contextWarn': '建议 /compact',
 
   // ── session insight card ──────────────────────────────────────────────
   'card.insight.title': 'Session insights',
@@ -683,6 +714,23 @@ const en: Messages = {
   'card.insight.valueSub': 'This month’s Claude Code API-equivalent spend',
   'card.insight.valuePlan': '{x}× a {plan} plan',
   'card.insight.valueTip': 'Calculation: for this month, Vibemeter sums each Claude Code session’s max cost.total_cost_usd from statusline snapshots to estimate API-equivalent spend ({cost}), then divides it by the {plan} monthly price ({price}) to get {x}×. This is not your actual bill.',
+
+  // ── cache hit-rate card ───────────────────────────────────────────────
+  'card.cache.title': 'Cache hit rate',
+  'card.cache.window30d': 'last 30 days · {n} Claude Code sessions',
+  'card.cache.hitRate': 'Overall hit rate',
+  'card.cache.legendRead': 'hit',
+  'card.cache.legendCreate': 'cache write',
+  'card.cache.legendInput': 'new input',
+  'card.cache.saved': 'Roughly {tokens} input-token equivalent saved (cache_read priced 0.1×)',
+  'card.cache.byProject': 'By project',
+  'card.cache.worstSessions': 'Lowest hit-rate sessions',
+  'card.cache.openTranscript': 'Open',
+  'card.cache.empty': 'No Claude Code sessions to analyze yet — run Claude Code once and come back.',
+  'card.cache.cache-hint-strong': 'Healthy hit rate. Keep long system prompts and CLAUDE.md content stable at the top.',
+  'card.cache.cache-hint-ok': 'Decent. Avoid putting volatile content (timestamps, random IDs) at the start of each prompt.',
+  'card.cache.cache-hint-low': 'Low. A common cause is volatile fields (timestamps, random IDs) leaking into the system prompt / tool list.',
+  'card.cache.cache-hint-bad': 'Very low. Check whether you’re hopping between projects or rewriting the system prompt — each change invalidates the cache and you pay full price per turn.',
 
   // ── feature vote popup ────────────────────────────────────────────────
   'vote.title': 'What pain should Vibemeter solve first?',

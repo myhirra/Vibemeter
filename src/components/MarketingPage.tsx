@@ -2,6 +2,9 @@ import Image from 'next/image';
 
 const HIGHLIGHTS = [
   ['Quota runway', 'Claude Code and Codex 5h / 7-day windows, burn-rate, and reset visibility.'],
+  ['Context window monitor', 'See the live 200k token budget for your active Claude Code chat — get a "/compact soon" nudge before auto-compact bites.'],
+  ['Cache hit-rate insight', 'How much of every prompt is served from prompt-cache, plus per-project breakdown and your worst-offender sessions.'],
+  ['Git ↔ session linking', 'Every commit in tracked repos is matched to the agent session that produced it. Click a session, see which shas it shipped.'],
   ['Project cost context', 'Sessions, projects, spend, tokens, and activity history for client or project review.'],
   ['macOS helper', 'Floating meter and optional completion alerts when long-running agents finish.'],
 ];
@@ -26,6 +29,9 @@ export function MarketingPage() {
           <ul className="mt-5 space-y-2 text-sm text-zinc-400">
             <li><span className="text-zinc-200">No cloud:</span> reads files already on your disk.</li>
             <li><span className="text-zinc-200">Runway view:</span> 5h / 7-day windows for Claude Code and Codex.</li>
+            <li><span className="text-zinc-200">Context monitor:</span> watch your Claude Code 200k context fill, before /compact bites.</li>
+            <li><span className="text-zinc-200">Cache insight:</span> see what % of every prompt comes from prompt-cache.</li>
+            <li><span className="text-zinc-200">Git linkage:</span> commits in tracked repos pair with the session that shipped them.</li>
             <li><span className="text-zinc-200">macOS helper:</span> floating meter plus optional spoken completion alerts.</li>
           </ul>
 

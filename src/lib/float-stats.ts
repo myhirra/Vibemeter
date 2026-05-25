@@ -1,9 +1,18 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { getCodexAccounts } from './codex-auth';
 import { dataDir } from './data-dir';
 import { getDb } from './db';
+import { readLiveContext } from './parsers/session-log';
 import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
+
+/**
+ * Claude conversation context window (tokens). Claude Sonnet 4.x / Opus 4.x
+ * advertise 200k; values are deliberately conservative — we trip the
+ * "compact soon" warning before the model hard-fails.
+ */
+const CLAUDE_CONTEXT_LIMIT = 200_000;
 
 export interface FloatQuota {
   agent: 'codex' | 'claude-code';
@@ -20,6 +29,17 @@ export interface FloatQuota {
   pace5hExhaustMin: number | null;
   /** % per minute, rounded to 2 decimals. */
   pace5hPctPerMin: number | null;
+}
+
+export interface FloatContext {
+  sessionId: string;
+  project: string;
+  tokens: number;
+  limit: number;
+  pct: number;
+  capturedAt: number;
+  /** true once we cross the soft "you should /compact" line. */
+  warning: boolean;
 }
 
 export interface FloatStats {
@@ -40,6 +60,8 @@ export interface FloatStats {
     startedAt: number;
     transcriptPath: string | null;
   } | null;
+  /** Latest Claude Code turn's context window usage. null if no active session. */
+  activeContext: FloatContext | null;
   pausedUntil: number | null;
   codexAccounts: { accountId: string; label: string; isCurrent: boolean }[];
 }
@@ -150,6 +172,58 @@ function quotaPressure(quota: FloatQuota): number {
 
 function projectName(cwd: string | null): string {
   return cwd?.split('/').filter(Boolean).pop() ?? 'unknown';
+}
+
+const CLAUDE_PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
+const CLAUDE_SESSIONS_DIR = path.join(os.homedir(), '.claude', 'sessions');
+
+/** Resolve the active Claude Code session id from ~/.claude/sessions/*.json (most recent). */
+function findActiveClaudeSessionId(): { sessionId: string; mtimeMs: number } | null {
+  let files: string[];
+  try { files = fs.readdirSync(CLAUDE_SESSIONS_DIR); } catch { return null; }
+  let best: { sessionId: string; mtimeMs: number } | null = null;
+  for (const f of files) {
+    if (!f.endsWith('.json')) continue;
+    const full = path.join(CLAUDE_SESSIONS_DIR, f);
+    try {
+      const stat = fs.statSync(full);
+      const raw = fs.readFileSync(full, 'utf8');
+      const data = JSON.parse(raw) as { sessionId?: string };
+      if (data.sessionId && (best == null || stat.mtimeMs > best.mtimeMs)) {
+        best = { sessionId: data.sessionId, mtimeMs: stat.mtimeMs };
+      }
+    } catch { /* skip */ }
+  }
+  return best;
+}
+
+function findJsonlForSession(sessionId: string): string | null {
+  let projects: string[];
+  try { projects = fs.readdirSync(CLAUDE_PROJECTS_DIR); } catch { return null; }
+  for (const dir of projects) {
+    const candidate = path.join(CLAUDE_PROJECTS_DIR, dir, `${sessionId}.jsonl`);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function getActiveContext(): FloatContext | null {
+  const active = findActiveClaudeSessionId();
+  if (!active) return null;
+  const jsonl = findJsonlForSession(active.sessionId);
+  if (!jsonl) return null;
+  const live = readLiveContext(jsonl);
+  if (!live) return null;
+  const pct = Math.min(100, Math.round((live.tokens / CLAUDE_CONTEXT_LIMIT) * 100));
+  return {
+    sessionId: live.sessionId,
+    project: projectName(live.cwd),
+    tokens: live.tokens,
+    limit: CLAUDE_CONTEXT_LIMIT,
+    pct,
+    capturedAt: live.capturedAt,
+    warning: pct >= 80,
+  };
 }
 
 function quotaLevel(quota: FloatQuota | null): FloatAgentLive['quotaLevel'] {
@@ -321,6 +395,7 @@ export async function getFloatStats(): Promise<FloatStats> {
         : null,
     } : null,
     pausedUntil,
+    activeContext: getActiveContext(),
     codexAccounts: codexAccounts.map((a) => ({ accountId: a.accountId, label: a.label, isCurrent: a.isCurrent })),
   };
 }

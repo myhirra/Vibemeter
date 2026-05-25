@@ -12,11 +12,12 @@ import { ActivityCard } from './ActivityCard';
 import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import { SessionInsightCard } from './SessionInsightCard';
+import { CacheCard } from './CacheCard';
 import { FeatureVoteCard } from './FeatureVoteCard';
 import { ShareReportCard } from './ShareReportCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import type { SessionEntry } from './SessionsTable';
-import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight } from '@/lib/stats';
+import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight, CacheStats } from '@/lib/stats';
 import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
@@ -50,6 +51,7 @@ interface Props {
   timeline: { dateLabel: string; sessions: TimelineSession[] };
   achievements: Achievement[];
   insight: SessionInsight;
+  cache: CacheStats;
 }
 
 const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const;
@@ -126,6 +128,7 @@ export function Dashboard({
   timeline,
   achievements,
   insight,
+  cache,
 }: Props) {
   const t = useT();
   const router = useRouter();
@@ -395,11 +398,15 @@ export function Dashboard({
       {/* Activation + sharing */}
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <SessionInsightCard data={insight} />
-        <ShareReportCard />
+        <CacheCard data={cache} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+        <ShareReportCard />
         <SetupDoctorCard />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <FeatureVoteCard />
       </div>
 

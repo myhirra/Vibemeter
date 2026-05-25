@@ -38,6 +38,19 @@ function quotaColor(quota: FloatQuota | null) {
   return '#10b981';
 }
 
+function contextColor(pct: number) {
+  if (pct >= 90) return '#f43f5e';
+  if (pct >= 80) return '#f59e0b';
+  if (pct >= 60) return '#a78bfa';
+  return '#10b981';
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`;
+  return String(n);
+}
+
 function formatRemainingPercent(value: number | null | undefined) {
   if (value == null) return '--';
   const clamped = Math.max(0, Math.min(100, value));
@@ -154,6 +167,32 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
             </span>
           </span>
         </button>
+
+        {stats.activeContext && (
+          <div className="w-full rounded-md border border-zinc-800 bg-zinc-950 px-3 py-2">
+            <div className="flex items-baseline justify-between text-[10px] uppercase tracking-wider text-zinc-500">
+              <span>{t('float.context')}</span>
+              <span className="tabular-nums" style={{ color: contextColor(stats.activeContext.pct) }}>
+                {stats.activeContext.pct}%
+              </span>
+            </div>
+            <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+              <div
+                className="h-full transition-all"
+                style={{
+                  width: `${stats.activeContext.pct}%`,
+                  backgroundColor: contextColor(stats.activeContext.pct),
+                }}
+              />
+            </div>
+            <p className="mt-1 text-[10px] text-zinc-600 tabular-nums">
+              {fmtTokens(stats.activeContext.tokens)} / {fmtTokens(stats.activeContext.limit)}
+              {stats.activeContext.warning && (
+                <span className="ml-2 text-amber-300">{t('float.contextWarn')}</span>
+              )}
+            </p>
+          </div>
+        )}
 
         <div className="flex items-center gap-2">
           <button
