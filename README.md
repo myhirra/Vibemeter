@@ -1,8 +1,8 @@
 # Vibemeter
 
-> Measure your AI coding vibe. A local-first dashboard for Claude Code, Codex, and Cursor.
+> Don’t let Claude Code or Codex hit limits mid-task. Vibemeter is a local quota runway and completion console for AI coding agents.
 
-> 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and renders a dashboard from them. That's it.
+> 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and shows quota runway, sessions, and completion alerts from them. That's it.
 
 ![Vibemeter dashboard](docs/demo1.png)
 
@@ -19,20 +19,20 @@ Website: <https://vibemeter.siney.top>
 Install and launch with one command:
 
 ```bash
-curl -fsSL https://vibemeter.siney.top/install.sh | bash
+curl -fsSL 'https://vibemeter.siney.top/install.sh?src=readme' | bash
 ```
 
 The installer downloads Vibemeter from npm, registers the local background service, waits for it to start, and opens the macOS floating widget. The dashboard runs on your own machine at <http://localhost:9527>.
 
 ## What you get
 
-- **5h / 7-day rate-limit windows** for both Claude Code (statusline) and Codex (rollout files)
-- **Spending & consumption** — Claude Code USD + Codex tokens, with a 14-day trend chart
-- **Activity** — hour-of-week heatmap with peak-slot detection + today's timeline ribbon
-- **Project leaderboard** — top projects by hours / sessions / tools used
-- **Achievements** — 16 unlockable milestones
-- **Burndown chart** — 7-day usage history with hover tooltip
+- **Quota runway** — 5h / 7-day rate-limit windows for both Claude Code (statusline) and Codex (rollout files)
+- **Burn-rate & reset visibility** — see recent usage history before a long agent task runs into a limit
+- **Completion alerts** — optional macOS voice + notification hooks when Claude Code or Codex finishes
+- **Project cost context** — top projects by hours / sessions / tools used, plus Claude Code USD and Codex tokens
 - **Sessions table** — searchable, tag-able, filterable by tool and date range
+- **Activity review** — hour-of-week heatmap, today's timeline ribbon, and daily streak context
+- **Local dashboard** — everything renders from files already on your machine
 
 ## Quick start
 

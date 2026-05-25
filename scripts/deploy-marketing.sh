@@ -23,9 +23,10 @@ copy_file "deploy/vibemeter-site/sitemap.xml" "sitemap.xml"
 copy_file "deploy/vibemeter-site/float-expanded.png" "float-expanded.png"
 copy_file "deploy/vibemeter-site/float-collapsed.png" "float-collapsed.png"
 copy_file "deploy/vibemeter-site/float-ball.png" "float-ball.png"
+copy_file "deploy/vibemeter-site/admin-server.mjs" "admin-server.mjs"
 
-echo "[2/3] Reload nginx"
-ssh "$REMOTE" "nginx -t && systemctl reload nginx"
+echo "[2/3] Reload nginx and admin"
+ssh "$REMOTE" "set -e; nginx -t; systemctl reload nginx; systemctl restart vibemeter-site-admin 2>/dev/null || true"
 
 echo "[3/3] Verify"
 curl -fsSI "$SITE_URL/" >/dev/null
