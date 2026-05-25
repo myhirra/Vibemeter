@@ -59,7 +59,7 @@
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows (CLI)",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "softwareVersion": "0.1.5",
+        "softwareVersion": "0.2.0",
         "author": { "@type": "Person", "name": "hirra" },
         "downloadUrl": "https://vibemeter.siney.top/install.sh",
         "image": "https://vibemeter.siney.top/og.png",
@@ -360,6 +360,9 @@
           <ul class="bullets">
             <li><strong>No cloud:</strong> no telemetry, no account, no remote API.</li>
             <li><strong>Runway view:</strong> 5h / 7-day windows for Claude Code and Codex.</li>
+            <li><strong>Context monitor:</strong> watch your Claude Code 200k context fill before /compact bites.</li>
+            <li><strong>Cache insight:</strong> see what % of every prompt comes from prompt-cache.</li>
+            <li><strong>Git linkage:</strong> commits in tracked repos pair with the agent session that shipped them.</li>
             <li><strong>macOS helper:</strong> floating meter plus spoken completion alerts.</li>
           </ul>
           <div class="install">
@@ -372,7 +375,7 @@
 
         <div class="shots" aria-hidden="true">
           <div class="shot">
-            <img src="/float-expanded.png" alt="Vibemeter expanded floating meter" width="520" height="360" />
+            <img src="/float-expanded.png" alt="Vibemeter expanded floating meter" width="520" height="650" />
           </div>
           <div class="shot">
             <img src="/float-collapsed.png" alt="Vibemeter collapsed progress bar" width="520" height="260" />
@@ -384,6 +387,18 @@
         <div class="card">
           <h3>Quota runway</h3>
           <p>Claude Code and Codex 5h / 7-day windows, burn-rate, reset time, and recent burndown history.</p>
+        </div>
+        <div class="card">
+          <h3>Context window monitor <span style="color:#9b7cff">· new</span></h3>
+          <p>Live 200k-token budget for the active Claude Code chat, on the floating widget and dashboard. A “/compact soon” nudge fires before auto-compact triggers.</p>
+        </div>
+        <div class="card">
+          <h3>Cache hit-rate insight <span style="color:#9b7cff">· new</span></h3>
+          <p>What % of every prompt is served from prompt-cache, broken down by project and session, with a hint when the rate looks pathological.</p>
+        </div>
+        <div class="card">
+          <h3>Git ↔ session linking <span style="color:#9b7cff">· new</span></h3>
+          <p>Every commit in tracked repos is matched to the agent session that produced it. Click a session row to see the shas it shipped.</p>
         </div>
         <div class="card">
           <h3>Project cost context</h3>
