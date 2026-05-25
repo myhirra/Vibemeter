@@ -12,6 +12,16 @@ set -euo pipefail
 TOOL="${1:-AI}"
 STATUS="${2:-complete}"
 LOCALE="${VIBEMETER_NOTIFY_LOCALE:-zh}"
+
+# Honor pause flag set by the floater's "Pause 30m" button.
+PAUSE_FILE="${VIBEMETER_DATA_DIR:-$HOME/.vibemeter}/pause-until"
+if [[ -f "$PAUSE_FILE" ]]; then
+  until_ms="$(cat "$PAUSE_FILE" 2>/dev/null || true)"
+  if [[ "$until_ms" =~ ^[0-9]+$ ]]; then
+    now_ms=$(($(date +%s) * 1000))
+    if (( now_ms < until_ms )); then exit 0; fi
+  fi
+fi
 PROJECT="${VIBEMETER_NOTIFY_PROJECT:-$(basename "${PWD:-unknown}")}"
 LOCK_DIR="${VIBEMETER_NOTIFY_LOCK_DIR:-${TMPDIR:-/tmp}/vibemeter-notify.lock}"
 STATE_FILE="${VIBEMETER_NOTIFY_STATE_FILE:-${TMPDIR:-/tmp}/vibemeter-notify.last}"

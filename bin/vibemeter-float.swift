@@ -13,6 +13,24 @@ struct FloatQuota: Decodable {
     let resetAt5h: Double?
     let resetAtWeekly: Double?
     let capturedAt: Double?
+    let pace5hExhaustMin: Int?
+    let pace5hPctPerMin: Double?
+}
+
+struct CodexAccountRef: Decodable {
+    let accountId: String
+    let label: String
+    let isCurrent: Bool
+}
+
+struct LastSessionRef: Decodable {
+    let id: String
+    let tool: String
+    let project: String
+    let cwd: String?
+    let title: String?
+    let startedAt: Double
+    let transcriptPath: String?
 }
 
 struct ToolCount: Decodable {
@@ -20,11 +38,20 @@ struct ToolCount: Decodable {
     let count: Int
 }
 
+struct AgentSessionStats: Decodable {
+    let agent: String
+    let todaySessions: Int
+    let totalSessions: Int
+}
+
 struct LastSession: Decodable {
+    let id: String?
     let tool: String
     let project: String
+    let cwd: String?
     let title: String?
     let startedAt: Double
+    let transcriptPath: String?
 }
 
 struct LiveSession: Decodable {
@@ -52,8 +79,11 @@ struct FloatStats: Decodable {
     let liveByAgent: [AgentLive]
     let todaySessions: Int
     let totalSessions: Int
+    let sessionStatsByAgent: [AgentSessionStats]?
     let todayByTool: [ToolCount]
     let lastSession: LastSession?
+    let pausedUntil: Double?
+    let codexAccounts: [CodexAccountRef]?
 }
 
 private func menuBarRemainingPercentText(_ remaining: Double) -> String {
@@ -74,6 +104,9 @@ final class FloatView: NSView {
         var close: NSRect = .zero
         var claudeToggle: NSRect = .zero
         var codexToggle: NSRect = .zero
+        var pause: NSRect = .zero
+        var openTranscript: NSRect = .zero
+        var switchCodex: NSRect = .zero
     }
 
     static let displayStyleKey = "VMFloatDisplayStyle"
@@ -88,6 +121,9 @@ final class FloatView: NSView {
     var onOpenDashboard: (() -> Void)?
     var onHide: (() -> Void)?
     var onSettingsChanged: (() -> Void)?
+    var onTogglePause: (() -> Void)?
+    var onOpenLastTranscript: (() -> Void)?
+    var onCycleCodex: (() -> Void)?
     private var dragStart: NSPoint?
     private var didDrag = false
     private var hitRects = HitRects()
@@ -146,6 +182,22 @@ final class FloatView: NSView {
         stats?.liveByAgent.first(where: { $0.agent == agent })
     }
 
+    private func sessionStats(for agent: String) -> (today: Int, total: Int) {
+        if agent == "both" {
+            let claude = sessionStats(for: "claude-code")
+            let codex = sessionStats(for: "codex")
+            return (claude.today + codex.today, claude.total + codex.total)
+        }
+
+        if let byAgent = stats?.sessionStatsByAgent,
+           let row = byAgent.first(where: { $0.agent == agent }) {
+            return (row.todaySessions, row.totalSessions)
+        }
+
+        let today = stats?.todayByTool.first(where: { $0.tool == agent })?.count ?? 0
+        return (today, stats?.totalSessions ?? 0)
+    }
+
     private var focusAgent: String {
         if agentDisplay == "both" { return "claude-code" }
         return agentDisplay
@@ -153,7 +205,7 @@ final class FloatView: NSView {
 
     func preferredSize() -> NSSize {
         if isExpanded {
-            return NSSize(width: 306, height: agentDisplay == "both" ? 372 : 260)
+            return NSSize(width: 306, height: agentDisplay == "both" ? 408 : 296)
         }
         switch (displayStyle, agentDisplay) {
         case ("pill", "both"):
@@ -194,7 +246,60 @@ final class FloatView: NSView {
             drawRingBlock(context: context, in: rect, agent: agentDisplay, yOffset: 0)
         }
         drawStats(in: rect)
+        drawActions(in: rect)
         drawFooter(in: rect)
+    }
+
+    private func drawActions(in rect: NSRect) {
+        let dual = agentDisplay == "both"
+        let offset: CGFloat = dual ? 94 : 0
+        let y = rect.minY + 224 + offset
+        var x = rect.minX + 20
+
+        let paused = (stats?.pausedUntil ?? 0) > Date().timeIntervalSince1970 * 1000
+        let pauseLabel: String
+        if paused {
+            let leftMs = (stats!.pausedUntil!) - Date().timeIntervalSince1970 * 1000
+            let leftMin = max(0, Int((leftMs / 60_000).rounded()))
+            pauseLabel = "Paused \(leftMin)m"
+        } else {
+            pauseLabel = "Pause 30m"
+        }
+        let pauseRect = drawActionButton(label: pauseLabel, x: x, y: y, accent: paused)
+        hitRects.pause = pauseRect
+        x = pauseRect.maxX + 6
+
+        if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
+            let openRect = drawActionButton(label: "Open last", x: x, y: y, accent: false)
+            hitRects.openTranscript = openRect
+            x = openRect.maxX + 6
+        }
+        let showCodex = agentDisplay == "codex" || agentDisplay == "both"
+        if showCodex, let accounts = stats?.codexAccounts, accounts.count >= 2 {
+            let switchRect = drawActionButton(label: "Switch Codex", x: x, y: y, accent: false)
+            hitRects.switchCodex = switchRect
+        }
+    }
+
+    private func drawActionButton(label: String, x: CGFloat, y: CGFloat, accent: Bool) -> NSRect {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .medium),
+        ]
+        let textSize = (label as NSString).size(withAttributes: attrs)
+        let width = textSize.width + 16
+        let height: CGFloat = 22
+        let rect = NSRect(x: x, y: y, width: width, height: height)
+        if accent {
+            NSColor(calibratedRed: 0.62, green: 0.45, blue: 0.12, alpha: 0.42).setFill()
+        } else {
+            NSColor.white.withAlphaComponent(0.06).setFill()
+        }
+        NSBezierPath(roundedRect: rect, xRadius: 11, yRadius: 11).fill()
+        (accent ? NSColor.systemYellow.withAlphaComponent(0.6) : NSColor.white.withAlphaComponent(0.10)).setStroke()
+        NSBezierPath(roundedRect: rect, xRadius: 11, yRadius: 11).stroke()
+        let textColor = accent ? NSColor.systemYellow : NSColor.white.withAlphaComponent(0.82)
+        drawText(label, rect: NSRect(x: rect.minX, y: rect.minY + 5, width: rect.width, height: 14), size: 10, weight: .medium, color: textColor, alignment: .center)
+        return rect
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -235,6 +340,18 @@ final class FloatView: NSView {
             }
             if hitRects.title.contains(point) {
                 onOpenDashboard?()
+                return
+            }
+            if hitRects.pause != .zero && hitRects.pause.contains(point) {
+                onTogglePause?()
+                return
+            }
+            if hitRects.openTranscript != .zero && hitRects.openTranscript.contains(point) {
+                onOpenLastTranscript?()
+                return
+            }
+            if hitRects.switchCodex != .zero && hitRects.switchCodex.contains(point) {
+                onCycleCodex?()
                 return
             }
             if hitRects.claudeToggle != .zero && hitRects.claudeToggle.contains(point) {
@@ -541,7 +658,10 @@ final class FloatView: NSView {
         drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: 140, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
         drawText(q == nil ? statusText : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
         drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
-        if let account = q?.accountLabel, !account.isEmpty, !dual {
+        if let exhaust = q?.pace5hExhaustMin, exhaust > 0 {
+            let paceColor = exhaust < 30 ? NSColor.systemPink : NSColor.systemYellow
+            drawText("exhausts in ~\(exhaust)m", rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: 140, height: 14), size: 10, weight: .medium, color: paceColor)
+        } else if let account = q?.accountLabel, !account.isEmpty, !dual {
             drawText(account, rect: NSRect(x: x, y: baseY + 67, width: 140, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
         }
 
@@ -554,8 +674,9 @@ final class FloatView: NSView {
         let dual = agentDisplay == "both"
         let offset: CGFloat = dual ? 94 : 0
         let top = rect.minY + 164 + offset
-        drawMetric(title: "today", value: "\(stats?.todaySessions ?? 0)", rect: NSRect(x: rect.minX + 20, y: top, width: 74, height: 50))
-        drawMetric(title: "total", value: "\(stats?.totalSessions ?? 0)", rect: NSRect(x: rect.minX + 104, y: top, width: 74, height: 50))
+        let counts = sessionStats(for: dual ? "both" : focusAgent)
+        drawMetric(title: "today", value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: 74, height: 50))
+        drawMetric(title: "total", value: "\(counts.total)", rect: NSRect(x: rect.minX + 104, y: top, width: 74, height: 50))
         let weeklyRect = NSRect(x: rect.minX + 188, y: top, width: 74, height: 50)
         if dual {
             drawDualWeekly(rect: weeklyRect)
@@ -696,6 +817,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private let pageURL: URL
     private let apiURL: URL
     private let importURL: URL
+    private let pauseURL: URL
+    private let openURL: URL
+    private let codexAccountsURL: URL
     private var panel: FloatingPanel?
     private var contentView: FloatView?
     private var timer: Timer?
@@ -710,6 +834,12 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         self.apiURL = components.url!
         components.path = "/api/import-sessions"
         self.importURL = components.url!
+        components.path = "/api/pause"
+        self.pauseURL = components.url!
+        components.path = "/api/open"
+        self.openURL = components.url!
+        components.path = "/api/codex-accounts"
+        self.codexAccountsURL = components.url!
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -747,6 +877,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             guard let self else { return }
             NSWorkspace.shared.open(self.pageURL.deletingLastPathComponent())
         }
+        view.onTogglePause = { [weak self] in self?.togglePause() }
+        view.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
+        view.onCycleCodex = { [weak self] in self?.cycleCodex() }
 
         panel.contentView = view
         placeAtTopRight(panel)
@@ -830,6 +963,45 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             y: frame.maxY - panel.frame.height - margin
         )
         panel.setFrameOrigin(origin)
+    }
+
+    private func togglePause() {
+        let stats = contentView?.stats
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        let paused = (stats?.pausedUntil ?? 0) > nowMs
+        var request = URLRequest(url: pauseURL)
+        request.httpMethod = paused ? "DELETE" : "POST"
+        if !paused {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = "{\"minutes\":30}".data(using: .utf8)
+        }
+        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
+            DispatchQueue.main.async { self?.refreshNow() }
+        }.resume()
+    }
+
+    private func openLastTranscript() {
+        guard let path = contentView?.stats?.lastSession?.transcriptPath, !path.isEmpty else { return }
+        var request = URLRequest(url: openURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = ["path": path]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: request).resume()
+    }
+
+    private func cycleCodex() {
+        guard let accounts = contentView?.stats?.codexAccounts, accounts.count >= 2 else { return }
+        let currentIdx = accounts.firstIndex(where: { $0.isCurrent }) ?? 0
+        let next = accounts[(currentIdx + 1) % accounts.count]
+        var request = URLRequest(url: codexAccountsURL)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body: [String: String] = ["action": "switch", "accountId": next.accountId]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
+            DispatchQueue.main.async { self?.refreshNow() }
+        }.resume()
     }
 
     private func refreshNow() {

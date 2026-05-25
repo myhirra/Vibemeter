@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { startTransition, useEffect, useMemo, useState } from 'react';
 import type { FloatQuota, FloatStats } from '@/lib/float-stats';
 import { useT } from '@/lib/i18n/client';
 
@@ -80,11 +80,45 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
     }
   }
 
+  const [now, setNow] = useState(0);
   useEffect(() => {
-    window.resizeTo?.(260, expanded ? 380 : 220);
+    startTransition(() => setNow(Date.now()));
+    const tick = window.setInterval(() => startTransition(() => setNow(Date.now())), 30_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
+    window.resizeTo?.(260, expanded ? 460 : 240);
     const timer = window.setInterval(loadStats, 60_000);
     return () => window.clearInterval(timer);
   }, [expanded]);
+
+  const paused = stats.pausedUntil != null && now > 0 && stats.pausedUntil > now;
+  const pausedMinLeft = paused ? Math.max(0, Math.round((stats.pausedUntil! - now) / 60_000)) : 0;
+
+  async function togglePause() {
+    if (paused) {
+      await fetch('/api/pause', { method: 'DELETE' });
+    } else {
+      await fetch('/api/pause', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minutes: 30 }) });
+    }
+    await loadStats();
+  }
+
+  async function openLastTranscript() {
+    const tp = stats.lastSession?.transcriptPath;
+    if (!tp) return;
+    await fetch('/api/open', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: tp }) });
+  }
+
+  async function cycleCodexAccount() {
+    const accounts = stats.codexAccounts;
+    if (accounts.length < 2) return;
+    const idx = Math.max(0, accounts.findIndex((a) => a.isCurrent));
+    const next = accounts[(idx + 1) % accounts.length];
+    await fetch('/api/codex-accounts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'switch', accountId: next.accountId }) });
+    await loadStats();
+  }
 
   return (
     <main className="min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
@@ -107,6 +141,16 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
               <span className="mt-1 block text-[11px] text-zinc-500">
                 {primary ? t('float.fiveHRemain') : t('float.noQuota')}
               </span>
+              {primary?.pace5hExhaustMin != null && (
+                <span className="mt-1 block text-[10px] text-amber-300">
+                  {t('float.paceExhaust', { n: primary.pace5hExhaustMin })}
+                </span>
+              )}
+              {primary && primary.pace5hExhaustMin == null && primary.pace5hPctPerMin != null && primary.pace5hPctPerMin <= 0 && (
+                <span className="mt-1 block text-[10px] text-zinc-600">
+                  {t('float.paceFlat')}
+                </span>
+              )}
             </span>
           </span>
         </button>
@@ -127,6 +171,38 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
           >
             {t('common.dashboard')}
           </a>
+        </div>
+
+        <div className="flex w-full flex-wrap items-center justify-center gap-1.5">
+          <button
+            type="button"
+            onClick={togglePause}
+            className={`rounded-full border px-2.5 py-1 text-[10px] transition-colors ${
+              paused
+                ? 'border-amber-400/50 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20'
+                : 'border-zinc-700 text-zinc-300 hover:border-zinc-500'
+            }`}
+          >
+            {paused ? t('float.paused', { n: pausedMinLeft }) : t('float.actionPause')}
+          </button>
+          {stats.lastSession?.transcriptPath && (
+            <button
+              type="button"
+              onClick={openLastTranscript}
+              className="rounded-full border border-zinc-700 px-2.5 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-500"
+            >
+              {t('float.actionOpenTranscript')}
+            </button>
+          )}
+          {stats.codexAccounts.length >= 2 && (
+            <button
+              type="button"
+              onClick={cycleCodexAccount}
+              className="rounded-full border border-zinc-700 px-2.5 py-1 text-[10px] text-zinc-300 transition-colors hover:border-zinc-500"
+            >
+              {t('float.actionSwitch')}
+            </button>
+          )}
         </div>
 
         {expanded && (

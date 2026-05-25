@@ -16,7 +16,7 @@ import { parseCodexRateLimit } from '../parsers/codex-ratelimit';
 import { importCodexSessions } from './codex-importer';
 import { importCursorSessions } from './cursor-importer';
 import { getCurrentCodexAccount } from '../codex-auth';
-import { insertUsageSnapshot } from '../usage-snapshots';
+import { getLatestUsageSnapshot, insertUsageSnapshot } from '../usage-snapshots';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
@@ -71,17 +71,26 @@ export function importUsageSnapshots(): void {
   // Claude Code: from statusline-latest.json written by statusline-command.sh
   const usage = parseStatuslineJson();
   if (usage) {
-    insertUsageSnapshot(db, {
-      capturedAt: Date.now(),
-      source: 'statusline',
-      accountId: null,
-      window5hUsedPct: usage.window_5h_used_pct,
-      windowWeeklyUsedPct: usage.window_weekly_used_pct,
-      resetAt5h: usage.reset_at_5h,
-      resetAtWeekly: usage.reset_at_weekly,
-      rawOutput: usage.raw_output,
-      confidence: 'high',
-    });
+    const last = getLatestUsageSnapshot(db, 'statusline');
+    const changed =
+      !last ||
+      last.window_5h_used_pct !== usage.window_5h_used_pct ||
+      last.window_weekly_used_pct !== usage.window_weekly_used_pct ||
+      last.reset_at_5h !== usage.reset_at_5h ||
+      last.reset_at_weekly !== usage.reset_at_weekly;
+    if (changed) {
+      insertUsageSnapshot(db, {
+        capturedAt: Date.now(),
+        source: 'statusline',
+        accountId: null,
+        window5hUsedPct: usage.window_5h_used_pct,
+        windowWeeklyUsedPct: usage.window_weekly_used_pct,
+        resetAt5h: usage.reset_at_5h,
+        resetAtWeekly: usage.reset_at_weekly,
+        rawOutput: usage.raw_output,
+        confidence: 'high',
+      });
+    }
   }
 
   // Codex: from ~/.codex/sessions/*/rollout-*.jsonl rate_limits events
@@ -90,17 +99,27 @@ export function importUsageSnapshots(): void {
     minMtimeMs: currentCodexAccount?.authMtimeMs,
   });
   if (codexUsage) {
-    insertUsageSnapshot(db, {
-      capturedAt: Date.now(),
-      source: 'codex',
-      accountId: currentCodexAccount?.accountId ?? null,
-      window5hUsedPct: codexUsage.window_5h_used_pct,
-      windowWeeklyUsedPct: codexUsage.window_weekly_used_pct,
-      resetAt5h: codexUsage.reset_at_5h,
-      resetAtWeekly: codexUsage.reset_at_weekly,
-      rawOutput: null,
-      confidence: 'high',
-    });
+    const accountId = currentCodexAccount?.accountId ?? null;
+    const last = getLatestUsageSnapshot(db, 'codex', accountId);
+    const changed =
+      !last ||
+      last.window_5h_used_pct !== codexUsage.window_5h_used_pct ||
+      last.window_weekly_used_pct !== codexUsage.window_weekly_used_pct ||
+      last.reset_at_5h !== codexUsage.reset_at_5h ||
+      last.reset_at_weekly !== codexUsage.reset_at_weekly;
+    if (changed) {
+      insertUsageSnapshot(db, {
+        capturedAt: Date.now(),
+        source: 'codex',
+        accountId,
+        window5hUsedPct: codexUsage.window_5h_used_pct,
+        windowWeeklyUsedPct: codexUsage.window_weekly_used_pct,
+        resetAt5h: codexUsage.reset_at_5h,
+        resetAtWeekly: codexUsage.reset_at_weekly,
+        rawOutput: null,
+        confidence: 'high',
+      });
+    }
   }
 }
 

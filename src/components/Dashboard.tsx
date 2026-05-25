@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { startTransition, useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SessionsTable } from './SessionsTable';
@@ -11,8 +11,10 @@ import { SpendingCard } from './SpendingCard';
 import { ActivityCard } from './ActivityCard';
 import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
+import { SessionInsightCard } from './SessionInsightCard';
+import { FeatureVoteCard } from './FeatureVoteCard';
 import type { SessionEntry } from './SessionsTable';
-import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement } from '@/lib/stats';
+import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight } from '@/lib/stats';
 import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
@@ -45,6 +47,7 @@ interface Props {
   spending: SpendingStats;
   timeline: { dateLabel: string; sessions: TimelineSession[] };
   achievements: Achievement[];
+  insight: SessionInsight;
 }
 
 const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const;
@@ -120,16 +123,22 @@ export function Dashboard({
   spending,
   timeline,
   achievements,
+  insight,
 }: Props) {
   const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const queryToolFilter = searchParams.get('agent');
-  const toolFilter = isToolFilter(queryToolFilter) ? queryToolFilter : initialToolFilter;
+  const resolvedToolFilter = isToolFilter(queryToolFilter) ? queryToolFilter : initialToolFilter;
+  const [toolFilter, setToolFilter] = useState<ToolFilter>(resolvedToolFilter);
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    startTransition(() => setToolFilter(resolvedToolFilter));
+  }, [resolvedToolFilter]);
 
   const selectedCodexAccount = useMemo(
     () => codexAccounts.find((account) => account.accountId === selectedCodexAccountId) ?? null,
@@ -217,15 +226,16 @@ export function Dashboard({
 
     const query = params.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
-    router.refresh();
   }
 
   function changeToolFilter(nextTool: ToolFilter) {
+    setToolFilter(nextTool);
     replaceQuery(nextTool, nextTool === 'codex' ? selectedCodexAccountId : null);
   }
 
   function changeCodexAccount(accountId: string) {
     const nextAccountId = accountId || null;
+    setToolFilter('codex');
     replaceQuery('codex', nextAccountId);
   }
 
@@ -378,6 +388,12 @@ export function Dashboard({
       <div className="grid grid-cols-2 gap-4 mb-4">
         <SpendingCard data={filteredSpending} toolFilter={toolFilter} />
         <AchievementsCard data={achievements} />
+      </div>
+
+      {/* Session insight + feature vote */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
+        <SessionInsightCard data={insight} />
+        <FeatureVoteCard />
       </div>
 
       {/* Activity — pattern (heatmap) / today (timeline) */}
