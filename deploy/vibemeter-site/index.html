@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Vibemeter — Local-first dashboard for Claude Code, Codex & Cursor</title>
+    <title>Vibemeter — Quota runway for Claude Code, Codex & Cursor</title>
     <meta
       name="description"
-      content="Track Claude Code, Codex and Cursor usage from local files. Vibemeter includes a dashboard, macOS floating meter, and optional voice notifications. No telemetry, no cloud."
+      content="See Claude Code and Codex quota runway before long agent tasks hit limits. Vibemeter adds a local dashboard, macOS floating meter, and completion notifications. No telemetry, no cloud."
     />
     <meta
       name="keywords"
@@ -19,10 +19,10 @@
     <!-- Open Graph (Facebook / LinkedIn / 微信 / Slack) -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://vibemeter.siney.top/" />
-    <meta property="og:title" content="Vibemeter — Local-first AI coding meter" />
+    <meta property="og:title" content="Vibemeter — AI coding quota runway" />
     <meta
       property="og:description"
-      content="Claude Code · Codex · Cursor 会话与额度仪表盘。所有数据留在本机，零遥测、零云端。Install once, track usage and sessions locally."
+      content="别让 Claude Code / Codex 长任务跑到一半撞限。Vibemeter 本地显示额度跑道、浮窗和完成提醒，零遥测、零云端。"
     />
     <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
     <meta property="og:image:width" content="1440" />
@@ -33,10 +33,10 @@
 
     <!-- Twitter / X Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Vibemeter — Local-first AI coding meter" />
+    <meta name="twitter:title" content="Vibemeter — AI coding quota runway" />
     <meta
       name="twitter:description"
-      content="Track Claude Code, Codex & Cursor usage, sessions, and activity — 100% local."
+      content="Know when Claude Code or Codex will hit quota before a long task gets interrupted — 100% local."
     />
     <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
 
@@ -54,12 +54,12 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Vibemeter",
-        "description": "Local-first dashboard for Claude Code, Codex and Cursor usage, with a macOS floating meter and optional voice notifications.",
+        "description": "Local quota runway for Claude Code, Codex and Cursor usage, with a macOS floating meter and optional completion notifications.",
         "url": "https://vibemeter.siney.top/",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows (CLI)",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "softwareVersion": "0.1.4",
+        "softwareVersion": "0.1.5",
         "author": { "@type": "Person", "name": "hirra" },
         "downloadUrl": "https://vibemeter.siney.top/install.sh",
         "image": "https://vibemeter.siney.top/og.png",
@@ -134,6 +134,12 @@
         align-items: center;
       }
 
+      .hero > div,
+      .shots,
+      .card {
+        min-width: 0;
+      }
+
       h1 {
         margin: 0;
         max-width: 780px;
@@ -187,7 +193,8 @@
         color: #ffffff;
         font-size: 13.5px;
         line-height: 1.5;
-        white-space: nowrap;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
         scrollbar-width: thin;
       }
 
@@ -344,20 +351,20 @@
 
       <section class="hero">
         <div>
-          <h1>Local-first AI coding meter.</h1>
+          <h1>Don’t let Claude Code or Codex hit limits mid-task.</h1>
           <p class="lead">
-            Track Claude Code, Codex, and Cursor usage from local files. Dashboard,
-            macOS floating meter, and optional voice notifications when long-running
-            agents finish. Data stays on your machine.
+            Vibemeter shows your AI coding quota runway from local files: 5h / 7-day
+            windows, burn-rate, macOS floating meter, and optional completion alerts
+            when long-running agents finish.
           </p>
           <ul class="bullets">
             <li><strong>No cloud:</strong> no telemetry, no account, no remote API.</li>
-            <li><strong>Quota view:</strong> 5h / 7-day windows for Claude Code and Codex.</li>
+            <li><strong>Runway view:</strong> 5h / 7-day windows for Claude Code and Codex.</li>
             <li><strong>macOS helper:</strong> floating meter plus spoken completion alerts.</li>
           </ul>
           <div class="install">
-            <code>curl -fsSL https://vibemeter.siney.top/install.sh | bash</code>
-            <button class="button" type="button" onclick="navigator.clipboard.writeText('curl -fsSL https://vibemeter.siney.top/install.sh | bash')">
+            <code>curl -fsSL 'https://vibemeter.siney.top/install.sh?src=site-copy' | bash</code>
+            <button class="button" type="button" onclick="navigator.clipboard.writeText(&quot;curl -fsSL 'https://vibemeter.siney.top/install.sh?src=site-copy' | bash&quot;)">
               Copy
             </button>
           </div>
@@ -375,12 +382,12 @@
 
       <section class="details" aria-label="Vibemeter features">
         <div class="card">
-          <h3>Usage windows</h3>
-          <p>Claude Code and Codex 5h / 7-day quota snapshots, plus a burndown chart for recent history.</p>
+          <h3>Quota runway</h3>
+          <p>Claude Code and Codex 5h / 7-day windows, burn-rate, reset time, and recent burndown history.</p>
         </div>
         <div class="card">
-          <h3>Work history</h3>
-          <p>Sessions, projects, activity heatmap, spend, tokens, and a small achievement layer for daily review.</p>
+          <h3>Project cost context</h3>
+          <p>Sessions, projects, spend, tokens, and activity history so you can explain where AI coding time goes.</p>
         </div>
         <div class="card">
           <h3>macOS helper</h3>

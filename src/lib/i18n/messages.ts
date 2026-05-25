@@ -340,14 +340,15 @@ const zh: Messages = {
   'card.insight.valueTip': '计算方式：本月从 Claude Code statusline 抓到每个 session 的最大 cost.total_cost_usd 并求和，得到 API 等价成本 {cost}；再除以 {plan} 的月费 {price}，所以是 {x}×。它不是实际扣费。',
 
   // ── feature vote popup ────────────────────────────────────────────────
-  'vote.title': '下一个功能投你一票？',
-  'vote.sub': '只为你的本地数据库做记录，导出后你自己决定要不要分享',
+  'vote.title': '你最想解决哪个痛点？',
+  'vote.sub': '只存在本机；复制后你可以贴到 V2EX 或 GitHub issue',
   'vote.submit': '提交',
   'vote.dismiss': '以后再说',
-  'vote.thanks': '已记录，感谢！',
+  'vote.thanks': '已记录在本机。',
   'vote.export': '导出到剪贴板',
-  'vote.other': '其他（自定义）',
-  'vote.otherPlaceholder': '写下你想要的功能',
+  'vote.other': '其他 / 具体场景',
+  'vote.otherPlaceholder': '例如：我跑 Codex 修测试时经常不知道还能跑多久',
+  'vote.shareHint': '需要反馈时点一下复制，直接粘贴即可；Vibemeter 不会自动上传。',
 };
 
 const en: Messages = {
@@ -684,14 +685,15 @@ const en: Messages = {
   'card.insight.valueTip': 'Calculation: for this month, Vibemeter sums each Claude Code session’s max cost.total_cost_usd from statusline snapshots to estimate API-equivalent spend ({cost}), then divides it by the {plan} monthly price ({price}) to get {x}×. This is not your actual bill.',
 
   // ── feature vote popup ────────────────────────────────────────────────
-  'vote.title': 'Vote for the next feature?',
-  'vote.sub': 'Stored locally only — copy to clipboard if you want to share',
+  'vote.title': 'What pain should Vibemeter solve first?',
+  'vote.sub': 'Stored locally only — copy it into V2EX or a GitHub issue when you want to share',
   'vote.submit': 'Submit',
   'vote.dismiss': 'Maybe later',
-  'vote.thanks': 'Thanks — saved locally.',
+  'vote.thanks': 'Saved locally.',
   'vote.export': 'Copy to clipboard',
-  'vote.other': 'Other (custom)',
-  'vote.otherPlaceholder': 'Describe the feature you want',
+  'vote.other': 'Other / specific scenario',
+  'vote.otherPlaceholder': 'Example: I often do not know how long Codex can keep fixing tests',
+  'vote.shareHint': 'Copy and paste it when you want to share feedback. Vibemeter never uploads it automatically.',
 };
 
 const MESSAGES: Record<Locale, Messages> = { zh, en };
