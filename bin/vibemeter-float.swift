@@ -946,6 +946,32 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refreshNow()
         }
+        setupWakeObservers()
+    }
+
+    /// After display wake / session unlock, the 5s polling timer can be late by
+    /// up to a full interval and the data shown is stale (often pre-sleep). Force
+    /// an immediate refresh whenever the system reports wake/unlock so the
+    /// widget catches up the moment the user is looking at it again.
+    private func setupWakeObservers() {
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshNow()
+        }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshNow()
+        }
+        ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshNow()
+        }
+        // Lock-screen unlock fires here even when sleep/wake doesn't.
+        DistributedNotificationCenter.default().addObserver(
+            forName: Notification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.refreshNow()
+        }
     }
 
     private func setupStatusItem(initialView: FloatView) {
