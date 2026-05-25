@@ -13,6 +13,15 @@ export interface SessionEntry {
   summary: string | null;
   ai_title: string | null;
   tags: string | null;
+  /** Commits attributed to this session by the local git scanner. */
+  commit_count?: number;
+}
+
+interface SessionCommitEntry {
+  sha: string;
+  shortSha: string;
+  subject: string;
+  committedAt: number;
 }
 
 const PRESET_TAGS = ['blocked', 'poc', 'spike', 'review', 'done'];
@@ -70,6 +79,25 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
   const [tagStates, setTagStates] = useState<Record<string, string[]>>({});
   const [tagInput, setTagInput] = useState<Record<string, string>>({});
   const [tagOpen, setTagOpen] = useState<string | null>(null);
+  const [commitOpen, setCommitOpen] = useState<string | null>(null);
+  const [commitCache, setCommitCache] = useState<Record<string, SessionCommitEntry[] | 'loading' | 'error'>>({});
+
+  async function toggleCommits(sessionId: string) {
+    if (commitOpen === sessionId) {
+      setCommitOpen(null);
+      return;
+    }
+    setCommitOpen(sessionId);
+    if (commitCache[sessionId] && commitCache[sessionId] !== 'loading') return;
+    setCommitCache((c) => ({ ...c, [sessionId]: 'loading' }));
+    try {
+      const r = await fetch(`/api/sessions/${sessionId}/commits`);
+      const payload = await r.json() as { commits: SessionCommitEntry[] };
+      setCommitCache((c) => ({ ...c, [sessionId]: payload.commits ?? [] }));
+    } catch {
+      setCommitCache((c) => ({ ...c, [sessionId]: 'error' }));
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -152,7 +180,23 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                       <ToolBadge tool={s.tool} />
                     </td>
                     <td className="px-4 py-2 max-w-xs">
-                      <div className="text-zinc-200 text-xs font-medium">{cwdBasename(s.cwd)}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-zinc-200 text-xs font-medium">{cwdBasename(s.cwd)}</span>
+                        {s.commit_count != null && s.commit_count > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => toggleCommits(s.id)}
+                            className={`text-[10px] px-1.5 py-0.5 rounded border tabular-nums transition-colors ${
+                              commitOpen === s.id
+                                ? 'border-emerald-700 bg-emerald-900/40 text-emerald-200'
+                                : 'border-emerald-800/40 bg-emerald-950/40 text-emerald-400 hover:border-emerald-700'
+                            }`}
+                            title={t('card.sessions.commitsBadgeTitle', { n: s.commit_count })}
+                          >
+                            {t('card.sessions.commitsBadge', { n: s.commit_count })}
+                          </button>
+                        )}
+                      </div>
                       {s.ai_title && (
                         <div className="text-zinc-500 text-xs truncate">{s.ai_title}</div>
                       )}
@@ -208,6 +252,36 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                       </div>
                     </td>
                   </tr>
+                  {commitOpen === s.id && (
+                    <tr className="border-b border-zinc-800/40 bg-zinc-950/50">
+                      <td colSpan={6} className="px-4 py-3">
+                        {commitCache[s.id] === 'loading' && (
+                          <p className="text-xs text-zinc-500">{t('card.sessions.commitsLoading')}</p>
+                        )}
+                        {commitCache[s.id] === 'error' && (
+                          <p className="text-xs text-rose-400">{t('card.sessions.commitsError')}</p>
+                        )}
+                        {Array.isArray(commitCache[s.id]) && (commitCache[s.id] as SessionCommitEntry[]).length === 0 && (
+                          <p className="text-xs text-zinc-600">{t('card.sessions.commitsEmpty')}</p>
+                        )}
+                        {Array.isArray(commitCache[s.id]) && (commitCache[s.id] as SessionCommitEntry[]).length > 0 && (
+                          <ul className="space-y-1">
+                            {(commitCache[s.id] as SessionCommitEntry[]).map((c) => (
+                              <li key={c.sha} className="flex items-center gap-3 text-xs">
+                                <span className="text-emerald-400 font-mono shrink-0">{c.shortSha}</span>
+                                <span className="text-zinc-300 truncate flex-1">{c.subject}</span>
+                                <span className="text-zinc-600 tabular-nums shrink-0">
+                                  {new Date(c.committedAt).toLocaleString(undefined, {
+                                    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+                                  })}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  )}
                 </React.Fragment>
               );
             })}

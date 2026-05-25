@@ -3,7 +3,8 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { Dashboard } from '@/components/Dashboard';
 import Link from 'next/link';
-import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight } from '@/lib/stats';
+import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight, cacheStats } from '@/lib/stats';
+import { commitCountsBySession } from '@/lib/git/scan';
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
 import { getLatestUsageSnapshot } from '@/lib/usage-snapshots';
@@ -105,6 +106,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     sessions = injectMockCursorSessions(sessions);
   }
 
+  const commitCounts = demo ? new Map<string, number>() : commitCountsBySession(db);
+  const sessionsWithCommits = sessions.map((s) => ({
+    ...s,
+    commit_count: commitCounts.get(s.id) ?? 0,
+  }));
+
   const claudeUsageRow = getLatestUsageSnapshot(db, 'statusline');
   const codexUsageRow = selectedCodexAccountId
     ? getLatestUsageSnapshot(db, 'codex', selectedCodexAccountId)
@@ -161,7 +168,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         </div>
 
         <Dashboard
-          sessions={sessions}
+          sessions={sessionsWithCommits}
           streak={activityStreak()}
           allBurndown={burndownPoints(168)}
           claudeBurndown={burndownPoints(168, 'statusline')}
@@ -171,6 +178,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           timeline={timeline}
           achievements={achievements()}
           insight={sessionInsight()}
+          cache={cacheStats()}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}
           codexAccounts={codexAccounts}

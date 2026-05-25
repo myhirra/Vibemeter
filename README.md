@@ -27,6 +27,9 @@ The installer downloads Vibemeter from npm, registers the local background servi
 ## What you get
 
 - **Quota runway** — 5h / 7-day rate-limit windows for both Claude Code (statusline) and Codex (rollout files)
+- **Context window monitor** *(new in 0.2.0)* — live 200k-token budget for the active Claude Code chat, on the floating widget and dashboard, with a "/compact soon" nudge before auto-compact triggers
+- **Cache hit-rate insight** *(new in 0.2.0)* — what % of every prompt is served from prompt-cache, by project and by session, plus a hint when the rate looks pathological
+- **Git ↔ session linking** *(new in 0.2.0)* — every commit in tracked repos is matched to the agent session that produced it; click a row to see the shas
 - **Quota Guard** — `vibemeter guard` tells you whether a long agent task is safe to start
 - **Share report** — copy a local Markdown report for V2EX, GitHub issues, or team chat
 - **First-run Doctor** — `vibemeter doctor` checks local data sources, quota setup, and completion hooks
