@@ -13,6 +13,8 @@ import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import { SessionInsightCard } from './SessionInsightCard';
 import { FeatureVoteCard } from './FeatureVoteCard';
+import { ShareReportCard } from './ShareReportCard';
+import { SetupDoctorCard } from './SetupDoctorCard';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight } from '@/lib/stats';
 import { useT } from '@/lib/i18n/client';
@@ -346,7 +348,7 @@ export function Dashboard({
           : t(TOOL_LABEL_KEYS[toolFilter]).toLowerCase();
         return (
           <>
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
               <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
                 <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">{t('dashboard.window5h')} · {label}</p>
                 {usage?.window_5h_used_pct != null ? (
@@ -385,14 +387,19 @@ export function Dashboard({
       })()}
 
       {/* Spending + achievements */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <SpendingCard data={filteredSpending} toolFilter={toolFilter} />
         <AchievementsCard data={achievements} />
       </div>
 
-      {/* Session insight + feature vote */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      {/* Activation + sharing */}
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <SessionInsightCard data={insight} />
+        <ShareReportCard />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+        <SetupDoctorCard />
         <FeatureVoteCard />
       </div>
 
@@ -410,7 +417,7 @@ export function Dashboard({
       </div>
 
       {/* Tool split + Project leaderboard */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <ToolSplitCard data={filteredToolSplit} />
         <ProjectLeaderboard sessions={filteredSessions} />
       </div>

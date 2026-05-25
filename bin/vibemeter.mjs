@@ -10,7 +10,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -249,17 +249,7 @@ function openFloat() {
 
 async function pulse(args) {
   const asJson = args.includes('--json');
-  const url = `http://localhost:${PORT}/api/float`;
-  let payload;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    payload = await res.json();
-  } catch (e) {
-    console.error(`Vibemeter daemon not reachable at ${url}: ${e.message}`);
-    console.error('Hint: run `vibemeter start` (or `vibemeter install` for autostart).');
-    process.exit(2);
-  }
+  const payload = await fetchDaemonJson('/api/float');
   if (asJson) {
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
     return;
@@ -282,6 +272,148 @@ async function pulse(args) {
   }
   lines.push(`today: ${payload.todaySessions} sessions · total: ${payload.totalSessions}`);
   process.stdout.write(lines.join('\n') + '\n');
+}
+
+async function fetchDaemonJson(endpoint) {
+  const url = `http://localhost:${PORT}${endpoint}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (e) {
+    console.error(`Vibemeter daemon not reachable at ${url}: ${e.message}`);
+    console.error('Hint: run `vibemeter start` (or `vibemeter install` for autostart).');
+    process.exit(2);
+  }
+}
+
+function statusGlyph(status) {
+  switch (status) {
+    case 'safe': return 'OK';
+    case 'watch': return 'WATCH';
+    case 'risky': return 'RISKY';
+    case 'wait': return 'WAIT';
+    case 'ready': return 'OK';
+    case 'needs_setup': return 'SETUP';
+    case 'missing': return 'MISSING';
+    default: return 'UNKNOWN';
+  }
+}
+
+function fmtPct(value) {
+  return value == null ? '--' : `${Math.max(0, Math.round(value))}%`;
+}
+
+async function guard(args) {
+  const asJson = args.includes('--json');
+  const payload = await fetchDaemonJson('/api/guard');
+  if (asJson) {
+    process.stdout.write(JSON.stringify(payload.guard, null, 2) + '\n');
+    return;
+  }
+  const g = payload.guard;
+  console.log('');
+  console.log(`  Quota guard: ${statusGlyph(g.status)} · ${g.headline}`);
+  console.log(`  ${g.detail}`);
+  console.log('');
+  for (const q of g.quotas ?? []) {
+    const label = q.accountLabel ? `${q.label} (${q.accountLabel})` : q.label;
+    const pace = q.pace5hExhaustMin == null ? '' : ` · pace exhausts in ~${q.pace5hExhaustMin}m`;
+    console.log(`  ${label}`);
+    console.log(`    5h ${fmtPct(q.remaining5h)} left · weekly ${fmtPct(q.remainingWeekly)} left${pace}`);
+  }
+  if (!g.quotas?.length) console.log('  No quota snapshot yet.');
+  console.log('');
+}
+
+async function shareReport(args) {
+  const asJson = args.includes('--json');
+  const payload = await fetchDaemonJson('/api/report');
+  const report = payload.report;
+  process.stdout.write((asJson ? JSON.stringify(report, null, 2) : report.markdown) + '\n');
+}
+
+function dirExists(filePath) {
+  try { return statSync(filePath).isDirectory(); } catch { return false; }
+}
+
+function fileExists(filePath) {
+  try { return statSync(filePath).isFile(); } catch { return false; }
+}
+
+function countFiles(root, predicate, limit = 500) {
+  let count = 0;
+  function walk(dir) {
+    if (count >= limit) return;
+    let entries = [];
+    try { entries = readdirSync(dir); } catch { return; }
+    for (const entry of entries) {
+      if (count >= limit) return;
+      const full = join(dir, entry);
+      let st;
+      try { st = statSync(full); } catch { continue; }
+      if (st.isDirectory()) walk(full);
+      else if (predicate(entry)) count += 1;
+    }
+  }
+  if (dirExists(root)) walk(root);
+  return count;
+}
+
+async function daemonReachable() {
+  try {
+    const res = await fetch(`http://localhost:${PORT}/api/float`, { signal: AbortSignal.timeout(1200) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function doctor(args) {
+  const asJson = args.includes('--json');
+  const claudeProjects = join(homedir(), '.claude', 'projects');
+  const codexSessions = join(homedir(), '.codex', 'sessions');
+  const codexState = join(homedir(), '.codex', 'state_5.sqlite');
+  const cursorStorage = join(homedir(), 'Library', 'Application Support', 'Cursor', 'User', 'workspaceStorage');
+  const statusline = join(DATA_DIR, 'statusline-latest.json');
+  const dbPath = join(DATA_DIR, 'continuity.sqlite');
+  const notify = notifyStatusObject();
+  const claudeLogs = countFiles(claudeProjects, (name) => name.endsWith('.jsonl'), 300);
+  const codexRollouts = countFiles(codexSessions, (name) => name.startsWith('rollout-') && name.endsWith('.jsonl'), 300);
+  const cursorDbs = countFiles(cursorStorage, (name) => name === 'state.vscdb', 300);
+  const daemon = await daemonReachable();
+
+  const checks = [
+    { id: 'daemon', label: 'Dashboard daemon', status: daemon ? 'ready' : 'needs_setup', detail: daemon ? `http://localhost:${PORT} is reachable` : `http://localhost:${PORT} is not reachable`, hint: 'Run `vibemeter start` or `vibemeter install`.' },
+    { id: 'data-store', label: 'Vibemeter data store', status: fileExists(dbPath) ? 'ready' : 'needs_setup', detail: fileExists(dbPath) ? 'Local SQLite database exists' : 'Local database has not been created yet', hint: 'Open the dashboard or run `vibemeter` once.' },
+    { id: 'claude-sessions', label: 'Claude Code sessions', status: claudeLogs > 0 ? 'ready' : 'needs_setup', detail: claudeLogs > 0 ? `${claudeLogs} session logs found` : 'No Claude Code session logs found', hint: 'Run Claude Code once, then refresh Vibemeter.' },
+    { id: 'claude-statusline', label: 'Claude quota statusline', status: fileExists(statusline) ? 'ready' : 'needs_setup', detail: fileExists(statusline) ? 'Latest statusline quota snapshot exists' : 'No Claude Code quota snapshot found', hint: 'Add the README statusLine hook.' },
+    { id: 'codex-state', label: 'Codex state database', status: fileExists(codexState) ? 'ready' : 'needs_setup', detail: fileExists(codexState) ? 'Codex state_5.sqlite found' : 'Codex state_5.sqlite not found', hint: 'Run Codex once.' },
+    { id: 'codex-rollouts', label: 'Codex quota rollouts', status: codexRollouts > 0 ? 'ready' : 'needs_setup', detail: codexRollouts > 0 ? `${codexRollouts} rollout files found` : 'No Codex rollout rate-limit files found', hint: 'Run Codex once.' },
+    { id: 'cursor-storage', label: 'Cursor workspace storage', status: cursorDbs > 0 ? 'ready' : 'unknown', detail: cursorDbs > 0 ? `${cursorDbs} Cursor workspace DBs found` : 'Cursor data not found; fine if unused' },
+    { id: 'completion-notify', label: 'Completion notifications', status: notify.claudeStop || notify.codex ? 'ready' : 'needs_setup', detail: `Claude ${notify.claudeStop ? 'ready' : 'off'}, Codex ${notify.codex ? 'ready' : 'off'}`, hint: 'Run `vibemeter notify-install`.' },
+  ];
+  const ready = checks.filter((item) => item.status === 'ready').length;
+  const report = {
+    generatedAt: Date.now(),
+    overall: ready >= checks.length - 2 ? 'ready' : ready >= 3 ? 'needs_setup' : 'missing',
+    ready,
+    needsAttention: checks.filter((item) => item.status === 'needs_setup' || item.status === 'missing').length,
+    checks,
+  };
+  if (asJson) {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n');
+    return;
+  }
+  console.log('');
+  console.log(`  First-run doctor: ${statusGlyph(report.overall)} · ${report.ready}/${report.checks.length} ready`);
+  console.log('');
+  for (const item of report.checks) {
+    console.log(`  ${statusGlyph(item.status).padEnd(7)} ${item.label}`);
+    console.log(`          ${item.detail}`);
+    if (item.status !== 'ready' && item.hint) console.log(`          ${item.hint}`);
+  }
+  console.log('');
 }
 
 function linuxInstallHint() {
@@ -575,6 +707,9 @@ Usage:
   vibemeter uninstall        remove the auto-start config
   vibemeter status           show whether the daemon is loaded + tail logs
   vibemeter pulse [--json]   print current 5h/weekly usage from running daemon
+  vibemeter guard [--json]   say whether starting a long agent task is safe
+  vibemeter report [--json]  print a local Markdown usage report
+  vibemeter doctor [--json]  check local data sources and setup gaps
   vibemeter notify <t> <s>   speak a notification (used by hooks)
   vibemeter notify-install   wire Vibemeter into Claude Code + Codex
   vibemeter notify-uninstall remove Vibemeter from Claude Code + Codex
@@ -627,6 +762,15 @@ switch (cmd) {
     break;
   case 'pulse':
     await pulse(process.argv.slice(3));
+    break;
+  case 'guard':
+    await guard(process.argv.slice(3));
+    break;
+  case 'report':
+    await shareReport(process.argv.slice(3));
+    break;
+  case 'doctor':
+    await doctor(process.argv.slice(3));
     break;
   case 'uninstall':
     if (platform() === 'darwin') macUninstall();

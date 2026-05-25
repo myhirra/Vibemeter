@@ -27,6 +27,9 @@ The installer downloads Vibemeter from npm, registers the local background servi
 ## What you get
 
 - **Quota runway** — 5h / 7-day rate-limit windows for both Claude Code (statusline) and Codex (rollout files)
+- **Quota Guard** — `vibemeter guard` tells you whether a long agent task is safe to start
+- **Share report** — copy a local Markdown report for V2EX, GitHub issues, or team chat
+- **First-run Doctor** — `vibemeter doctor` checks local data sources, quota setup, and completion hooks
 - **Burn-rate & reset visibility** — see recent usage history before a long agent task runs into a limit
 - **Completion alerts** — optional macOS voice + notification hooks when Claude Code or Codex finishes
 - **Project cost context** — top projects by hours / sessions / tools used, plus Claude Code USD and Codex tokens
@@ -74,6 +77,10 @@ On Linux, run `vibemeter install` and it'll print a systemd-user unit you can dr
 | `vibemeter float`          | open the native macOS floating widget                |
 | `vibemeter uninstall`      | remove the auto-start config                         |
 | `vibemeter status`         | show whether the daemon is loaded + tail log         |
+| `vibemeter guard`          | tell whether a long Claude/Codex task is safe to run |
+| `vibemeter report`         | print a local Markdown share report                  |
+| `vibemeter doctor`         | check local data sources and setup gaps              |
+| `vibemeter pulse --json`   | print current 5h/weekly usage as JSON                |
 | `vibemeter notify-install` | wire voice + macOS-notification hooks (Claude+Codex) |
 | `vibemeter notify-status`  | show which voice hooks are installed                 |
 | `vibemeter notify-uninstall` | remove the voice + notification hooks              |
