@@ -3,12 +3,13 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { Dashboard } from '@/components/Dashboard';
 import Link from 'next/link';
-import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements } from '@/lib/stats';
+import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight } from '@/lib/stats';
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
 import { getLatestUsageSnapshot } from '@/lib/usage-snapshots';
 import { MarketingPage } from '@/components/MarketingPage';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
+import { OpenFloatButton } from '@/components/OpenFloatButton';
 import { getServerLocale } from '@/lib/i18n/server';
 import { t } from '@/lib/i18n';
 
@@ -142,6 +143,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             <p className="text-zinc-600 text-xs mt-1">{t(locale, 'header.tagline')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <OpenFloatButton />
             <LocaleSwitcher />
             <Link
               href="/settings"
@@ -168,6 +170,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           spending={spendingStats()}
           timeline={timeline}
           achievements={achievements()}
+          insight={sessionInsight()}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}
           codexAccounts={codexAccounts}

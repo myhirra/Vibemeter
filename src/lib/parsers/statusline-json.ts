@@ -1,5 +1,5 @@
 /**
- * Parses ~/.data/statusline-latest.json written by the patched statusline-command.sh.
+ * Parses ~/.vibemeter/statusline-latest.json written by the patched statusline-command.sh.
  * Claude Code writes this file on every status line render with current session context.
  * All fields come directly from Claude Code internals — confidence='high'.
  */

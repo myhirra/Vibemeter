@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { getCodexAccounts } from './codex-auth';
+import { dataDir } from './data-dir';
 import { getDb } from './db';
 import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
 
@@ -13,6 +16,10 @@ export interface FloatQuota {
   resetAt5h: number | null;
   resetAtWeekly: number | null;
   capturedAt: number | null;
+  /** Predicted minutes until 5h window hits 100%, based on last 30 min slope. null if slope ≤ 0 or insufficient data. */
+  pace5hExhaustMin: number | null;
+  /** % per minute, rounded to 2 decimals. */
+  pace5hPctPerMin: number | null;
 }
 
 export interface FloatStats {
@@ -22,13 +29,25 @@ export interface FloatStats {
   liveByAgent: FloatAgentLive[];
   todaySessions: number;
   totalSessions: number;
+  sessionStatsByAgent: FloatSessionStats[];
   todayByTool: { tool: string; count: number }[];
   lastSession: {
+    id: string;
     tool: string;
     project: string;
+    cwd: string | null;
     title: string | null;
     startedAt: number;
+    transcriptPath: string | null;
   } | null;
+  pausedUntil: number | null;
+  codexAccounts: { accountId: string; label: string; isCurrent: boolean }[];
+}
+
+export interface FloatSessionStats {
+  agent: string;
+  todaySessions: number;
+  totalSessions: number;
 }
 
 export interface FloatLiveSession {
@@ -49,11 +68,60 @@ export interface FloatAgentLive {
   recentSession: FloatLiveSession | null;
 }
 
+function predictPace(
+  db: ReturnType<typeof getDb>,
+  source: 'statusline' | 'codex',
+  accountId: string | null,
+  latest: UsageSnapshotRecord,
+): { pace5hExhaustMin: number | null; pace5hPctPerMin: number | null } {
+  if (latest.window_5h_used_pct == null) {
+    return { pace5hExhaustMin: null, pace5hPctPerMin: null };
+  }
+  const windowMs = 30 * 60_000;
+  const minAgo = latest.captured_at - windowMs;
+  // Earliest snapshot in last 30 min with non-null 5h pct, same reset window (so we don't span resets)
+  const row = accountId != null
+    ? db.prepare(`
+        SELECT captured_at, window_5h_used_pct, reset_at_5h
+        FROM usage_snapshots
+        WHERE source = ? AND account_id = ?
+          AND captured_at >= ?
+          AND captured_at < ?
+          AND window_5h_used_pct IS NOT NULL
+          AND reset_at_5h = ?
+        ORDER BY captured_at ASC
+        LIMIT 1
+      `).get(source, accountId, minAgo, latest.captured_at, latest.reset_at_5h)
+    : db.prepare(`
+        SELECT captured_at, window_5h_used_pct, reset_at_5h
+        FROM usage_snapshots
+        WHERE source = ?
+          AND captured_at >= ?
+          AND captured_at < ?
+          AND window_5h_used_pct IS NOT NULL
+          AND reset_at_5h = ?
+        ORDER BY captured_at ASC
+        LIMIT 1
+      `).get(source, minAgo, latest.captured_at, latest.reset_at_5h);
+  if (!row) return { pace5hExhaustMin: null, pace5hPctPerMin: null };
+  const earliest = row as { captured_at: number; window_5h_used_pct: number };
+  const minutes = (latest.captured_at - earliest.captured_at) / 60_000;
+  if (minutes < 2) return { pace5hExhaustMin: null, pace5hPctPerMin: null };
+  const slope = (latest.window_5h_used_pct - earliest.window_5h_used_pct) / minutes;
+  if (slope <= 0) return { pace5hExhaustMin: null, pace5hPctPerMin: Math.round(slope * 100) / 100 };
+  const remaining = 100 - latest.window_5h_used_pct;
+  return {
+    pace5hExhaustMin: Math.max(0, Math.round(remaining / slope)),
+    pace5hPctPerMin: Math.round(slope * 100) / 100,
+  };
+}
+
 function quotaFromSnapshot(
   agent: FloatQuota['agent'],
   label: string,
   accountLabel: string | null,
   row: UsageSnapshotRecord | null,
+  pace: { pace5hExhaustMin: number | null; pace5hPctPerMin: number | null },
 ): FloatQuota | null {
   if (!row) return null;
   const used5h = row.window_5h_used_pct;
@@ -69,6 +137,8 @@ function quotaFromSnapshot(
     resetAt5h: row.reset_at_5h,
     resetAtWeekly: row.reset_at_weekly,
     capturedAt: row.captured_at,
+    pace5hExhaustMin: pace.pace5hExhaustMin,
+    pace5hPctPerMin: pace.pace5hPctPerMin,
   };
 }
 
@@ -164,9 +234,12 @@ export async function getFloatStats(): Promise<FloatStats> {
     : getLatestUsageSnapshot(db, 'codex');
   const claudeRow = getLatestUsageSnapshot(db, 'statusline');
 
+  const codexPace = codexRow ? predictPace(db, 'codex', currentCodex?.accountId ?? null, codexRow) : { pace5hExhaustMin: null, pace5hPctPerMin: null };
+  const claudePace = claudeRow ? predictPace(db, 'statusline', null, claudeRow) : { pace5hExhaustMin: null, pace5hPctPerMin: null };
+
   const quotas = [
-    quotaFromSnapshot('codex', 'Codex', currentCodex?.label ?? null, codexRow),
-    quotaFromSnapshot('claude-code', 'Claude', null, claudeRow),
+    quotaFromSnapshot('codex', 'Codex', currentCodex?.label ?? null, codexRow, codexPace),
+    quotaFromSnapshot('claude-code', 'Claude', null, claudeRow, claudePace),
   ].filter((quota): quota is FloatQuota => quota != null);
 
   const primary = quotas.length > 0
@@ -181,6 +254,12 @@ export async function getFloatStats(): Promise<FloatStats> {
   const todayEnd = todayStart + 86_400_000;
 
   const totalSessions = (db.prepare(`SELECT COUNT(*) AS count FROM sessions`).get() as { count: number }).count;
+  const totalByTool = db.prepare(`
+    SELECT tool, COUNT(*) AS count
+    FROM sessions
+    GROUP BY tool
+    ORDER BY count DESC
+  `).all() as { tool: string; count: number }[];
   const todaySessions = (db.prepare(`
     SELECT COUNT(*) AS count
     FROM sessions
@@ -195,12 +274,28 @@ export async function getFloatStats(): Promise<FloatStats> {
     GROUP BY tool
     ORDER BY count DESC
   `).all(todayEnd, Date.now(), todayStart) as { tool: string; count: number }[];
+  const totalByToolMap = new Map(totalByTool.map((row) => [row.tool, row.count]));
+  const todayByToolMap = new Map(todayByTool.map((row) => [row.tool, row.count]));
+  const sessionStatAgents = [...new Set(['claude-code', 'codex', ...totalByTool.map((row) => row.tool), ...todayByTool.map((row) => row.tool)])];
+  const sessionStatsByAgent = sessionStatAgents.map((agent) => ({
+    agent,
+    todaySessions: todayByToolMap.get(agent) ?? 0,
+    totalSessions: totalByToolMap.get(agent) ?? 0,
+  }));
   const lastSession = db.prepare(`
-    SELECT tool, cwd, ai_title, summary, started_at
+    SELECT id, tool, cwd, ai_title, summary, started_at
     FROM sessions
     ORDER BY started_at DESC
     LIMIT 1
-  `).get() as { tool: string; cwd: string | null; ai_title: string | null; summary: string | null; started_at: number } | undefined;
+  `).get() as { id: string; tool: string; cwd: string | null; ai_title: string | null; summary: string | null; started_at: number } | undefined;
+
+  const pausedUntilPath = path.join(dataDir(), 'pause-until');
+  let pausedUntil: number | null = null;
+  try {
+    const raw = fs.readFileSync(pausedUntilPath, 'utf8').trim();
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > Date.now()) pausedUntil = n;
+  } catch { /* not paused */ }
 
   return {
     generatedAt: Date.now(),
@@ -212,12 +307,20 @@ export async function getFloatStats(): Promise<FloatStats> {
     ],
     todaySessions,
     totalSessions,
+    sessionStatsByAgent,
     todayByTool,
     lastSession: lastSession ? {
+      id: lastSession.id,
       tool: lastSession.tool,
       project: lastSession.cwd?.split('/').filter(Boolean).pop() ?? 'unknown',
+      cwd: lastSession.cwd,
       title: lastSession.ai_title ?? lastSession.summary,
       startedAt: lastSession.started_at,
+      transcriptPath: lastSession.tool === 'claude-code' && lastSession.cwd
+        ? path.join(process.env.HOME ?? '', '.claude', 'projects', lastSession.cwd.replace(/\//g, '-'), `${lastSession.id}.jsonl`)
+        : null,
     } : null,
+    pausedUntil,
+    codexAccounts: codexAccounts.map((a) => ({ accountId: a.accountId, label: a.label, isCurrent: a.isCurrent })),
   };
 }

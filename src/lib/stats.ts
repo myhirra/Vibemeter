@@ -248,6 +248,126 @@ export function dayTimeline(dayOffset = 0): { dateLabel: string; sessions: Timel
   };
 }
 
+export interface RetryRate {
+  totalSessions: number;
+  retriedSessions: number;
+  pct: number;
+}
+
+export interface ExpensiveSession {
+  id: string;
+  tool: string;
+  cwd: string | null;
+  project: string;
+  aiTitle: string | null;
+  startedAt: number;
+  durationMs: number;
+  costUsd: number | null;
+  transcriptPath: string | null;
+}
+
+export interface SubscriptionValue {
+  monthToDateUsd: number;
+  plans: { name: string; priceUsd: number; multiplier: number }[];
+}
+
+export interface SessionInsight {
+  retryRate7d: RetryRate;
+  topExpensive: ExpensiveSession[];
+  value: SubscriptionValue;
+}
+
+function transcriptPathFor(tool: string, cwd: string | null, id: string): string | null {
+  if (tool !== 'claude-code' || !cwd) return null;
+  const encoded = cwd.replace(/\//g, '-');
+  const home = process.env.HOME ?? '';
+  return `${home}/.claude/projects/${encoded}/${id}.jsonl`;
+}
+
+/**
+ * "Retry rate" = sessions that started within 30 min of the previous session's
+ * end in the same cwd. Heuristic for "didn't get what I wanted the first time".
+ */
+export function sessionInsight(): SessionInsight {
+  const db = getDb();
+  const since = Date.now() - 7 * 86_400_000;
+
+  const rows = db.prepare(`
+    SELECT id, tool, cwd, started_at, ended_at
+    FROM sessions
+    WHERE started_at > ? AND cwd IS NOT NULL
+    ORDER BY cwd, started_at ASC
+  `).all(since) as { id: string; tool: string; cwd: string; started_at: number; ended_at: number | null }[];
+
+  let total = 0;
+  let retried = 0;
+  let prev: { cwd: string; endedAt: number } | null = null;
+  for (const r of rows) {
+    total++;
+    if (prev && prev.cwd === r.cwd && r.started_at - prev.endedAt < 30 * 60_000) {
+      retried++;
+    }
+    prev = { cwd: r.cwd, endedAt: r.ended_at ?? r.started_at };
+  }
+  const pct = total === 0 ? 0 : Math.round((retried / total) * 100);
+
+  const expensiveRows = db.prepare(`
+    SELECT s.id, s.tool, s.cwd, s.ai_title, s.started_at, s.ended_at,
+           (SELECT MAX(CAST(json_extract(us.raw_output, '$.cost.total_cost_usd') AS REAL))
+              FROM usage_snapshots us
+              WHERE us.source = 'statusline'
+                AND json_extract(us.raw_output, '$.session_id') = s.id) AS cost_usd
+    FROM sessions s
+    WHERE s.tool = 'claude-code'
+    ORDER BY cost_usd IS NULL, cost_usd DESC
+    LIMIT 5
+  `).all() as { id: string; tool: string; cwd: string | null; ai_title: string | null; started_at: number; ended_at: number | null; cost_usd: number | null }[];
+
+  const topExpensive: ExpensiveSession[] = expensiveRows
+    .filter((r) => r.cost_usd != null && r.cost_usd > 0)
+    .map((r) => ({
+      id: r.id,
+      tool: r.tool,
+      cwd: r.cwd,
+      project: r.cwd?.split('/').filter(Boolean).pop() ?? '—',
+      aiTitle: r.ai_title,
+      startedAt: r.started_at,
+      durationMs: Math.max(0, (r.ended_at ?? r.started_at) - r.started_at),
+      costUsd: r.cost_usd,
+      transcriptPath: transcriptPathFor(r.tool, r.cwd, r.id),
+    }));
+
+  // Month-to-date Claude API-equivalent cost
+  const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+  const mtdRow = db.prepare(`
+    SELECT COALESCE(SUM(session_max), 0) AS total
+    FROM (
+      SELECT MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS session_max
+      FROM usage_snapshots
+      WHERE source = 'statusline'
+        AND captured_at >= ?
+        AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+      GROUP BY json_extract(raw_output, '$.session_id')
+    )
+  `).get(monthStart) as { total: number };
+  const monthToDateUsd = mtdRow.total ?? 0;
+  const plans = [
+    { name: 'Pro $20', priceUsd: 20 },
+    { name: 'Max $100', priceUsd: 100 },
+    { name: 'Max $200', priceUsd: 200 },
+  ].map((p) => ({
+    name: p.name,
+    priceUsd: p.priceUsd,
+    multiplier: p.priceUsd > 0 ? Math.round((monthToDateUsd / p.priceUsd) * 10) / 10 : 0,
+  }));
+
+  return {
+    retryRate7d: { totalSessions: total, retriedSessions: retried, pct },
+    topExpensive,
+    value: { monthToDateUsd, plans },
+  };
+}
+
 export interface Achievement {
   id: string;
   title: string;

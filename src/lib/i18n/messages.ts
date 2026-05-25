@@ -28,6 +28,9 @@ const zh: Messages = {
   'header.tagline': '量化你的 AI 编码节奏 · 本地优先 · 数据永不离开本机',
   'header.langZh': '中文',
   'header.langEn': 'EN',
+  'header.openFloat': '打开浮窗',
+  'header.floatOpening': '启动中…',
+  'header.floatError': '启动失败',
 
   // ── dashboard / filters ───────────────────────────────────────────────
   'dashboard.refreshData': '刷新数据',
@@ -314,6 +317,37 @@ const zh: Messages = {
   'float.statWeekly': 'weekly',
   'float.noToday': 'No sessions today',
   'float.latest': 'latest',
+  'float.paceExhaust': 'exhausts in ~{n}m',
+  'float.paceStable': 'pace: stable',
+  'float.paceFlat': 'pace: idle',
+  'float.actionPause': 'Pause 30m',
+  'float.actionResume': 'Resume',
+  'float.actionOpenTranscript': 'Open transcript',
+  'float.actionSwitch': 'Switch Codex',
+  'float.paused': 'Paused · {n}m left',
+
+  // ── session insight card ──────────────────────────────────────────────
+  'card.insight.title': '会话洞察',
+  'card.insight.retryTitle': '7 天重做率',
+  'card.insight.retryDesc': '同目录 30 分钟内重启的会话占比',
+  'card.insight.retryFmt': '{retried} / {total} 次（{pct}%）',
+  'card.insight.topTitle': '最贵 5 个对话',
+  'card.insight.topEmpty': '尚未捕获 cost 数据，等下次 statusline 抓取',
+  'card.insight.openTranscript': '打开 transcript',
+  'card.insight.valueTitle': '订阅划算度',
+  'card.insight.valueSub': '本月 Claude Code 累计 API 等价成本',
+  'card.insight.valuePlan': '相当于 {plan} 订阅的 {x}×',
+  'card.insight.valueTip': '计算方式：本月从 Claude Code statusline 抓到每个 session 的最大 cost.total_cost_usd 并求和，得到 API 等价成本 {cost}；再除以 {plan} 的月费 {price}，所以是 {x}×。它不是实际扣费。',
+
+  // ── feature vote popup ────────────────────────────────────────────────
+  'vote.title': '下一个功能投你一票？',
+  'vote.sub': '只为你的本地数据库做记录，导出后你自己决定要不要分享',
+  'vote.submit': '提交',
+  'vote.dismiss': '以后再说',
+  'vote.thanks': '已记录，感谢！',
+  'vote.export': '导出到剪贴板',
+  'vote.other': '其他（自定义）',
+  'vote.otherPlaceholder': '写下你想要的功能',
 };
 
 const en: Messages = {
@@ -337,6 +371,9 @@ const en: Messages = {
   // ── header / layout ───────────────────────────────────────────────────
   'header.tagline': 'measure your AI coding vibe · local-first · data never leaves this machine',
   'header.langZh': '中文',
+  'header.openFloat': 'Open floater',
+  'header.floatOpening': 'Launching…',
+  'header.floatError': 'Launch failed',
   'header.langEn': 'EN',
 
   // ── dashboard / filters ───────────────────────────────────────────────
@@ -624,6 +661,37 @@ const en: Messages = {
   'float.statWeekly': '本周',
   'float.noToday': '今天还没有会话',
   'float.latest': '最近',
+  'float.paceExhaust': '约 {n} 分钟后耗尽',
+  'float.paceStable': '速度: 平稳',
+  'float.paceFlat': '速度: 空闲',
+  'float.actionPause': '静音 30 分钟',
+  'float.actionResume': '恢复',
+  'float.actionOpenTranscript': '打开 transcript',
+  'float.actionSwitch': '切 Codex',
+  'float.paused': '静音中 · 还剩 {n} 分钟',
+
+  // ── session insight card ──────────────────────────────────────────────
+  'card.insight.title': 'Session insights',
+  'card.insight.retryTitle': '7d retry rate',
+  'card.insight.retryDesc': 'Sessions restarted in same cwd within 30 min',
+  'card.insight.retryFmt': '{retried} / {total} ({pct}%)',
+  'card.insight.topTitle': 'Top 5 expensive chats',
+  'card.insight.topEmpty': 'No cost captured yet — next statusline scrape will fill this in',
+  'card.insight.openTranscript': 'Open transcript',
+  'card.insight.valueTitle': 'Subscription value',
+  'card.insight.valueSub': 'This month’s Claude Code API-equivalent spend',
+  'card.insight.valuePlan': '{x}× a {plan} plan',
+  'card.insight.valueTip': 'Calculation: for this month, Vibemeter sums each Claude Code session’s max cost.total_cost_usd from statusline snapshots to estimate API-equivalent spend ({cost}), then divides it by the {plan} monthly price ({price}) to get {x}×. This is not your actual bill.',
+
+  // ── feature vote popup ────────────────────────────────────────────────
+  'vote.title': 'Vote for the next feature?',
+  'vote.sub': 'Stored locally only — copy to clipboard if you want to share',
+  'vote.submit': 'Submit',
+  'vote.dismiss': 'Maybe later',
+  'vote.thanks': 'Thanks — saved locally.',
+  'vote.export': 'Copy to clipboard',
+  'vote.other': 'Other (custom)',
+  'vote.otherPlaceholder': 'Describe the feature you want',
 };
 
 const MESSAGES: Record<Locale, Messages> = { zh, en };

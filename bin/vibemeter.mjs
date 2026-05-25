@@ -247,6 +247,43 @@ function openFloat() {
   console.log(url);
 }
 
+async function pulse(args) {
+  const asJson = args.includes('--json');
+  const url = `http://localhost:${PORT}/api/float`;
+  let payload;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    payload = await res.json();
+  } catch (e) {
+    console.error(`Vibemeter daemon not reachable at ${url}: ${e.message}`);
+    console.error('Hint: run `vibemeter start` (or `vibemeter install` for autostart).');
+    process.exit(2);
+  }
+  if (asJson) {
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
+    return;
+  }
+  const lines = [];
+  const fmtPct = (v) => v == null ? '--' : `${v}%`;
+  const fmtPace = (q) => {
+    if (q?.pace5hExhaustMin != null) return `  pace: exhausts in ~${q.pace5hExhaustMin}m`;
+    if (q?.pace5hPctPerMin != null && q.pace5hPctPerMin <= 0) return '  pace: idle';
+    return '';
+  };
+  for (const q of payload.quotas ?? []) {
+    const head = q.accountLabel ? `${q.label} (${q.accountLabel})` : q.label;
+    lines.push(`${head}`);
+    lines.push(`  5h:    ${fmtPct(q.remaining5h)} remaining  · used ${fmtPct(q.used5h)}`);
+    lines.push(`  week:  ${fmtPct(q.remainingWeekly)} remaining · used ${fmtPct(q.usedWeekly)}`);
+    const pace = fmtPace(q);
+    if (pace) lines.push(pace);
+    lines.push('');
+  }
+  lines.push(`today: ${payload.todaySessions} sessions · total: ${payload.totalSessions}`);
+  process.stdout.write(lines.join('\n') + '\n');
+}
+
 function linuxInstallHint() {
   const scriptPath = resolvePath(fileURLToPath(import.meta.url));
   const unitPath = join(homedir(), '.config', 'systemd', 'user', 'vibemeter.service');
@@ -537,6 +574,7 @@ Usage:
   vibemeter float            open the desktop floating widget
   vibemeter uninstall        remove the auto-start config
   vibemeter status           show whether the daemon is loaded + tail logs
+  vibemeter pulse [--json]   print current 5h/weekly usage from running daemon
   vibemeter notify <t> <s>   speak a notification (used by hooks)
   vibemeter notify-install   wire Vibemeter into Claude Code + Codex
   vibemeter notify-uninstall remove Vibemeter from Claude Code + Codex
@@ -586,6 +624,9 @@ switch (cmd) {
     break;
   case 'float':
     openFloat();
+    break;
+  case 'pulse':
+    await pulse(process.argv.slice(3));
     break;
   case 'uninstall':
     if (platform() === 'darwin') macUninstall();
