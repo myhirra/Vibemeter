@@ -1,9 +1,10 @@
 export const dynamic = 'force-dynamic';
 
-import Link from 'next/link';
 import { SettingsNotifyPanel } from '@/components/SettingsNotifyPanel';
 import { SettingsAlertsPanel } from '@/components/SettingsAlertsPanel';
 import { SettingsDonatePanel } from '@/components/SettingsDonatePanel';
+import { FeatureVoteCard } from '@/components/FeatureVoteCard';
+import { SettingsDashboardLink } from '@/components/SettingsDashboardLink';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { getNotifyStatus } from '@/lib/notify-installer';
 import { alertsConfigPath, maskWebhook, readAlertConfig } from '@/lib/alerts/storage';
@@ -35,19 +36,17 @@ export default async function SettingsPage() {
           </div>
           <div className="flex items-center gap-2">
             <LocaleSwitcher />
-            <Link
-              href="/"
-              className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-            >
-              {t(locale, 'common.dashboard')}
-            </Link>
+            <SettingsDashboardLink label={t(locale, 'common.dashboard')} />
           </div>
         </div>
 
         <div className="space-y-6">
           <SettingsNotifyPanel initialStatus={initialStatus} />
           <SettingsAlertsPanel initialConfig={initialAlerts.config} initialConfigPath={initialAlerts.configPath} />
-          <SettingsDonatePanel />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SettingsDonatePanel />
+            <FeatureVoteCard />
+          </div>
         </div>
       </div>
     </div>

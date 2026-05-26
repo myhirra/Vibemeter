@@ -13,7 +13,6 @@ import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import { SessionInsightCard } from './SessionInsightCard';
 import { CacheCard } from './CacheCard';
-import { FeatureVoteCard } from './FeatureVoteCard';
 import { ShareReportCard } from './ShareReportCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import type { SessionEntry } from './SessionsTable';
@@ -404,10 +403,6 @@ export function Dashboard({
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <ShareReportCard />
         <SetupDoctorCard />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <FeatureVoteCard />
       </div>
 
       {/* Activity — pattern (heatmap) / today (timeline) */}
