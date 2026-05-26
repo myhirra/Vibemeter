@@ -523,12 +523,14 @@ final class FloatView: NSView {
 
     private func drawBallCollapsed(context: CGContext, in rect: NSRect, agent: String) {
         let q = quota(for: agent)
-        let remaining = quotaWindow(q).remaining
+        let window = quotaWindow(q)
+        let remaining = window.remaining
         let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius: CGFloat = min(rect.width, rect.height) / 2 - 15
         let color = ringColor(for: agent, remaining: remaining)
 
+        // Main quota ring (existing behavior).
         context.setLineWidth(8)
         context.setLineCap(.round)
         context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
@@ -539,9 +541,34 @@ final class FloatView: NSView {
         context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
         context.strokePath()
 
+        // 5h (or weekly) elapsed ring — thin outer ring just outside the main
+        // ring. Fills clockwise as the reset window progresses.
+        drawElapsedRing(context: context, center: center, radius: radius + 8, window: window, lineWidth: 1.5)
+
         let value = remainingPercentText(remaining)
         drawText(value, rect: NSRect(x: rect.minX + 12, y: center.y - 15, width: rect.width - 24, height: 30), size: 24, weight: .bold, color: .white, alignment: .center)
         hitRects.ring = rect
+    }
+
+    private func drawElapsedRing(context: CGContext, center: CGPoint, radius: CGFloat, window: (remaining: Double?, resetAt: Double?, label: String), lineWidth: CGFloat) {
+        let now = Date().timeIntervalSince1970
+        guard let resetAtMs = window.resetAt else { return }
+        let resetAt = resetAtMs / 1000
+        guard resetAt > now else { return }
+        let windowSeconds: TimeInterval = window.label.hasPrefix("5h") ? 5 * 3600 : 7 * 24 * 3600
+        let elapsedRatio = max(0, min(1, (windowSeconds - (resetAt - now)) / windowSeconds))
+        context.saveGState()
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
+        context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
+        context.strokePath()
+        if elapsedRatio > 0.005 {
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.65).cgColor)
+            context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + CGFloat(elapsedRatio) * 2 * .pi, clockwise: false)
+            context.strokePath()
+        }
+        context.restoreGState()
     }
 
     private func drawDualBallCollapsed(context: CGContext, in rect: NSRect) {
@@ -555,7 +582,8 @@ final class FloatView: NSView {
 
     private func drawSmallBall(context: CGContext, in rect: NSRect, agent: String) {
         let q = quota(for: agent)
-        let remaining = quotaWindow(q).remaining
+        let window = quotaWindow(q)
+        let remaining = window.remaining
         let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
         let center = CGPoint(x: rect.midX, y: rect.midY)
         let radius: CGFloat = min(rect.width, rect.height) / 2 - 14
@@ -570,6 +598,8 @@ final class FloatView: NSView {
         context.setStrokeColor(color.cgColor)
         context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
         context.strokePath()
+
+        drawElapsedRing(context: context, center: center, radius: radius + 6, window: window, lineWidth: 1.2)
 
         let value = remainingPercentText(remaining)
         drawText(value, rect: NSRect(x: rect.minX, y: center.y - 13, width: rect.width, height: 20), size: 15, weight: .bold, color: .white, alignment: .center)
@@ -588,14 +618,15 @@ final class FloatView: NSView {
         for (i, agent) in agents.enumerated() {
             let y = startY + CGFloat(i) * (pillHeight + gap)
             let pillRect = NSRect(x: rect.minX + 8, y: y, width: rect.width - 16, height: pillHeight)
-            drawAgentPill(in: pillRect, agent: agent)
+            drawAgentPill(context: context, in: pillRect, agent: agent)
         }
         hitRects.ring = rect
     }
 
-    private func drawAgentPill(in rect: NSRect, agent: String) {
+    private func drawAgentPill(context: CGContext, in rect: NSRect, agent: String) {
         let q = quota(for: agent)
-        let remaining = quotaWindow(q).remaining
+        let window = quotaWindow(q)
+        let remaining = window.remaining
         let color = ringColor(for: agent, remaining: remaining)
 
         let radius = rect.height / 2
@@ -629,6 +660,33 @@ final class FloatView: NSView {
             color.setFill()
             let fillRect = NSRect(x: barX, y: barY, width: fillWidth, height: barHeight)
             NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
+        }
+
+        // 5h (or weekly) elapsed ring around the refresh button — full ring
+        // means the window is about to reset. Subtle white so the underlying
+        // purple button stays the primary affordance. API timestamps are
+        // milliseconds; convert before comparing.
+        let now = Date().timeIntervalSince1970
+        if let resetAtMs = window.resetAt {
+            let resetAt = resetAtMs / 1000
+            if resetAt > now {
+            let windowSeconds: TimeInterval = window.label.hasPrefix("5h") ? 5 * 3600 : 7 * 24 * 3600
+            let elapsedRatio = max(0, min(1, (windowSeconds - (resetAt - now)) / windowSeconds))
+            let center = CGPoint(x: iconRect.midX, y: iconRect.midY)
+            let ringRadius: CGFloat = iconRect.width / 2 + 2.5
+            context.saveGState()
+            context.setLineWidth(1.5)
+            context.setLineCap(.round)
+            context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+            context.addArc(center: center, radius: ringRadius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
+            context.strokePath()
+            if elapsedRatio > 0.005 {
+                context.setStrokeColor(NSColor.white.withAlphaComponent(0.55).cgColor)
+                context.addArc(center: center, radius: ringRadius, startAngle: -.pi / 2, endAngle: -.pi / 2 + CGFloat(elapsedRatio) * 2 * .pi, clockwise: false)
+                context.strokePath()
+            }
+            context.restoreGState()
+            }
         }
 
         drawIconButton("↻", rect: iconRect, active: true)
