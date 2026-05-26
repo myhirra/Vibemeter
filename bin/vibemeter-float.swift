@@ -1209,6 +1209,22 @@ if let first = rawArgs.first, first == "--notify" {
     runNotifyMode(title: title, body: body, threadId: threadId)
 }
 
+// Singleton: if another Vibemeter floater is already running, focus it and
+// exit. Without this, repeated `vibemeter float` (e.g. by the autostart
+// LaunchAgent + a manual run) would stack multiple windows.
+let bundleId = Bundle.main.bundleIdentifier ?? "com.hirra.vibemeter"
+let myPid = ProcessInfo.processInfo.processIdentifier
+let peers = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
+    .filter { $0.processIdentifier != myPid }
+if let existing = peers.first {
+    if #available(macOS 14.0, *) {
+        existing.activate()
+    } else {
+        existing.activate(options: [.activateIgnoringOtherApps])
+    }
+    exit(0)
+}
+
 let urlString = rawArgs.first ?? "http://localhost:9527/float"
 guard let url = URL(string: urlString) else {
     fputs("Invalid Vibemeter float URL: \(urlString)\n", stderr)
