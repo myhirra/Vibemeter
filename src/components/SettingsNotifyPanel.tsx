@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useT } from '@/lib/i18n/client';
 
+type SoundMode = 'voice' | 'beep' | 'off';
+
 type NotifyStatus = {
   scriptPath: string;
   scriptExists: boolean;
@@ -13,6 +15,7 @@ type NotifyStatus = {
   codex: boolean;
   codexForeign: string | null;
   codexConfigExists: boolean;
+  soundMode: SoundMode;
 };
 
 interface Props {
@@ -25,6 +28,7 @@ export function SettingsNotifyPanel({ initialStatus }: Props) {
   const [includeStop, setIncludeStop] = useState(true);
   const [includeNotification, setIncludeNotification] = useState(initialStatus.claudeNotification);
   const [includeCodex, setIncludeCodex] = useState(true);
+  const [soundMode, setSoundMode] = useState<SoundMode>(initialStatus.soundMode);
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +48,7 @@ export function SettingsNotifyPanel({ initialStatus }: Props) {
           stop: includeStop,
           notification: includeNotification,
           codex: includeCodex,
+          soundMode,
         }),
       });
       const payload = await res.json();
@@ -103,6 +108,27 @@ export function SettingsNotifyPanel({ initialStatus }: Props) {
           onChange={setIncludeCodex}
           disabled={!status.codexConfigExists}
         />
+      </div>
+
+      <div className="mb-5">
+        <div className="text-xs text-zinc-400 mb-2">{t('notify.soundLabel')}</div>
+        <div className="inline-flex rounded-md border border-zinc-800 overflow-hidden text-xs">
+          {(['voice', 'beep', 'off'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setSoundMode(mode)}
+              className={`px-3 py-1.5 transition-colors ${
+                soundMode === mode
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {t(`notify.sound.${mode}`)}
+            </button>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] text-zinc-600">{t(`notify.soundHint.${soundMode}`)}</p>
       </div>
 
       {status.codexForeign && (
