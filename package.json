@@ -1,6 +1,6 @@
 {
   "name": "@hirra/vibemeter",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Local quota runway and completion console for Claude Code, Codex, and Cursor.",
   "keywords": [
     "claude-code",
@@ -41,8 +41,7 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "deploy:marketing": "bash scripts/deploy-marketing.sh",
-    "prepack": "rm -rf .next && next build && rm -rf .next/cache .next/dev .next/diagnostics .next/trace .next/trace-build .next/turbopack",
-    "prepare": "[ -f .next/BUILD_ID ] || ./node_modules/.bin/next build"
+    "prepack": "rm -rf .next && next build && rm -rf .next/cache .next/dev .next/diagnostics .next/trace .next/trace-build .next/turbopack"
   },
   "engines": {
     "node": ">=20"
