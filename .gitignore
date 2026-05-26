@@ -43,6 +43,10 @@ next-env.d.ts
 # local data (never commit)
 .data/
 
+# npm pack output
+/hirra-vibemeter-*.tgz
+/vibemeter*.tgz
+
 # menubar build artifact
 tools/menubar/Vibemeter.app/
 
