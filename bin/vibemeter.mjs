@@ -299,6 +299,15 @@ function refreshLaunchServices(appPath) {
 function openFloat() {
   const url = `http://localhost:${PORT}/float`;
   if (platform() === 'darwin') {
+    // Singleton check: if a Vibemeter floater is already running, just bring
+    // it to the front. Catches the case where swiftc rebuild hasn't happened
+    // yet so the running binary lacks the in-process singleton guard.
+    const existing = spawnSync('pgrep', ['-f', `${APP_BUNDLE}/Contents/MacOS/Vibemeter`], { encoding: 'utf8' });
+    if (existing.status === 0 && existing.stdout.trim()) {
+      spawnSync('open', ['-b', 'com.hirra.vibemeter'], { stdio: 'ignore' });
+      console.log(`Vibemeter floating window already running (${url}) — focused.`);
+      return;
+    }
     const binary = resolveFloatBinary();
     const native = binary
       ? spawn(binary, [url], {
