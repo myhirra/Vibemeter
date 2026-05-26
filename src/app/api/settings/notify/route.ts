@@ -27,6 +27,7 @@ export async function POST(request: Request) {
       stop?: boolean;
       notification?: boolean;
       codex?: boolean;
+      soundMode?: 'voice' | 'beep' | 'off';
     };
 
     if (body.action === 'install') {
@@ -36,6 +37,7 @@ export async function POST(request: Request) {
         notification: body.notification ?? false,
         codex: body.codex ?? true,
         locale,
+        soundMode: body.soundMode,
       });
       return NextResponse.json({ result, status: getNotifyStatus() });
     }

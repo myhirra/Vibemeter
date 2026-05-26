@@ -10,7 +10,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -216,6 +216,84 @@ function resolveFloatBinary() {
     env: process.env,
   });
   return result.status === 0 ? APP_BINARY : null;
+}
+
+// macOS-only: surface ~/.vibemeter/Vibemeter.app under /Applications so the
+// floater shows up in Spotlight / Launchpad / Finder. Symlink so swiftc
+// rebuilds from notify-installer pick up automatically.
+function installApp(args) {
+  if (platform() !== 'darwin') {
+    console.error('install-app is macOS-only.');
+    process.exit(1);
+  }
+  const nameIdx = args.indexOf('--name');
+  const customName = nameIdx >= 0 ? args[nameIdx + 1] : null;
+  const force = args.includes('--force');
+  const remove = args.includes('--uninstall') || args.includes('--remove');
+  const dest = join('/Applications', customName || 'Vibemeter.app');
+
+  if (remove) {
+    if (!existsSync(dest) && !isBrokenSymlink(dest)) {
+      console.log(`Nothing at ${dest}.`);
+      return;
+    }
+    if (!pointsToOurBundle(dest) && !force) {
+      console.error(`${dest} is not a Vibemeter symlink — refusing to remove without --force.`);
+      process.exit(1);
+    }
+    rmSync(dest, { recursive: true, force: true });
+    console.log(`✓ Removed ${dest}`);
+    return;
+  }
+
+  const binary = resolveFloatBinary();
+  if (!binary) {
+    console.error('Could not build ~/.vibemeter/Vibemeter.app (swiftc failed). Run `vibemeter float` first to see the error.');
+    process.exit(1);
+  }
+
+  if (existsSync(dest) || isBrokenSymlink(dest)) {
+    if (pointsToOurBundle(dest)) {
+      console.log(`Already installed: ${dest} → ${APP_BUNDLE}`);
+      refreshLaunchServices(dest);
+      return;
+    }
+    const otherId = readBundleId(dest);
+    if (!force) {
+      console.error(`${dest} already exists (CFBundleIdentifier=${otherId ?? 'unknown'}).`);
+      console.error(`Pass --force to replace it, or use --name "Vibemeter Float.app" to install under a different name.`);
+      process.exit(1);
+    }
+    rmSync(dest, { recursive: true, force: true });
+  }
+
+  symlinkSync(APP_BUNDLE, dest);
+  refreshLaunchServices(dest);
+  console.log(`✓ Installed ${dest} → ${APP_BUNDLE}`);
+  console.log('  Spotlight / Launchpad should pick it up within a few seconds.');
+  console.log('  Remove with: vibemeter install-app --uninstall');
+}
+
+function isBrokenSymlink(p) {
+  try { lstatSync(p); return true; } catch { return false; }
+}
+
+function pointsToOurBundle(p) {
+  try {
+    if (!lstatSync(p).isSymbolicLink()) return false;
+    return readlinkSync(p) === APP_BUNDLE;
+  } catch { return false; }
+}
+
+function readBundleId(appPath) {
+  const plistPath = join(appPath, 'Contents', 'Info.plist');
+  if (!existsSync(plistPath)) return null;
+  const out = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :CFBundleIdentifier', plistPath], { encoding: 'utf8' });
+  return out.status === 0 ? out.stdout.trim() : null;
+}
+
+function refreshLaunchServices(appPath) {
+  spawnSync('/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister', ['-f', appPath], { stdio: 'ignore' });
 }
 
 function openFloat() {
@@ -453,11 +531,13 @@ function writeJsonPretty(path, obj) {
   writeFileSync(path, JSON.stringify(obj, null, 2) + '\n');
 }
 
-function buildHookCommand(locale = 'zh') {
+function buildHookCommand(locale = 'zh', soundMode = 'voice') {
   // Hook commands inherit a restricted PATH; absolute path is required.
-  // Locale env prefix is baked into the command so the bash speaker picks
-  // the right phrases without needing to read another config file.
-  return `VIBEMETER_NOTIFY_LOCALE=${shellQuote(locale)} ${shellQuote(NOTIFY_SCRIPT)} Claude`;
+  // Locale + sound-mode envs are baked into the command so the bash speaker
+  // picks the right phrases / sound style without reading another config file.
+  const envs = [`VIBEMETER_NOTIFY_LOCALE=${shellQuote(locale)}`];
+  if (soundMode !== 'voice') envs.push(`VIBEMETER_NOTIFY_SOUND_MODE=${shellQuote(soundMode)}`);
+  return `${envs.join(' ')} ${shellQuote(NOTIFY_SCRIPT)} Claude`;
 }
 
 function shellQuote(s) {
@@ -465,10 +545,10 @@ function shellQuote(s) {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-function ensureClaudeHook(settings, eventName, statusArg, locale) {
+function ensureClaudeHook(settings, eventName, statusArg, locale, soundMode) {
   if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
   const list = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : [];
-  const command = `${buildHookCommand(locale)} ${statusArg}`;
+  const command = `${buildHookCommand(locale, soundMode)} ${statusArg}`;
   // Replace any existing Vibemeter hook so re-applying with a new locale
   // updates the env prefix in place.
   const filtered = list
@@ -499,11 +579,11 @@ function stripClaudeHook(settings, eventName) {
   return true;
 }
 
-function installClaudeHooks({ stop, notification, locale = 'zh' }) {
+function installClaudeHooks({ stop, notification, locale = 'zh', soundMode = 'voice' }) {
   const settings = readJsonSafe(CLAUDE_SETTINGS_PATH) ?? {};
   let changed = false;
-  if (stop) changed = ensureClaudeHook(settings, 'Stop', 'complete', locale) || changed;
-  if (notification) changed = ensureClaudeHook(settings, 'Notification', 'needs_input', locale) || changed;
+  if (stop) changed = ensureClaudeHook(settings, 'Stop', 'complete', locale, soundMode) || changed;
+  if (notification) changed = ensureClaudeHook(settings, 'Notification', 'needs_input', locale, soundMode) || changed;
   if (!changed) return { changed: false, backup: null };
   const backup = backupOnce(CLAUDE_SETTINGS_PATH, timestampTag());
   writeJsonPretty(CLAUDE_SETTINGS_PATH, settings);
@@ -522,12 +602,15 @@ function uninstallClaudeHooks() {
   return { changed: true, backup };
 }
 
-function codexNotifyLine(locale = 'zh') {
+function codexNotifyLine(locale = 'zh', soundMode = 'voice') {
   // Codex's notify config is an exec array — locale prefix needs a sh -c wrapper.
-  return `notify = ["sh", "-c", ${JSON.stringify(`VIBEMETER_NOTIFY_LOCALE=${locale} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
+  const envPrefix = soundMode === 'voice'
+    ? `VIBEMETER_NOTIFY_LOCALE=${locale}`
+    : `VIBEMETER_NOTIFY_LOCALE=${locale} VIBEMETER_NOTIFY_SOUND_MODE=${soundMode}`;
+  return `notify = ["sh", "-c", ${JSON.stringify(`${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
 }
 
-function installCodexNotify(locale = 'zh') {
+function installCodexNotify(locale = 'zh', soundMode = 'voice') {
   if (!existsSync(CODEX_CONFIG_PATH)) {
     return { changed: false, backup: null, skipped: 'no-config' };
   }
@@ -540,7 +623,7 @@ function installCodexNotify(locale = 'zh') {
     if (/^\s*\[/.test(line)) break;
     if (/^\s*notify\s*=/.test(line)) { notifyIndex = i; break; }
   }
-  const want = codexNotifyLine(locale);
+  const want = codexNotifyLine(locale, soundMode);
   if (notifyIndex >= 0) {
     if (lines[notifyIndex].trim() === want) return { changed: false, backup: null };
     if (!lines[notifyIndex].includes(HOOK_MARKER)) {
@@ -578,7 +661,7 @@ function uninstallCodexNotify() {
 }
 
 function notifyInstall(opts = {}) {
-  const { stop = true, notification = false, codex = true, locale = process.env.VIBEMETER_NOTIFY_LOCALE || 'zh' } = opts;
+  const { stop = true, notification = false, codex = true, locale = process.env.VIBEMETER_NOTIFY_LOCALE || 'zh', soundMode = 'voice' } = opts;
   if (!existsSync(NOTIFY_SCRIPT)) {
     console.error(`Notify script missing: ${NOTIFY_SCRIPT}`);
     process.exit(1);
@@ -586,8 +669,8 @@ function notifyInstall(opts = {}) {
   // Build the .app bundle eagerly so the very first hook firing can use the
   // native notification path instead of falling back to osascript.
   if (platform() === 'darwin') resolveFloatBinary();
-  const cl = installClaudeHooks({ stop, notification, locale });
-  const cx = codex ? installCodexNotify(locale) : { changed: false, backup: null, skipped: 'disabled' };
+  const cl = installClaudeHooks({ stop, notification, locale, soundMode });
+  const cx = codex ? installCodexNotify(locale, soundMode) : { changed: false, backup: null, skipped: 'disabled' };
   console.log('');
   console.log('  Vibemeter voice notifications');
   if (cl.changed) console.log(`  ✓ Claude Code hooks updated (${CLAUDE_SETTINGS_PATH})`);
@@ -714,6 +797,7 @@ Usage:
   vibemeter notify-install   wire Vibemeter into Claude Code + Codex
   vibemeter notify-uninstall remove Vibemeter from Claude Code + Codex
   vibemeter notify-status    show which voice hooks are installed
+  vibemeter install-app      symlink ~/.vibemeter/Vibemeter.app → /Applications (macOS)
   vibemeter help             this message
 
 Environment:
@@ -746,10 +830,15 @@ switch (cmd) {
     const r = spawnSync(NOTIFY_SCRIPT, [tool, status], { stdio: 'inherit' });
     process.exit(r.status ?? 0);
   }
-  case 'notify-install':
+  case 'notify-install': {
     if (platform() !== 'darwin') { console.error('macOS only.'); process.exit(1); }
-    notifyInstall({ stop: true, notification: false, codex: true });
+    const argv = process.argv.slice(3);
+    const smIdx = argv.indexOf('--sound-mode');
+    const rawMode = smIdx >= 0 ? argv[smIdx + 1] : 'voice';
+    const soundMode = ['voice', 'beep', 'off'].includes(rawMode) ? rawMode : 'voice';
+    notifyInstall({ stop: true, notification: false, codex: true, soundMode });
     break;
+  }
   case 'notify-uninstall':
     if (platform() !== 'darwin') { console.error('macOS only.'); process.exit(1); }
     notifyUninstall();
@@ -759,6 +848,9 @@ switch (cmd) {
     break;
   case 'float':
     openFloat();
+    break;
+  case 'install-app':
+    installApp(process.argv.slice(3));
     break;
   case 'pulse':
     await pulse(process.argv.slice(3));

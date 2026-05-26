@@ -47,6 +47,8 @@ function ensureAppBundle(): { built: boolean; path: string | null; error?: strin
   return { built: true, path: APP_BINARY };
 }
 
+export type SoundMode = 'voice' | 'beep' | 'off';
+
 export type NotifyStatus = {
   scriptPath: string;
   scriptExists: boolean;
@@ -57,6 +59,7 @@ export type NotifyStatus = {
   codex: boolean;
   codexForeign: string | null;
   codexConfigExists: boolean;
+  soundMode: SoundMode;
 };
 
 type ClaudeHookEntry = { hooks?: Array<{ type?: string; command?: string; async?: boolean }> };
@@ -84,8 +87,10 @@ function shellQuote(s: string): string {
   return `'${String(s).replace(/'/g, `'\\''`)}'`;
 }
 
-function hookCommand(statusArg: string, locale: string): string {
-  return `VIBEMETER_NOTIFY_LOCALE=${shellQuote(locale)} ${shellQuote(NOTIFY_SCRIPT)} Claude ${statusArg}`;
+function hookCommand(statusArg: string, locale: string, soundMode: SoundMode): string {
+  const envs = [`VIBEMETER_NOTIFY_LOCALE=${shellQuote(locale)}`];
+  if (soundMode !== 'voice') envs.push(`VIBEMETER_NOTIFY_SOUND_MODE=${shellQuote(soundMode)}`);
+  return `${envs.join(' ')} ${shellQuote(NOTIFY_SCRIPT)} Claude ${statusArg}`;
 }
 
 function writeJsonPretty(path: string, obj: unknown) {
@@ -102,7 +107,7 @@ function hasOurHook(settings: Record<string, unknown> | null, event: string): bo
   );
 }
 
-function ensureHook(settings: Record<string, unknown>, event: string, statusArg: string, locale: string): boolean {
+function ensureHook(settings: Record<string, unknown>, event: string, statusArg: string, locale: string, soundMode: SoundMode): boolean {
   if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
   const hooks = settings.hooks as Record<string, unknown>;
   const list = (Array.isArray(hooks[event]) ? hooks[event] : []) as ClaudeHookEntry[];
@@ -115,7 +120,7 @@ function ensureHook(settings: Record<string, unknown>, event: string, statusArg:
       return kept.length ? { ...entry, hooks: kept } : null;
     })
     .filter((e): e is ClaudeHookEntry => e !== null);
-  filtered.push({ hooks: [{ type: 'command', command: hookCommand(statusArg, locale), async: true }] });
+  filtered.push({ hooks: [{ type: 'command', command: hookCommand(statusArg, locale, soundMode), async: true }] });
   hooks[event] = filtered;
   return true;
 }
@@ -138,16 +143,38 @@ function stripHook(settings: Record<string, unknown>, event: string): boolean {
   return true;
 }
 
+function detectSoundMode(settings: Record<string, unknown> | null, codexLine: string | null): SoundMode {
+  const candidates: string[] = [];
+  const hooks = (settings?.hooks ?? {}) as Record<string, unknown>;
+  for (const event of ['Stop', 'Notification']) {
+    const list = hooks[event];
+    if (!Array.isArray(list)) continue;
+    for (const entry of list as ClaudeHookEntry[]) {
+      if (!Array.isArray(entry?.hooks)) continue;
+      for (const h of entry.hooks) {
+        if (typeof h?.command === 'string' && h.command.includes(HOOK_MARKER)) candidates.push(h.command);
+      }
+    }
+  }
+  if (codexLine && codexLine.includes(HOOK_MARKER)) candidates.push(codexLine);
+  for (const cmd of candidates) {
+    const m = cmd.match(/VIBEMETER_NOTIFY_SOUND_MODE=(?:["']?)(voice|beep|off)/);
+    if (m) return m[1] as SoundMode;
+  }
+  return 'voice';
+}
+
 export function getNotifyStatus(): NotifyStatus {
   const settings = readJsonSafe(CLAUDE_SETTINGS_PATH);
   let codexInstalled = false;
   let codexForeign: string | null = null;
+  let codexLine: string | null = null;
   if (existsSync(CODEX_CONFIG_PATH)) {
     const lines = readFileSync(CODEX_CONFIG_PATH, 'utf8').split(/\r?\n/);
     for (const line of lines) {
       if (/^\s*\[/.test(line)) break;
       if (/^\s*notify\s*=/.test(line)) {
-        if (line.includes(HOOK_MARKER)) codexInstalled = true;
+        if (line.includes(HOOK_MARKER)) { codexInstalled = true; codexLine = line; }
         else codexForeign = line.trim();
         break;
       }
@@ -163,10 +190,11 @@ export function getNotifyStatus(): NotifyStatus {
     codex: codexInstalled,
     codexForeign,
     codexConfigExists: existsSync(CODEX_CONFIG_PATH),
+    soundMode: detectSoundMode(settings, codexLine),
   };
 }
 
-export function installNotifyHooks(opts: { stop?: boolean; notification?: boolean; codex?: boolean; locale?: string }): {
+export function installNotifyHooks(opts: { stop?: boolean; notification?: boolean; codex?: boolean; locale?: string; soundMode?: SoundMode }): {
   changed: boolean;
   claudeBackup: string | null;
   codexBackup: string | null;
@@ -183,10 +211,11 @@ export function installNotifyHooks(opts: { stop?: boolean; notification?: boolea
   // hook firing.
   const app = ensureAppBundle();
   const locale = opts.locale === 'en' ? 'en' : 'zh';
+  const soundMode: SoundMode = opts.soundMode === 'beep' || opts.soundMode === 'off' ? opts.soundMode : 'voice';
   const settings = readJsonSafe(CLAUDE_SETTINGS_PATH) ?? {};
   let claudeChanged = false;
-  if (opts.stop) claudeChanged = ensureHook(settings, 'Stop', 'complete', locale) || claudeChanged;
-  if (opts.notification) claudeChanged = ensureHook(settings, 'Notification', 'needs_input', locale) || claudeChanged;
+  if (opts.stop) claudeChanged = ensureHook(settings, 'Stop', 'complete', locale, soundMode) || claudeChanged;
+  if (opts.notification) claudeChanged = ensureHook(settings, 'Notification', 'needs_input', locale, soundMode) || claudeChanged;
   let claudeBackup: string | null = null;
   if (claudeChanged) {
     claudeBackup = backupOnce(CLAUDE_SETTINGS_PATH, timestampTag());
@@ -208,7 +237,10 @@ export function installNotifyHooks(opts: { stop?: boolean; notification?: boolea
         if (/^\s*\[/.test(lines[i])) break;
         if (/^\s*notify\s*=/.test(lines[i])) { notifyIndex = i; break; }
       }
-      const want = `notify = ["sh", "-c", ${JSON.stringify(`VIBEMETER_NOTIFY_LOCALE=${locale} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
+      const envPrefix = soundMode === 'voice'
+        ? `VIBEMETER_NOTIFY_LOCALE=${locale}`
+        : `VIBEMETER_NOTIFY_LOCALE=${locale} VIBEMETER_NOTIFY_SOUND_MODE=${soundMode}`;
+      const want = `notify = ["sh", "-c", ${JSON.stringify(`${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
       if (notifyIndex >= 0) {
         if (lines[notifyIndex].trim() === want) {
           codexChanged = false;

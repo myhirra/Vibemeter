@@ -133,6 +133,7 @@ emit_dry_run() {
   printf 'SUBTITLE=%s\n' "$PROJECT"
   printf 'BODY=%s\n' "$BODY"
   printf 'SAY=%s\n' "$SAY_TEXT"
+  printf 'SOUND_MODE=%s\n' "${VIBEMETER_NOTIFY_SOUND_MODE:-voice}"
 }
 
 main() {
@@ -170,13 +171,31 @@ main() {
     fi
   fi
 
-  if [[ "${VIBEMETER_NOTIFY_SOUND:-1}" != "0" ]]; then
-    if [[ -n "$VOICE" ]]; then
-      say -v "$VOICE" "$SAY_TEXT" >/dev/null 2>&1 || say "$SAY_TEXT" >/dev/null 2>&1 || true
-    else
-      say "$SAY_TEXT" >/dev/null 2>&1 || true
-    fi
-  fi
+  # SOUND_MODE: voice (default, TTS) | beep (single sound) | off (silent).
+  # Legacy VIBEMETER_NOTIFY_SOUND=0 still forces off for back-compat.
+  SOUND_MODE="${VIBEMETER_NOTIFY_SOUND_MODE:-voice}"
+  if [[ "${VIBEMETER_NOTIFY_SOUND:-1}" == "0" ]]; then SOUND_MODE="off"; fi
+
+  case "$SOUND_MODE" in
+    off) ;;
+    beep)
+      local sound
+      case "$STATUS" in
+        complete|done|success)                 sound="/System/Library/Sounds/Glass.aiff" ;;
+        needs_input|input|intervention|permission) sound="/System/Library/Sounds/Funk.aiff" ;;
+        failed|fail|error)                     sound="/System/Library/Sounds/Basso.aiff" ;;
+        *)                                     sound="/System/Library/Sounds/Tink.aiff" ;;
+      esac
+      afplay "$sound" >/dev/null 2>&1 || true
+      ;;
+    voice|*)
+      if [[ -n "$VOICE" ]]; then
+        say -v "$VOICE" "$SAY_TEXT" >/dev/null 2>&1 || say "$SAY_TEXT" >/dev/null 2>&1 || true
+      else
+        say "$SAY_TEXT" >/dev/null 2>&1 || true
+      fi
+      ;;
+  esac
 }
 
 main "$@"

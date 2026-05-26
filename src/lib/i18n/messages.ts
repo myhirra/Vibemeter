@@ -228,6 +228,13 @@ const zh: Messages = {
   'notify.updated': '已更新。{notes}',
   'notify.enabledMsg': '语音通知已开启。',
   'notify.disabledMsg': '语音通知已关闭。',
+  'notify.soundLabel': '提示音模式',
+  'notify.sound.voice': '语音播报',
+  'notify.sound.beep': '单点音效',
+  'notify.sound.off': '静音',
+  'notify.soundHint.voice': '朗读「{tool} {project} 完成 / 需要介入」。',
+  'notify.soundHint.beep': '只播一个系统提示音（完成 = Glass，需介入 = Funk，失败 = Basso），不读项目名。',
+  'notify.soundHint.off': '不播任何声音，只弹系统通知 banner。',
 
   // ── settings · alerts ─────────────────────────────────────────────────
   'alerts.title': '额度推送提醒',
@@ -597,6 +604,13 @@ const en: Messages = {
   'notify.updated': 'Updated. {notes}',
   'notify.enabledMsg': 'Voice notifications enabled.',
   'notify.disabledMsg': 'Voice notifications removed.',
+  'notify.soundLabel': 'Sound mode',
+  'notify.sound.voice': 'Spoken',
+  'notify.sound.beep': 'Single chime',
+  'notify.sound.off': 'Silent',
+  'notify.soundHint.voice': 'Reads "{tool} {project} done / needs you" aloud.',
+  'notify.soundHint.beep': 'Plays one system sound (done = Glass, needs you = Funk, failed = Basso). No speech.',
+  'notify.soundHint.off': 'Banner only — no sound at all.',
 
   // ── settings · alerts ─────────────────────────────────────────────────
   'alerts.title': 'Quota push alerts',
