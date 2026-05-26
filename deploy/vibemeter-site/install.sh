@@ -6,6 +6,20 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
+# Vibemeter is distributed via GitHub tags, not npm registry.
+# Override with VIBEMETER_VERSION=v0.2.2 to pin; default = latest tag.
+resolve_vibemeter_ref() {
+  if [ -n "${VIBEMETER_VERSION:-}" ]; then
+    printf '%s' "$VIBEMETER_VERSION"
+    return
+  fi
+  tag=$(curl -fsS https://api.github.com/repos/myhirra/Vibemeter/tags 2>/dev/null \
+    | grep -m1 '"name"' | cut -d'"' -f4 || true)
+  printf '%s' "${tag:-main}"
+}
+VIBEMETER_REF="$(resolve_vibemeter_ref)"
+VIBEMETER_SOURCE="github:myhirra/Vibemeter#${VIBEMETER_REF}"
+
 if [ "$(uname -s)" = "Darwin" ]; then
   data_dir="${VIBEMETER_DATA_DIR:-$HOME/.vibemeter}"
   log="$data_dir/install.log"
@@ -31,8 +45,8 @@ mkdir -p "$data_dir"
   fi
   trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 
-  echo "Installing @hirra/vibemeter from npm..."
-  npm install -g @hirra/vibemeter --registry=https://registry.npmjs.org/ --loglevel=notice
+  echo "Installing @hirra/vibemeter from ${VIBEMETER_SOURCE}..."
+  npm install -g "${VIBEMETER_SOURCE}" --loglevel=notice
 
   vibemeter_bin="$(command -v vibemeter || true)"
   if [ -z "$vibemeter_bin" ]; then
@@ -66,6 +80,7 @@ mkdir -p "$data_dir"
 EOF
 
   chmod +x "$bg"
+  export VIBEMETER_SOURCE
   nohup "$bg" >/dev/null 2>&1 &
 
   echo "Installing Vibemeter in the background..."
@@ -78,8 +93,8 @@ EOF
   exit 0
 fi
 
-echo "Installing Vibemeter..."
-npm install -g @hirra/vibemeter --registry=https://registry.npmjs.org/
+echo "Installing Vibemeter from ${VIBEMETER_SOURCE}..."
+npm install -g "${VIBEMETER_SOURCE}"
 
 echo "Starting Vibemeter background service..."
 vibemeter install
