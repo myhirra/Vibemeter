@@ -12,6 +12,26 @@ function fmtTokens(n: number): string {
 
 type ToolFilter = 'all' | 'claude-code' | 'codex' | 'cursor';
 
+function isoDay(offset: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function sumWindow(daily: SpendingStats['daily'], days: number) {
+  const todayKey = isoDay(0);
+  const cutoff = isoDay(days - 1);
+  let claudeUsd = 0;
+  let codexTokens = 0;
+  for (const d of daily) {
+    if (d.date >= cutoff && d.date <= todayKey) {
+      claudeUsd += d.claudeUsd;
+      codexTokens += d.codexTokens;
+    }
+  }
+  return { claudeUsd, codexTokens };
+}
+
 export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFilter: ToolFilter }) {
   const t = useT();
   const showClaude = toolFilter === 'all' || toolFilter === 'claude-code';
@@ -19,6 +39,13 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
 
   const maxClaude = showClaude ? Math.max(...data.daily.map((d) => d.claudeUsd), 0.01) : 0.01;
   const maxCodex  = showCodex  ? Math.max(...data.daily.map((d) => d.codexTokens), 1) : 1;
+
+  // Trailing-window KPI cells fill the empty column space we used to have
+  // below the chart, while making "what am I burning lately" answerable at a
+  // glance without scanning the bars.
+  const today = sumWindow(data.daily, 1);
+  const last7d = sumWindow(data.daily, 7);
+  const last30d = sumWindow(data.daily, 30);
 
   if (!showClaude && !showCodex) {
     return (
@@ -53,9 +80,30 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
         )}
       </div>
 
-      {/* 14-day bar chart */}
+      {/* Trailing-window KPIs — fills the column visually + actually answers
+          "am I burning faster this week?" at a glance. */}
+      <div className="mb-4 grid grid-cols-3 gap-2 rounded-md border border-zinc-800 bg-zinc-950/40 p-3">
+        {(['today', '7d', '30d'] as const).map((win) => {
+          const stats = win === 'today' ? today : win === '7d' ? last7d : last30d;
+          return (
+            <div key={win}>
+              <p className="text-[10px] uppercase tracking-wider text-zinc-500">{t(`card.spending.window.${win}`)}</p>
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                {showClaude && (
+                  <span className="text-sm font-semibold tabular-nums text-violet-300">${stats.claudeUsd.toFixed(2)}</span>
+                )}
+                {showCodex && (
+                  <span className="text-xs tabular-nums text-emerald-300">{fmtTokens(stats.codexTokens)}</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* 14-day bar chart — taller so it reads as a real trend, not a sparkline. */}
       <p className="text-xs text-zinc-600 mb-2">{t('card.spending.last14d')}</p>
-      <div className="flex items-end gap-px h-16">
+      <div className="flex items-end gap-px h-56">
         {data.daily.map((d) => {
           const claudePct = showClaude ? (d.claudeUsd / maxClaude) * 100 : 0;
           const codexPct  = showCodex  ? (d.codexTokens / maxCodex) * 100 : 0;
@@ -67,12 +115,12 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
           ].filter(Boolean).join('\n');
           return (
             <div key={d.date} className="flex-1 flex flex-col items-center" title={tip}>
-              <div className="w-full flex flex-col justify-end gap-px" style={{ height: '56px' }}>
+              <div className="w-full flex flex-col justify-end gap-px" style={{ height: '208px' }}>
                 {showCodex && d.codexTokens > 0 && (
-                  <div className="w-full bg-emerald-600/60 rounded-sm" style={{ height: `${Math.max(codexPct * 0.56, 1)}px` }} />
+                  <div className="w-full bg-emerald-600/60 rounded-sm" style={{ height: `${Math.max(codexPct * 2.08, 1)}px` }} />
                 )}
                 {showClaude && d.claudeUsd > 0 && (
-                  <div className="w-full bg-violet-500/70 rounded-sm" style={{ height: `${Math.max(claudePct * 0.56, 1)}px` }} />
+                  <div className="w-full bg-violet-500/70 rounded-sm" style={{ height: `${Math.max(claudePct * 2.08, 1)}px` }} />
                 )}
               </div>
             </div>

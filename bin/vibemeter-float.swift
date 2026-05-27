@@ -72,6 +72,25 @@ struct AgentLive: Decodable {
     let recentSession: LiveSession?
 }
 
+struct RecentSession: Decodable {
+    let id: String
+    let tool: String
+    let project: String
+    let title: String?
+    let startedAt: Double
+    let endedAt: Double?
+    let durationMs: Double
+    let tokens: Int?
+}
+
+struct ProjectSummary: Decodable {
+    let project: String
+    let sessions: Int
+    let durationMs: Double
+    let tokens: Int?
+    let tools: [ToolCount]
+}
+
 struct ActiveContext: Decodable {
     let sessionId: String
     let project: String
@@ -87,6 +106,8 @@ struct FloatStats: Decodable {
     let primary: FloatQuota?
     let quotas: [FloatQuota]
     let liveByAgent: [AgentLive]
+    let recentSessions: [RecentSession]?
+    let projectStats: [ProjectSummary]?
     let todaySessions: Int
     let totalSessions: Int
     let sessionStatsByAgent: [AgentSessionStats]?
@@ -113,6 +134,7 @@ final class FloatView: NSView {
         var title: NSRect = .zero
         var refresh: [NSRect] = []
         var close: NSRect = .zero
+        var openDashboard: NSRect = .zero
         var claudeToggle: NSRect = .zero
         var codexToggle: NSRect = .zero
         var pause: NSRect = .zero
@@ -238,7 +260,7 @@ final class FloatView: NSView {
 
     func preferredSize() -> NSSize {
         if isExpanded {
-            return NSSize(width: 306, height: agentDisplay == "both" ? 408 : 296)
+            return NSSize(width: 360, height: agentDisplay == "both" ? 552 : 456)
         }
         switch (displayStyle, agentDisplay) {
         case ("pill", "both"):
@@ -280,7 +302,6 @@ final class FloatView: NSView {
         }
         drawStats(in: rect)
         drawActions(in: rect)
-        drawFooter(in: rect)
     }
 
     private func drawActions(in rect: NSRect) {
@@ -301,6 +322,10 @@ final class FloatView: NSView {
         let pauseRect = drawActionButton(label: pauseLabel, x: x, y: y, accent: paused)
         hitRects.pause = pauseRect
         x = pauseRect.maxX + 6
+
+        let dashboardRect = drawActionButton(label: "Dashboard", x: x, y: y, accent: false)
+        hitRects.openDashboard = dashboardRect
+        x = dashboardRect.maxX + 6
 
         if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
             let openRect = drawActionButton(label: "Open last", x: x, y: y, accent: false)
@@ -377,6 +402,10 @@ final class FloatView: NSView {
             }
             if hitRects.pause != .zero && hitRects.pause.contains(point) {
                 onTogglePause?()
+                return
+            }
+            if hitRects.openDashboard != .zero && hitRects.openDashboard.contains(point) {
+                onOpenDashboard?()
                 return
             }
             if hitRects.openTranscript != .zero && hitRects.openTranscript.contains(point) {
@@ -745,15 +774,16 @@ final class FloatView: NSView {
         drawText(value, rect: NSRect(x: center.x - 36, y: center.y - 13, width: 72, height: 26), size: valueSize, weight: .bold, color: .white, alignment: .center)
 
         let x = rect.minX + 134
+        let textWidth = max(120, rect.maxX - x - 18)
         let baseY = rect.minY + (dual ? 78 : 72) + yOffset
-        drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: 140, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
-        drawText(q == nil ? statusText : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
-        drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: 140, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
+        drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: textWidth, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
+        drawText(q == nil ? statusText : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
+        drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
         if let exhaust = q?.pace5hExhaustMin, exhaust > 0 {
             let paceColor = exhaust < 30 ? NSColor.systemPink : NSColor.systemYellow
-            drawText("exhausts in ~\(exhaust)m", rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: 140, height: 14), size: 10, weight: .medium, color: paceColor)
+            drawText("exhausts in ~\(exhaust)m", rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
         } else if let account = q?.accountLabel, !account.isEmpty, !dual {
-            drawText(account, rect: NSRect(x: x, y: baseY + 67, width: 140, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
+            drawText(account, rect: NSRect(x: x, y: baseY + 67, width: textWidth, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
         }
 
         if yOffset <= 0 {
@@ -765,10 +795,12 @@ final class FloatView: NSView {
         let dual = agentDisplay == "both"
         let offset: CGFloat = dual ? 94 : 0
         let top = rect.minY + 164 + offset
+        let gap: CGFloat = 10
+        let width = (rect.width - 40 - gap * 2) / 3
         let counts = sessionStats(for: dual ? "both" : focusAgent)
-        drawMetric(title: "today", value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: 74, height: 50))
-        drawMetric(title: "total", value: "\(counts.total)", rect: NSRect(x: rect.minX + 104, y: top, width: 74, height: 50))
-        let weeklyRect = NSRect(x: rect.minX + 188, y: top, width: 74, height: 50)
+        drawMetric(title: "today", value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: width, height: 50))
+        drawMetric(title: "total", value: "\(counts.total)", rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
+        let weeklyRect = NSRect(x: rect.minX + 20 + (width + gap) * 2, y: top, width: width, height: 50)
         if dual {
             drawDualWeekly(rect: weeklyRect)
         } else {
@@ -789,6 +821,96 @@ final class FloatView: NSView {
         let xText = "X \(remainingPercentText(x))"
         drawText(cText, rect: NSRect(x: rect.minX, y: rect.minY + 22, width: rect.width, height: 13), size: 11, weight: .semibold, color: .white, alignment: .center)
         drawText(xText, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 13), size: 11, weight: .semibold, color: NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1), alignment: .center)
+    }
+
+    private func drawCurrentStrip(in rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.18).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
+        NSColor.white.withAlphaComponent(0.06).setStroke()
+        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).stroke()
+
+        if agentDisplay == "both" {
+            drawFooterLine(agent: "claude-code", rect: NSRect(x: rect.minX + 12, y: rect.minY + 6, width: rect.width - 24, height: 14))
+            drawFooterLine(agent: "codex", rect: NSRect(x: rect.minX + 12, y: rect.minY + 21, width: rect.width - 24, height: 14))
+            return
+        }
+
+        let l = live(for: focusAgent)
+        let session = l?.activeSession ?? l?.recentSession
+        let prefix = l?.state == "active" ? "active" : l?.state == "recent" ? "done" : "latest"
+        let agentName = toolName(focusAgent)
+        let line = session == nil ? "No recent \(agentName) session" : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
+        drawText(line, rect: NSRect(x: rect.minX + 12, y: rect.minY + 6, width: rect.width - 24, height: 15), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.76))
+
+        if focusAgent == "claude-code", let ctx = stats?.activeContext {
+            drawContextBar(in: NSRect(x: rect.minX + 12, y: rect.minY + 22, width: rect.width - 24, height: 12), ctx: ctx)
+        } else if let title = session?.title, !title.isEmpty {
+            drawText(title, rect: NSRect(x: rect.minX + 12, y: rect.minY + 22, width: rect.width - 24, height: 13), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.40))
+        } else {
+            drawText("drag anywhere · double-click opens dashboard", rect: NSRect(x: rect.minX + 12, y: rect.minY + 22, width: rect.width - 24, height: 13), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.35))
+        }
+    }
+
+    private func drawMiniDashboard(in rect: NSRect, yOffset: CGFloat) {
+        let recentRect = NSRect(x: rect.minX + 20, y: rect.minY + 307 + yOffset, width: rect.width - 40, height: 72)
+        drawRecentActivity(in: recentRect)
+
+        let projectRect = NSRect(x: rect.minX + 20, y: rect.minY + 388 + yOffset, width: rect.width - 40, height: 58)
+        drawProjectSummary(in: projectRect)
+    }
+
+    private func recentSessionsForDisplay() -> [RecentSession] {
+        guard let sessions = stats?.recentSessions else { return [] }
+        if agentDisplay == "both" {
+            return sessions.filter { $0.tool == "claude-code" || $0.tool == "codex" }
+        }
+        return sessions.filter { $0.tool == focusAgent }
+    }
+
+    private func drawRecentActivity(in rect: NSRect) {
+        drawText("Recent activity", rect: NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 14), size: 10, weight: .semibold, color: NSColor.white.withAlphaComponent(0.48))
+        let sessions = Array(recentSessionsForDisplay().prefix(3))
+        if sessions.isEmpty {
+            drawText("No sessions yet", rect: NSRect(x: rect.minX, y: rect.minY + 24, width: rect.width, height: 16), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.38))
+            return
+        }
+
+        for (index, session) in sessions.enumerated() {
+            let y = rect.minY + 19 + CGFloat(index) * 17
+            let dot = NSRect(x: rect.minX, y: y + 5, width: 6, height: 6)
+            toolColor(session.tool).setFill()
+            NSBezierPath(ovalIn: dot).fill()
+
+            let tokenSuffix = session.tokens.flatMap { $0 > 0 ? " · \(formatTokens($0)) tok" : nil } ?? ""
+            let left = "\(toolName(session.tool)) · \(session.project)"
+            let rightTime = session.endedAt == nil ? "active" : timeAgoText(session.endedAt ?? session.startedAt)
+            drawText(left, rect: NSRect(x: rect.minX + 12, y: y, width: rect.width - 90, height: 14), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.82))
+            drawText("\(rightTime)\(tokenSuffix)", rect: NSRect(x: rect.maxX - 108, y: y, width: 108, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.42), alignment: .right)
+        }
+    }
+
+    private func drawProjectSummary(in rect: NSRect) {
+        drawText("7d projects", rect: NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: 14), size: 10, weight: .semibold, color: NSColor.white.withAlphaComponent(0.48))
+        let projects = Array((stats?.projectStats ?? []).prefix(3))
+        if projects.isEmpty {
+            drawText("No project activity this week", rect: NSRect(x: rect.minX, y: rect.minY + 24, width: rect.width, height: 16), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.38))
+            return
+        }
+
+        let maxSessions = max(1, projects.map { $0.sessions }.max() ?? 1)
+        for (index, project) in projects.enumerated() {
+            let y = rect.minY + 18 + CGFloat(index) * 13
+            let pct = CGFloat(project.sessions) / CGFloat(maxSessions)
+            let barRect = NSRect(x: rect.maxX - 72, y: y + 4, width: 42, height: 5)
+            NSColor.white.withAlphaComponent(0.09).setFill()
+            NSBezierPath(roundedRect: barRect, xRadius: 2.5, yRadius: 2.5).fill()
+            NSColor.systemGreen.withAlphaComponent(0.75).setFill()
+            NSBezierPath(roundedRect: NSRect(x: barRect.minX, y: barRect.minY, width: barRect.width * pct, height: barRect.height), xRadius: 2.5, yRadius: 2.5).fill()
+
+            let summary = "\(project.sessions) · \(durationText(project.durationMs))"
+            drawText(project.project, rect: NSRect(x: rect.minX, y: y, width: rect.width - 118, height: 13), size: 10.5, weight: .medium, color: NSColor.white.withAlphaComponent(0.80))
+            drawText(summary, rect: NSRect(x: rect.maxX - 28, y: y, width: 28, height: 13), size: 9.5, weight: .regular, color: NSColor.white.withAlphaComponent(0.42), alignment: .right)
+        }
     }
 
     private func drawFooter(in rect: NSRect) {
