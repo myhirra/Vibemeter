@@ -13,7 +13,6 @@ import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import { SessionInsightCard } from './SessionInsightCard';
 import { CacheCard } from './CacheCard';
-import { ShareReportCard } from './ShareReportCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
 import { RecapNudgeBanner } from './RecapNudgeBanner';
@@ -535,9 +534,8 @@ export function Dashboard({
       {/* Lower-priority: achievements + heatmap come after the runway, ROI,
           cache, sessions, and projects. They're delight content, not decision
           content, so they sit below the fold. */}
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+      <div className="mb-4">
         <AchievementsCard data={achievements} />
-        <ShareReportCard />
       </div>
 
       <div className="mb-4">
