@@ -1,6 +1,6 @@
 'use client';
 
-import { startTransition, useEffect, useState, useMemo } from 'react';
+import { startTransition, useEffect, useRef, useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { SessionsTable } from './SessionsTable';
@@ -15,8 +15,10 @@ import { SessionInsightCard } from './SessionInsightCard';
 import { CacheCard } from './CacheCard';
 import { ShareReportCard } from './ShareReportCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
+import { NowRunwayCard } from './NowRunwayCard';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight, CacheStats } from '@/lib/stats';
+import type { GuardDecision } from '@/lib/quota-guard';
 import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
@@ -51,6 +53,30 @@ interface Props {
   achievements: Achievement[];
   insight: SessionInsight;
   cache: CacheStats;
+  runway: {
+    guard: GuardDecision;
+    contextPct: number | null;
+    weeklyRemaining: number | null;
+    window5h: { usedPct: number | null; resetAt: number | null } | null;
+  };
+  /**
+   * When the floater deep-links into the dashboard with `?project=foo`, we
+   * pre-filter the sessions table to that cwd basename. Free-form string —
+   * sessions whose cwd basename matches case-insensitively are kept.
+   */
+  initialProjectFilter: string | null;
+  /**
+   * `?focus=current` from the floater. When true we scroll the NowRunway card
+   * into view after mount so the user lands on the conclusion line.
+   */
+  initialFocusCurrent: boolean;
+  /**
+   * Redact mode flag. When true the page renders a "redacted — data masked"
+   * banner and downstream cards that surface transcript paths render their
+   * open buttons disabled. The data itself has already been masked server-
+   * side; this prop is for UI affordances only.
+   */
+  redact: boolean;
 }
 
 const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const;
@@ -128,6 +154,10 @@ export function Dashboard({
   achievements,
   insight,
   cache,
+  runway,
+  initialProjectFilter,
+  initialFocusCurrent,
+  redact,
 }: Props) {
   const t = useT();
   const router = useRouter();
@@ -139,6 +169,18 @@ export function Dashboard({
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  const runwayRef = useRef<HTMLDivElement | null>(null);
+
+  // Honor `?focus=current` from the floater deep-link: scroll the conclusion
+  // line into view once after mount. Only fires once and uses smooth scroll
+  // so it doesn't fight a manual scroll the user already initiated.
+  useEffect(() => {
+    if (!initialFocusCurrent) return;
+    const id = window.setTimeout(() => {
+      runwayRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
+    return () => window.clearTimeout(id);
+  }, [initialFocusCurrent]);
 
   useEffect(() => {
     startTransition(() => setToolFilter(resolvedToolFilter));
@@ -169,11 +211,23 @@ export function Dashboard({
     return counts;
   }, [sessions, since]);
 
+  // When the floater deep-links with `?project=foo`, pre-filter sessions to
+  // those whose cwd basename matches case-insensitively. This is a soft hint:
+  // if no session matches we fall back to the unfiltered list so the dashboard
+  // is still useful.
+  const projectFilter = initialProjectFilter?.toLowerCase() ?? null;
   const filteredSessions = useMemo(() => {
     let s = toolFilter === 'all' ? sessions : sessions.filter((s) => s.tool === toolFilter);
     if (since > 0) s = s.filter((s) => s.started_at >= since);
+    if (projectFilter) {
+      const matched = s.filter((row) => {
+        const base = row.cwd?.split('/').filter(Boolean).pop()?.toLowerCase() ?? '';
+        return base.includes(projectFilter);
+      });
+      if (matched.length > 0) s = matched;
+    }
     return s;
-  }, [sessions, toolFilter, since]);
+  }, [sessions, toolFilter, since, projectFilter]);
 
   const filteredToolSplit = useMemo(() => {
     const byTool = new Map<string, { sessions: number; totalMs: number }>();
@@ -245,6 +299,43 @@ export function Dashboard({
 
   return (
     <>
+      {/* Now / Runway — conclusion-first decision card at the very top so the
+          user lands on "can I keep coding?" before any chart. */}
+      <div ref={runwayRef}>
+        <NowRunwayCard
+          guard={runway.guard}
+          contextPct={runway.contextPct}
+          weeklyRemaining={runway.weeklyRemaining}
+          window5h={runway.window5h}
+        />
+      </div>
+
+      {/* Project-filter hint when the floater deep-linked us with ?project=… */}
+      {projectFilter && initialProjectFilter && (
+        <p className="mb-3 flex items-center gap-2 text-[11px] text-zinc-500">
+          <span className="rounded-full border border-violet-700/40 bg-violet-950/30 px-2 py-0.5 text-violet-200">
+            project · {initialProjectFilter}
+          </span>
+        </p>
+      )}
+
+      {/* Redact mode banner — tells the user (and the screenshot viewer) that
+          project names / titles / paths are masked. The toggle lives in
+          settings; this banner is read-only so it doesn't clutter the
+          dashboard with a second control. */}
+      {redact && (
+        <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-200">
+          <span aria-hidden className="font-mono text-amber-300">●</span>
+          <span className="flex-1">{t('redact.active')}</span>
+          <Link
+            href="/settings#redact"
+            className="rounded-full border border-amber-700/60 px-2 py-0.5 text-[10px] text-amber-100 transition-colors hover:border-amber-500 hover:text-amber-50"
+          >
+            {t('common.settings')}
+          </Link>
+        </div>
+      )}
+
       {/* Filters row */}
       <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
         <div className="flex flex-wrap gap-2">
@@ -388,45 +479,54 @@ export function Dashboard({
         );
       })()}
 
-      {/* Spending + achievements */}
+      {/* ROI — API-equivalent value + per-session insight live together at the
+          top of the data area. Achievements were paired here before; they
+          moved further down per the new priority ordering. */}
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <SpendingCard data={filteredSpending} toolFilter={toolFilter} />
-        <AchievementsCard data={achievements} />
+        <SessionInsightCard data={insight} redact={redact} />
       </div>
 
-      {/* Activation + sharing */}
+      {/* Cache */}
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <SessionInsightCard data={insight} />
-        <CacheCard data={cache} />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <ShareReportCard />
-        <SetupDoctorCard />
-      </div>
-
-      {/* Activity — pattern (heatmap) / today (timeline) */}
-      <div className="mb-4">
-        <ActivityCard sessions={filteredSessions} streak={streak} timeline={timeline} />
-      </div>
-
-      {/* Burndown chart */}
-      <div className="mb-4">
+        <CacheCard data={cache} redact={redact} />
         <BurndownChart
           data={toolFilter === 'codex' ? codexBurndown : toolFilter === 'claude-code' ? claudeBurndown : allBurndown}
           label={toolFilter === 'codex' ? selectedCodexLabel : toolFilter === 'claude-code' ? t('dashboard.claudeCodeLower') : t('dashboard.allAgents')}
         />
       </div>
 
-      {/* Tool split + Project leaderboard */}
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <ToolSplitCard data={filteredToolSplit} />
-        <ProjectLeaderboard sessions={filteredSessions} />
+      {/* Sessions table — clarifying span hint sits above so users know the
+          duration column is wall-clock from start, not active typing time. */}
+      <div className="mb-1 flex items-baseline justify-between gap-3 text-[11px] text-zinc-500">
+        <span className="uppercase tracking-wider">{t('card.session.spanLabel')}</span>
+        <span className="text-zinc-600">{t('card.session.spanHint')}</span>
       </div>
-
-      {/* Sessions table */}
       <div className="mb-4">
         <SessionsTable sessions={filteredSessions.slice(0, 40)} />
+      </div>
+
+      {/* Projects + tool split */}
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+        <ProjectLeaderboard sessions={filteredSessions} />
+        <ToolSplitCard data={filteredToolSplit} />
+      </div>
+
+      {/* Lower-priority: achievements + heatmap come after the runway, ROI,
+          cache, sessions, and projects. They're delight content, not decision
+          content, so they sit below the fold. */}
+      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
+        <AchievementsCard data={achievements} />
+        <ShareReportCard />
+      </div>
+
+      <div className="mb-4">
+        <ActivityCard sessions={filteredSessions} streak={streak} timeline={timeline} />
+      </div>
+
+      {/* Setup doctor near the bottom — only matters when something's wrong */}
+      <div className="mb-4">
+        <SetupDoctorCard />
       </div>
 
       {/* File hotspots */}

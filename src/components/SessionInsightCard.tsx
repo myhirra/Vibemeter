@@ -30,7 +30,7 @@ async function openTranscript(path: string) {
   }
 }
 
-export function SessionInsightCard({ data }: { data: SessionInsight }) {
+export function SessionInsightCard({ data, redact = false }: { data: SessionInsight; redact?: boolean }) {
   const t = useT();
   const { retryRate7d, topExpensive, value } = data;
   const bestPlan = value.plans.reduce((best, p) => (p.multiplier >= 1 && (!best || p.priceUsd > best.priceUsd) ? p : best), null as null | typeof value.plans[number]);
@@ -108,14 +108,25 @@ export function SessionInsightCard({ data }: { data: SessionInsight }) {
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className="text-sm font-semibold text-emerald-300">{fmtCost(s.costUsd)}</span>
-                  {s.transcriptPath && (
+                  {redact ? (
                     <button
                       type="button"
-                      onClick={() => openTranscript(s.transcriptPath!)}
-                      className="text-[10px] text-violet-300 hover:text-violet-200"
+                      disabled
+                      title={t('redact.transcriptHidden')}
+                      className="cursor-not-allowed text-[10px] text-zinc-600"
                     >
                       {t('card.insight.openTranscript')}
                     </button>
+                  ) : (
+                    s.transcriptPath && (
+                      <button
+                        type="button"
+                        onClick={() => openTranscript(s.transcriptPath!)}
+                        className="text-[10px] text-violet-300 hover:text-violet-200"
+                      >
+                        {t('card.insight.openTranscript')}
+                      </button>
+                    )
                   )}
                 </div>
               </li>

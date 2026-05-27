@@ -13,7 +13,8 @@ TOOL="${1:-AI}"
 STATUS="${2:-complete}"
 LOCALE="${VIBEMETER_NOTIFY_LOCALE:-zh}"
 
-# Honor pause flag set by the floater's "Pause 30m" button.
+# Honor mute flag set by the floater's "Mute 30m" button (it pauses notifications,
+# not data collection — naming reflects the user-visible label).
 PAUSE_FILE="${VIBEMETER_DATA_DIR:-$HOME/.vibemeter}/pause-until"
 if [[ -f "$PAUSE_FILE" ]]; then
   until_ms="$(cat "$PAUSE_FILE" 2>/dev/null || true)"

@@ -3,6 +3,9 @@ export const dynamic = 'force-dynamic';
 import { SettingsNotifyPanel } from '@/components/SettingsNotifyPanel';
 import { SettingsAlertsPanel } from '@/components/SettingsAlertsPanel';
 import { SettingsDonatePanel } from '@/components/SettingsDonatePanel';
+import { SettingsBillingPanel } from '@/components/SettingsBillingPanel';
+import { RedactToggle } from '@/components/RedactToggle';
+import { SettingsUpgradeLink } from '@/components/SettingsUpgradeLink';
 import { FeatureVoteCard } from '@/components/FeatureVoteCard';
 import { SettingsDashboardLink } from '@/components/SettingsDashboardLink';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
@@ -35,12 +38,15 @@ export default async function SettingsPage() {
             <p className="text-zinc-600 text-xs mt-1">{t(locale, 'settings.subtitle')}</p>
           </div>
           <div className="flex items-center gap-2">
+            <SettingsUpgradeLink label={t(locale, 'pricing.upgrade')} />
             <LocaleSwitcher />
             <SettingsDashboardLink label={t(locale, 'common.dashboard')} />
           </div>
         </div>
 
         <div className="space-y-6">
+          <SettingsBillingPanel />
+          <RedactToggle />
           <SettingsNotifyPanel initialStatus={initialStatus} />
           <SettingsAlertsPanel initialConfig={initialAlerts.config} initialConfigPath={initialAlerts.configPath} />
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
