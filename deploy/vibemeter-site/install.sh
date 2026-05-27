@@ -81,6 +81,18 @@ fi
 if [ "$(uname -s)" = "Darwin" ]; then
   step "Opening floating widget"
   "$vibemeter_bin" float || true
+
+  # Symlink ~/.vibemeter/Vibemeter.app → /Applications so Spotlight / Finder
+  # surface "Vibemeter" the way users expect a macOS app. Idempotent: the CLI
+  # skips when the symlink already points at the bundle, refuses with a clear
+  # message on a foreign collision (e.g. another tool also named Vibemeter).
+  step "Registering Vibemeter in /Applications"
+  if "$vibemeter_bin" install-app >/dev/null 2>&1; then
+    echo "  ✓ /Applications/Vibemeter.app linked."
+  else
+    echo "  · Skipped (an existing /Applications/Vibemeter.app blocks the symlink)."
+    echo "    Run \`vibemeter install-app --name \"Vibemeter Float.app\"\` to install under a different name."
+  fi
 fi
 
 echo
