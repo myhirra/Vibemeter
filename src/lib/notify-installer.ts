@@ -47,6 +47,25 @@ function ensureAppBundle(): { built: boolean; path: string | null; error?: strin
   return { built: true, path: APP_BINARY };
 }
 
+function osascriptEscape(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+export function sendNativeNotification(title: string, body: string, threadId = 'vibemeter'): { ok: boolean; message: string } {
+  const app = ensureAppBundle();
+  if (app.path) {
+    const result = spawnSync(app.path, ['--notify', title, body, threadId], { stdio: 'ignore' });
+    if (result.status === 0) return { ok: true, message: 'sent' };
+  }
+
+  const fallback = spawnSync('osascript', [
+    '-e',
+    `display notification "${osascriptEscape(body)}" with title "${osascriptEscape(title)}"`,
+  ], { stdio: 'ignore' });
+  if (fallback.status === 0) return { ok: true, message: 'sent via osascript' };
+  return { ok: false, message: app.error ?? 'notification failed' };
+}
+
 export type SoundMode = 'voice' | 'beep' | 'off';
 
 export type NotifyStatus = {

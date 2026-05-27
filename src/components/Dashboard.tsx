@@ -16,9 +16,12 @@ import { CacheCard } from './CacheCard';
 import { ShareReportCard } from './ShareReportCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
+import { RecapNudgeBanner } from './RecapNudgeBanner';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight, CacheStats } from '@/lib/stats';
 import type { GuardDecision } from '@/lib/quota-guard';
+import type { RecapCardData } from '@/lib/recap-card';
+import type { RecapNudge } from '@/lib/recap-nudge';
 import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
@@ -53,6 +56,12 @@ interface Props {
   achievements: Achievement[];
   insight: SessionInsight;
   cache: CacheStats;
+  recapCards: {
+    today: RecapCardData;
+    weekly: RecapCardData;
+    monthly: RecapCardData;
+  };
+  recapNudge: RecapNudge | null;
   runway: {
     guard: GuardDecision;
     contextPct: number | null;
@@ -155,6 +164,8 @@ export function Dashboard({
   achievements,
   insight,
   cache,
+  recapCards,
+  recapNudge,
   runway,
   initialProjectFilter,
   initialFocusCurrent,
@@ -311,6 +322,13 @@ export function Dashboard({
           apiMode={runway.apiMode}
         />
       </div>
+
+      <RecapNudgeBanner
+        nudge={recapNudge}
+        today={recapCards.today}
+        weekly={recapCards.weekly}
+        monthly={recapCards.monthly}
+      />
 
       {/* Project-filter hint when the floater deep-linked us with ?project=… */}
       {projectFilter && initialProjectFilter && (
@@ -486,7 +504,7 @@ export function Dashboard({
           moved further down per the new priority ordering. */}
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <SpendingCard data={filteredSpending} toolFilter={toolFilter} />
-        <SessionInsightCard data={insight} redact={redact} />
+        <SessionInsightCard data={insight} redact={redact} recapCards={recapCards} />
       </div>
 
       {/* Cache */}

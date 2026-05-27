@@ -1,7 +1,12 @@
 import { getDb } from './db';
 import { getFloatStats } from './float-stats';
 import { decideQuotaGuard, type GuardDecision } from './quota-guard';
-import { activityStreak, sessionInsight, spendingStats } from './stats';
+import { activityStreak, cacheStats, sessionInsight, spendingStats } from './stats';
+
+const CLAUDE_MAX_MONTHLY_USD = 200;
+const MONTHS_PER_YEAR = 12;
+const WEEKS_PER_YEAR = 52;
+const CLAUDE_MAX_WEEKLY_USD = (CLAUDE_MAX_MONTHLY_USD * MONTHS_PER_YEAR) / WEEKS_PER_YEAR;
 
 export interface ShareReportProject {
   project: string;
@@ -17,25 +22,39 @@ export interface ShareReport {
   currentStreak: number;
   claudeTotalUsd: number;
   codexTotalTokens: number;
+  shareCard: ShareCardStats;
   topProjects: ShareReportProject[];
   markdown: string;
+}
+
+export interface ShareCardStats {
+  eyebrow: string;
+  weekLabel: string;
+  multiplier: number;
+  apiEquivalentUsd: number;
+  planWeeklyUsd: number;
+  planLabel: string;
+  totalTokens: number;
+  cacheHitPct: number;
+  topProject: string;
 }
 
 function projectName(cwd: string | null): string {
   return cwd?.split('/').filter(Boolean).pop() ?? 'unknown';
 }
 
-function topProjects(limit = 5): ShareReportProject[] {
+function topProjects(limit = 5, since?: number): ShareReportProject[] {
   const rows = getDb().prepare(`
     SELECT cwd,
            COUNT(*) AS sessions,
            SUM(COALESCE(ended_at, started_at) - started_at) AS total_ms
     FROM sessions
     WHERE cwd IS NOT NULL
+      ${since == null ? '' : 'AND started_at >= ?'}
     GROUP BY cwd
     ORDER BY total_ms DESC
     LIMIT ?
-  `).all(limit) as { cwd: string | null; sessions: number; total_ms: number | null }[];
+  `).all(...(since == null ? [limit] : [since, limit])) as { cwd: string | null; sessions: number; total_ms: number | null }[];
 
   return rows.map((row) => ({
     project: projectName(row.cwd),
@@ -60,6 +79,57 @@ function duration(ms: number): string {
   const minutes = Math.round((ms % 3_600_000) / 60_000);
   if (hours <= 0) return `${minutes}m`;
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
+}
+
+function weekWindow(): { start: number; end: number; label: string } {
+  const endDate = new Date();
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - 6);
+  startDate.setHours(0, 0, 0, 0);
+
+  const month = startDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  const endMonth = endDate.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+  const startDay = startDate.getDate();
+  const endDay = endDate.getDate();
+  const label = month === endMonth
+    ? `WEEK OF ${month} ${startDay}–${endDay}`
+    : `WEEK OF ${month} ${startDay}–${endMonth} ${endDay}`;
+  return { start: startDate.getTime(), end: endDate.getTime(), label };
+}
+
+function claudeApiEquivalentUsdSince(since: number): number {
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(session_max), 0) AS total
+    FROM (
+      SELECT MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS session_max
+      FROM usage_snapshots
+      WHERE source = 'statusline'
+        AND captured_at >= ?
+        AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+      GROUP BY json_extract(raw_output, '$.session_id')
+    )
+  `).get(since) as { total: number };
+  return row.total ?? 0;
+}
+
+function buildShareCardStats(): ShareCardStats {
+  const window = weekWindow();
+  const cache = cacheStats(7);
+  const apiEquivalentUsd = claudeApiEquivalentUsdSince(window.start);
+  const multiplier = Math.max(0, Math.floor(apiEquivalentUsd / CLAUDE_MAX_WEEKLY_USD));
+  const totalTokens = cache.totalInput + cache.totalCacheCreation + cache.totalCacheRead + cache.totalOutput;
+  const fallbackProject = topProjects(1, window.start)[0]?.project ?? 'unknown';
+  return {
+    eyebrow: 'RETURN ON MY CLAUDE CODE WEEK',
+    weekLabel: window.label,
+    multiplier,
+    apiEquivalentUsd,
+    planWeeklyUsd: CLAUDE_MAX_WEEKLY_USD,
+    planLabel: 'Max plan',
+    totalTokens,
+    cacheHitPct: cache.hitRatePct,
+    topProject: cache.topProjects[0]?.project ?? fallbackProject,
+  };
 }
 
 function guardPrefix(status: GuardDecision['status']): string {
@@ -103,6 +173,10 @@ function buildMarkdown(report: Omit<ShareReport, 'markdown'>): string {
     '## Spend / tokens',
     `- Claude API-equivalent: $${report.claudeTotalUsd.toFixed(2)}`,
     `- Codex tokens: ${compactNumber(report.codexTotalTokens)}`,
+    '',
+    '## Share card',
+    `- ${report.shareCard.multiplier}x return this week: $${report.shareCard.apiEquivalentUsd.toFixed(2)} at API rates / $${report.shareCard.planWeeklyUsd.toFixed(0)}/wk ${report.shareCard.planLabel}`,
+    `- ${compactNumber(report.shareCard.totalTokens)} Claude Code tokens, ${report.shareCard.cacheHitPct}% served from cache`,
   );
 
   if (report.topProjects.length > 0) {
@@ -132,9 +206,9 @@ export async function buildShareReport(): Promise<ShareReport> {
     currentStreak: streak.current,
     claudeTotalUsd: spend.claudeTotalUsd,
     codexTotalTokens: spend.codexTotalTokens,
+    shareCard: buildShareCardStats(),
     topProjects: topProjects(5),
   };
 
   return { ...base, markdown: buildMarkdown(base) };
 }
-

@@ -1,7 +1,9 @@
 'use client';
 
 import type { SessionInsight } from '@/lib/stats';
+import type { RecapCardData } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
+import { RecapShareButton } from './RecapShareButton';
 
 function fmtCost(n: number | null) {
   if (n == null) return '—';
@@ -30,7 +32,15 @@ async function openTranscript(path: string) {
   }
 }
 
-export function SessionInsightCard({ data, redact = false }: { data: SessionInsight; redact?: boolean }) {
+export function SessionInsightCard({
+  data,
+  redact = false,
+  recapCards,
+}: {
+  data: SessionInsight;
+  redact?: boolean;
+  recapCards?: { today: RecapCardData; weekly: RecapCardData; monthly: RecapCardData };
+}) {
   const t = useT();
   const { retryRate7d, topExpensive, value } = data;
   const bestPlan = value.plans.reduce((best, p) => (p.multiplier >= 1 && (!best || p.priceUsd > best.priceUsd) ? p : best), null as null | typeof value.plans[number]);
@@ -75,6 +85,11 @@ export function SessionInsightCard({ data, redact = false }: { data: SessionInsi
           <p className="mt-1 text-[11px] text-emerald-200/80">
             {t('card.insight.valuePlan', { plan: bestPlan.name, x: bestPlan.multiplier })}
           </p>
+        )}
+        {recapCards && (
+          <div className="mt-3 flex justify-end">
+            <RecapShareButton today={recapCards.today} weekly={recapCards.weekly} monthly={recapCards.monthly} />
+          </div>
         )}
       </div>
 

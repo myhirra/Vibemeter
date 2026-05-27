@@ -10,6 +10,7 @@ import { importUsageSnapshots } from '@/lib/collectors/session-importer';
 import { dispatch } from './dispatch';
 import { formatDailySummary, formatResetReminder, formatThresholdAlert } from './format';
 import { readAlertConfig, readAlertState, writeAlertState } from './storage';
+import { evaluateRecapNudge } from '@/lib/recap-nudge';
 import type {
   AlertChannel,
   AlertConfig,
@@ -154,12 +155,13 @@ export interface RunReport {
 
 export async function runAlertsOnce(now: Date = new Date()): Promise<RunReport> {
   const config = readAlertConfig();
-  if (!config.rules.length) return { fired: [], evaluated: 0 };
-
   importUsageSnapshots();
 
   const state = readAlertState();
   const stats = await getFloatStats();
+  evaluateRecapNudge(stats, { notify: true, now: now.getTime() });
+  if (!config.rules.length) return { fired: [], evaluated: 0 };
+
   const pushLocale: PushLocale = config.pushLocale === 'en' ? 'en' : 'zh';
 
   const pending: PendingFire[] = [];

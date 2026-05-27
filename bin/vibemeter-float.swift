@@ -260,7 +260,10 @@ final class FloatView: NSView {
 
     func preferredSize() -> NSSize {
         if isExpanded {
-            return NSSize(width: 360, height: agentDisplay == "both" ? 552 : 456)
+            // 296 fits header + ring block + stats tiles + action row with a
+            // comfortable bottom margin. 552 → 390 in dual mode mirrors the
+            // same trim plus the +94 ring offset.
+            return NSSize(width: 360, height: agentDisplay == "both" ? 390 : 296)
         }
         switch (displayStyle, agentDisplay) {
         case ("pill", "both"):
@@ -315,9 +318,9 @@ final class FloatView: NSView {
         if paused {
             let leftMs = (stats!.pausedUntil!) - Date().timeIntervalSince1970 * 1000
             let leftMin = max(0, Int((leftMs / 60_000).rounded()))
-            pauseLabel = "Paused \(leftMin)m"
+            pauseLabel = "Muted · \(leftMin)m"
         } else {
-            pauseLabel = "Pause 30m"
+            pauseLabel = "Mute 30m"
         }
         let pauseRect = drawActionButton(label: pauseLabel, x: x, y: y, accent: paused)
         hitRects.pause = pauseRect
@@ -427,6 +430,7 @@ final class FloatView: NSView {
             if hitRects.ring != .zero && hitRects.ring.contains(point) {
                 isExpanded = false
                 applyWindowSize()
+                toolTip = tooltipText()
                 needsDisplay = true
                 return
             }
@@ -436,6 +440,7 @@ final class FloatView: NSView {
         // collapsed: any click expands
         isExpanded = true
         applyWindowSize()
+        toolTip = nil
         needsDisplay = true
     }
 
@@ -496,6 +501,7 @@ final class FloatView: NSView {
     @objc private func toggleFromMenu() {
         isExpanded.toggle()
         applyWindowSize()
+        toolTip = isExpanded ? nil : tooltipText()
         needsDisplay = true
     }
     @objc private func refreshFromMenu() { onRefresh?() }
@@ -1227,10 +1233,13 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self.contentView?.stats = stats
                     self.contentView?.statusText = stats.quotas.isEmpty ? "no snapshot" : "loaded"
-                    // Hover tooltip — only changed when stats refresh so we
-                    // don't fight with the existing bubble visual. The user
-                    // sees `Claude · 64% left · reset in 38m` on hover.
-                    self.contentView?.toolTip = self.contentView?.tooltipText()
+                    // Hover tooltip — only the collapsed bubble needs it. In
+                    // the expanded popover all that info is already on screen,
+                    // so the tooltip overlapping the Dashboard button is just
+                    // noise.
+                    self.contentView?.toolTip = (self.contentView?.isExpanded == true)
+                        ? nil
+                        : self.contentView?.tooltipText()
                     self.contentView?.needsDisplay = true
                     self.updateStatusItem(stats)
                     if self.panel?.isVisible == true {
