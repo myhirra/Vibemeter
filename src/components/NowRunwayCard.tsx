@@ -15,6 +15,12 @@ interface Props {
   weeklyRemaining?: number | null;
   /** Tuple of (used pct, reset epoch ms) for the dominant 5h window. */
   window5h?: { usedPct: number | null; resetAt: number | null } | null;
+  /**
+   * Set when Claude is authenticated via API key (no 5h/weekly windows). In
+   * that mode the card swaps from "quota runway" to "API spend so far" — the
+   * reset / pace lines are meaningless without a billing window.
+   */
+  apiMode?: { costToday: number; cost7d: number } | null;
 }
 
 function statusKey(status: GuardDecision['status']): string {
@@ -61,8 +67,47 @@ function formatRel(ms: number | null): string | null {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
-export function NowRunwayCard({ guard, contextPct, weeklyRemaining, window5h }: Props) {
+function formatUsd(value: number): string {
+  return value < 1 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`;
+}
+
+export function NowRunwayCard({ guard, contextPct, weeklyRemaining, window5h, apiMode }: Props) {
   const t = useT();
+
+  // API-mode branch: Claude API key, no rate windows, just cost tracking.
+  if (apiMode) {
+    const showContext = contextPct != null && contextPct >= 80;
+    return (
+      <div className="mb-4 rounded-lg border border-cyan-700/40 bg-cyan-950/25 p-5">
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-xs uppercase tracking-wider text-zinc-500">{t('card.runway.title')}</p>
+          <span className="rounded-full border border-cyan-700 bg-cyan-900/40 px-2 py-0.5 text-[10px] uppercase tracking-wider text-cyan-200">
+            {t('card.runway.apiBadge')}
+          </span>
+        </div>
+
+        <p className="mt-2 text-lg font-semibold text-cyan-200">{t('card.runway.apiStatus')}</p>
+        <p className="mt-1 text-xs leading-relaxed text-zinc-400">{t('card.runway.apiDetail')}</p>
+
+        <p className="mt-3 text-xs text-zinc-500">
+          <span className="text-zinc-400">{t('card.runway.apiSpend')}</span>
+          {' · '}
+          <span className="tabular-nums text-zinc-300">{t('card.runway.apiToday', { n: formatUsd(apiMode.costToday) })}</span>
+          {' · '}
+          <span className="tabular-nums text-zinc-300">{t('card.runway.api7d', { n: formatUsd(apiMode.cost7d) })}</span>
+        </p>
+
+        {showContext && (
+          <p className="mt-2 text-xs text-amber-300">{t('card.runway.contextHigh', { pct: contextPct! })}</p>
+        )}
+
+        <p className="mt-3 rounded-md border border-zinc-800/60 bg-zinc-950/60 px-3 py-2 text-xs leading-snug text-cyan-200">
+          {t('card.runway.apiReco')}
+        </p>
+      </div>
+    );
+  }
+
   const palette = statusPalette(guard.status);
   const usedPct = window5h?.usedPct;
   const resetRel = formatRel(window5h?.resetAt ?? null);

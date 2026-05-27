@@ -58,6 +58,7 @@ interface Props {
     contextPct: number | null;
     weeklyRemaining: number | null;
     window5h: { usedPct: number | null; resetAt: number | null } | null;
+    apiMode: { costToday: number; cost7d: number } | null;
   };
   /**
    * When the floater deep-links into the dashboard with `?project=foo`, we
@@ -307,6 +308,7 @@ export function Dashboard({
           contextPct={runway.contextPct}
           weeklyRemaining={runway.weeklyRemaining}
           window5h={runway.window5h}
+          apiMode={runway.apiMode}
         />
       </div>
 

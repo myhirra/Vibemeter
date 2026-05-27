@@ -136,6 +136,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   let runwayContextPct: number | null = null;
   let runwayWeekly: number | null = null;
   let runwayWindow5h: { usedPct: number | null; resetAt: number | null } | null = null;
+  // API mode detection: Claude API-key users have cost data but no rate_limits.
+  // When detected we swap the runway card to show $ spent today / 7d instead
+  // of the meaningless empty 5h ring.
+  let runwayApiMode: { costToday: number; cost7d: number } | null = null;
   if (demo) {
     // Server component, no render-purity concern; demo path runs once per SSR.
     // eslint-disable-next-line react-hooks/purity
@@ -160,6 +164,24 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         usedPct: floatStats.primary.used5h ?? (floatStats.primary.remaining5h != null ? 100 - floatStats.primary.remaining5h : null),
         resetAt: floatStats.primary.resetAt5h,
       };
+    }
+    // Claude API-mode detection: a Claude quota exists but has no rate-limit
+    // numbers (subscription-only fields), AND the spending data shows real $
+    // burn. That combo only happens when the user is authenticated via
+    // ANTHROPIC_API_KEY rather than a Pro/Max login.
+    const claudeQuota = floatStats.quotas.find((q) => q.agent === 'claude-code');
+    const claudeHasRateLimits = (claudeQuota?.remaining5h ?? null) != null
+      || (claudeQuota?.remainingWeekly ?? null) != null;
+    const sp = spendingStats();
+    if (!claudeHasRateLimits && sp.claudeTotalUsd > 0) {
+      const todayKey = new Date().toISOString().slice(0, 10);
+      // eslint-disable-next-line react-hooks/purity
+      const cutoff = Date.now() - 7 * 86_400_000;
+      const costToday = sp.daily.find((d) => d.date === todayKey)?.claudeUsd ?? 0;
+      const cost7d = sp.daily
+        .filter((d) => new Date(d.date).getTime() >= cutoff)
+        .reduce((acc, d) => acc + d.claudeUsd, 0);
+      runwayApiMode = { costToday, cost7d };
     }
   }
 
@@ -296,6 +318,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             contextPct: runwayContextPct,
             weeklyRemaining: runwayWeekly,
             window5h: runwayWindow5h,
+            apiMode: runwayApiMode,
           }}
           initialProjectFilter={initialProject}
           initialFocusCurrent={initialFocusCurrent}

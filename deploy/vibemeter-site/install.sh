@@ -1,125 +1,90 @@
 #!/usr/bin/env bash
+# Vibemeter installer — foreground, with visible progress.
+# Distributed via vibemeter.siney.top (not the npm registry).
 set -euo pipefail
 
 if ! command -v npm >/dev/null 2>&1; then
-  echo "npm is required. Install Node.js 20+ first: https://nodejs.org/" >&2
+  echo "Vibemeter needs Node.js 20+ (so npm is available)." >&2
+  echo "Install from: https://nodejs.org/" >&2
   exit 1
 fi
 
-# Vibemeter is distributed via vibemeter.siney.top (not npm registry).
-# Default URL serves the latest release; set VIBEMETER_VERSION=0.2.4 to pin.
+# Version pinning: set VIBEMETER_VERSION=0.2.10 to install a specific release.
 if [ -n "${VIBEMETER_VERSION:-}" ]; then
   VIBEMETER_TARBALL_URL="https://vibemeter.siney.top/vibemeter-${VIBEMETER_VERSION#v}.tgz"
 else
   VIBEMETER_TARBALL_URL="https://vibemeter.siney.top/vibemeter.tgz"
 fi
 
-if [ "$(uname -s)" = "Darwin" ]; then
-  data_dir="${VIBEMETER_DATA_DIR:-$HOME/.vibemeter}"
-  log="$data_dir/install.log"
-  bg="$data_dir/install-vibemeter-bg.sh"
-  mkdir -p "$data_dir"
-
-  cat > "$bg" <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-
-export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 data_dir="${VIBEMETER_DATA_DIR:-$HOME/.vibemeter}"
-log="$data_dir/install.log"
-lock="$data_dir/install.lock"
 mkdir -p "$data_dir"
+tarball="$(mktemp -t vibemeter-XXXXXX).tgz"
 
-{
+cleanup() { rm -f "$tarball"; }
+trap cleanup EXIT
+
+step() { printf '\n\033[1;36m▸ %s\033[0m\n' "$*"; }
+
+step "Downloading Vibemeter"
+echo "  $VIBEMETER_TARBALL_URL"
+# --progress-bar prints a single growing bar instead of a spammy table.
+# --retry 3 because vibemeter.siney.top can be flaky behind certain proxies.
+if ! curl -fL --progress-bar --retry 3 --connect-timeout 20 "$VIBEMETER_TARBALL_URL" -o "$tarball"; then
   echo
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Vibemeter background install started"
-  if ! mkdir "$lock" 2>/dev/null; then
-    echo "Another Vibemeter install is already running."
-    exit 0
-  fi
-  trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+  echo "✗ Download failed. Common causes:" >&2
+  echo "  • Corporate proxy blocking vibemeter.siney.top — try a personal network." >&2
+  echo "  • DNS not resolving — try: curl -v https://vibemeter.siney.top/" >&2
+  echo "  • Slow link — re-run, the script resumes from a fresh attempt." >&2
+  exit 1
+fi
+size=$(wc -c < "$tarball" | tr -d ' ')
+echo "  Downloaded ${size} bytes."
 
-  echo "Downloading Vibemeter from ${VIBEMETER_TARBALL_URL}..."
-  tarball="$(mktemp -t vibemeter-XXXXXX).tgz"
-  curl -fsSL "${VIBEMETER_TARBALL_URL}" -o "$tarball"
-  echo "Installing @hirra/vibemeter from local tarball..."
-  npm install -g "$tarball" --loglevel=notice
-  rm -f "$tarball"
+step "Installing @hirra/vibemeter globally"
+# --loglevel=notice shows package add/remove lines, --no-fund hides funding spam.
+npm install -g "$tarball" --loglevel=notice --no-fund
 
-  vibemeter_bin="$(command -v vibemeter || true)"
-  if [ -z "$vibemeter_bin" ]; then
-    prefix="$(npm prefix -g)"
-    vibemeter_bin="$prefix/bin/vibemeter"
-  fi
-
-  echo "Starting Vibemeter background service..."
-  "$vibemeter_bin" install
-
-  echo "Waiting for dashboard at http://localhost:9527 ..."
-  ready=0
-  for i in {1..120}; do
-    if curl -fsS http://localhost:9527 >/dev/null 2>&1; then
-      ready=1
-      break
-    fi
-    sleep 1
-  done
-
-  if [ "$ready" = "1" ]; then
-    echo "Opening floating widget..."
-    "$vibemeter_bin" float || true
-    echo "Vibemeter is ready: http://localhost:9527"
-  else
-    echo "Vibemeter is still starting. Open http://localhost:9527 in a moment."
-    echo "Check logs with: vibemeter status"
-  fi
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Vibemeter background install finished"
-} >> "$log" 2>&1
-EOF
-
-  chmod +x "$bg"
-  export VIBEMETER_TARBALL_URL
-  nohup "$bg" >/dev/null 2>&1 &
-
-  echo "Installing Vibemeter in the background..."
-  echo "Log: $log"
-  echo "Watch progress with:"
-  echo "  tail -f \"$log\""
-  echo
-  echo "When it finishes, Vibemeter will open automatically."
-  echo "Dashboard: http://localhost:9527"
-  exit 0
+vibemeter_bin="$(command -v vibemeter || true)"
+if [ -z "$vibemeter_bin" ]; then
+  prefix="$(npm prefix -g)"
+  vibemeter_bin="$prefix/bin/vibemeter"
+fi
+if [ ! -x "$vibemeter_bin" ]; then
+  echo "✗ vibemeter command not found after install (expected at $vibemeter_bin)." >&2
+  echo "  npm prefix -g returns: $(npm prefix -g)" >&2
+  echo "  Make sure that directory's bin is on PATH." >&2
+  exit 1
 fi
 
-echo "Downloading Vibemeter from ${VIBEMETER_TARBALL_URL}..."
-tarball="$(mktemp -t vibemeter-XXXXXX).tgz"
-curl -fsSL "${VIBEMETER_TARBALL_URL}" -o "$tarball"
-echo "Installing Vibemeter from local tarball..."
-npm install -g "$tarball"
-rm -f "$tarball"
+step "Registering Vibemeter as a background service"
+"$vibemeter_bin" install
 
-echo "Starting Vibemeter background service..."
-vibemeter install
-
-echo "Waiting for Vibemeter to be ready at http://localhost:9527 ..."
+step "Waiting for dashboard at http://localhost:9527"
 ready=0
-for i in {1..120}; do
+for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
   if curl -fsS http://localhost:9527 >/dev/null 2>&1; then
     ready=1
     break
   fi
+  printf '.'
   sleep 1
 done
+echo
+
+if [ "$ready" != "1" ]; then
+  echo "✗ Dashboard didn't come up within 30s." >&2
+  echo "  Check: $vibemeter_bin status" >&2
+  echo "  Logs:  $data_dir/vibemeter.log" >&2
+  exit 1
+fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
-  echo "Opening floating widget..."
-  vibemeter float || true
+  step "Opening floating widget"
+  "$vibemeter_bin" float || true
 fi
 
 echo
-if [ "$ready" = "1" ]; then
-  echo "Vibemeter is ready: http://localhost:9527"
-else
-  echo "Vibemeter is still starting. Open http://localhost:9527 in a moment."
-  echo "Check logs with: vibemeter status"
-fi
+echo "✓ Vibemeter is ready."
+echo "  Dashboard:  http://localhost:9527"
+echo "  Settings:   http://localhost:9527/settings"
+echo "  Pricing:    http://localhost:9527/pricing"
