@@ -145,20 +145,27 @@ export interface SpendingStats {
   daily: DailySpend[]; // last 14 days
 }
 
-export function spendingStats(): SpendingStats {
-  const db = getDb();
-
-  // Claude Code: sum max cost per session from usage_snapshots JSON
-  const claudeTotal = (db.prepare(`
+export function claudeApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): number {
+  const row = getDb().prepare(`
     SELECT COALESCE(SUM(session_max), 0) AS total
     FROM (
       SELECT MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS session_max
       FROM usage_snapshots
       WHERE source = 'statusline'
+        AND captured_at >= ?
+        AND captured_at < ?
         AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
       GROUP BY json_extract(raw_output, '$.session_id')
     )
-  `).get() as { total: number }).total;
+  `).get(startMs, endMs) as { total: number };
+  return row.total ?? 0;
+}
+
+export function spendingStats(): SpendingStats {
+  const db = getDb();
+
+  // Claude Code: sum max cost per session from usage_snapshots JSON
+  const claudeTotal = claudeApiEquivalentUsd();
 
   // Codex: sum tokens_used
   const codexTotal = (db.prepare(`
@@ -339,18 +346,7 @@ export function sessionInsight(): SessionInsight {
 
   // Month-to-date Claude API-equivalent cost
   const monthStart = (() => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d.getTime(); })();
-  const mtdRow = db.prepare(`
-    SELECT COALESCE(SUM(session_max), 0) AS total
-    FROM (
-      SELECT MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS session_max
-      FROM usage_snapshots
-      WHERE source = 'statusline'
-        AND captured_at >= ?
-        AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
-      GROUP BY json_extract(raw_output, '$.session_id')
-    )
-  `).get(monthStart) as { total: number };
-  const monthToDateUsd = mtdRow.total ?? 0;
+  const monthToDateUsd = claudeApiEquivalentUsd(monthStart);
   const plans = [
     { name: 'Pro $20', priceUsd: 20 },
     { name: 'Max $100', priceUsd: 100 },
@@ -416,8 +412,11 @@ function ratePct(read: number, input: number, creation: number): number {
 }
 
 export function cacheStats(windowDays = 30): CacheStats {
+  return cacheStatsForRange(Date.now() - windowDays * 86_400_000, Date.now());
+}
+
+export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheStats {
   const db = getDb();
-  const since = Date.now() - windowDays * 86_400_000;
 
   const totals = db.prepare(`
     SELECT
@@ -429,8 +428,9 @@ export function cacheStats(windowDays = 30): CacheStats {
     FROM sessions
     WHERE tool = 'claude-code'
       AND started_at > ?
+      AND started_at < ?
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
-  `).get(since) as { input: number; creation: number; read: number; output: number; sessions: number };
+  `).get(startMs, endMs) as { input: number; creation: number; read: number; output: number; sessions: number };
 
   const hitRatePct = ratePct(totals.read, totals.input, totals.creation);
   // cache_read costs 0.1x of normal input tokens → saved ≈ 0.9 * cache_read tokens worth of input
@@ -446,12 +446,13 @@ export function cacheStats(windowDays = 30): CacheStats {
     FROM sessions
     WHERE tool = 'claude-code'
       AND started_at > ?
+      AND started_at < ?
       AND cwd IS NOT NULL
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
     GROUP BY cwd
     ORDER BY (input + creation + read) DESC
     LIMIT 8
-  `).all(since) as { cwd: string; sessions: number; input: number; creation: number; read: number; output: number }[];
+  `).all(startMs, endMs) as { cwd: string; sessions: number; input: number; creation: number; read: number; output: number }[];
 
   const topProjects: CacheBreakdownRow[] = projectRows.map((r) => ({
     project: r.cwd.split('/').filter(Boolean).pop() ?? '—',
@@ -471,13 +472,14 @@ export function cacheStats(windowDays = 30): CacheStats {
     FROM sessions
     WHERE tool = 'claude-code'
       AND started_at > ?
+      AND started_at < ?
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
       AND (input_tokens + cache_creation_tokens + cache_read_tokens) > 50000
     ORDER BY (CAST(cache_read_tokens AS REAL) /
              NULLIF(input_tokens + cache_creation_tokens + cache_read_tokens, 0)) ASC,
              (input_tokens + cache_creation_tokens + cache_read_tokens) DESC
     LIMIT 5
-  `).all(since) as { id: string; cwd: string | null; ai_title: string | null; started_at: number; input: number; creation: number; read: number }[];
+  `).all(startMs, endMs) as { id: string; cwd: string | null; ai_title: string | null; started_at: number; input: number; creation: number; read: number }[];
 
   const worstSessions = worstRows.map((r) => ({
     id: r.id,

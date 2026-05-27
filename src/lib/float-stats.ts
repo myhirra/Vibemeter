@@ -50,6 +50,8 @@ export interface FloatStats {
   primary: FloatQuota | null;
   quotas: FloatQuota[];
   liveByAgent: FloatAgentLive[];
+  recentSessions: FloatRecentSession[];
+  projectStats: FloatProjectStats[];
   todaySessions: number;
   totalSessions: number;
   sessionStatsByAgent: FloatSessionStats[];
@@ -73,6 +75,25 @@ export interface FloatSessionStats {
   agent: string;
   todaySessions: number;
   totalSessions: number;
+}
+
+export interface FloatRecentSession {
+  id: string;
+  tool: string;
+  project: string;
+  title: string | null;
+  startedAt: number;
+  endedAt: number | null;
+  durationMs: number;
+  tokens: number | null;
+}
+
+export interface FloatProjectStats {
+  project: string;
+  sessions: number;
+  durationMs: number;
+  tokens: number | null;
+  tools: { tool: string; count: number }[];
 }
 
 export interface FloatLiveSession {
@@ -260,6 +281,122 @@ function toLiveSession(row: {
   };
 }
 
+function sessionTokenTotal(row: {
+  tokens_used?: number | null;
+  input_tokens?: number | null;
+  cache_creation_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  output_tokens?: number | null;
+}): number | null {
+  if (row.tokens_used != null) return row.tokens_used;
+  const total = (row.input_tokens ?? 0)
+    + (row.cache_creation_tokens ?? 0)
+    + (row.cache_read_tokens ?? 0)
+    + (row.output_tokens ?? 0);
+  return total > 0 ? total : null;
+}
+
+function getRecentSessions(db: ReturnType<typeof getDb>): FloatRecentSession[] {
+  const now = Date.now();
+  const rows = db.prepare(`
+    SELECT id, tool, cwd, ai_title, summary, started_at, ended_at,
+           tokens_used, input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens
+    FROM sessions
+    ORDER BY COALESCE(ended_at, last_turn_at, started_at) DESC, started_at DESC
+    LIMIT 6
+  `).all() as {
+    id: string;
+    tool: string;
+    cwd: string | null;
+    ai_title: string | null;
+    summary: string | null;
+    started_at: number;
+    ended_at: number | null;
+    tokens_used: number | null;
+    input_tokens: number | null;
+    cache_creation_tokens: number | null;
+    cache_read_tokens: number | null;
+    output_tokens: number | null;
+  }[];
+
+  return rows.map((row) => ({
+    id: row.id,
+    tool: row.tool,
+    project: projectName(row.cwd),
+    title: row.ai_title ?? row.summary,
+    startedAt: row.started_at,
+    endedAt: row.ended_at,
+    durationMs: Math.max(0, (row.ended_at ?? now) - row.started_at),
+    tokens: sessionTokenTotal(row),
+  }));
+}
+
+function getProjectStats(db: ReturnType<typeof getDb>): FloatProjectStats[] {
+  const now = Date.now();
+  const since = now - 7 * 86_400_000;
+  const rows = db.prepare(`
+    SELECT tool, cwd, started_at, ended_at,
+           tokens_used, input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens
+    FROM sessions
+    WHERE started_at >= ?
+    ORDER BY started_at DESC
+    LIMIT 800
+  `).all(since) as {
+    tool: string;
+    cwd: string | null;
+    started_at: number;
+    ended_at: number | null;
+    tokens_used: number | null;
+    input_tokens: number | null;
+    cache_creation_tokens: number | null;
+    cache_read_tokens: number | null;
+    output_tokens: number | null;
+  }[];
+
+  const byProject = new Map<string, {
+    project: string;
+    sessions: number;
+    durationMs: number;
+    tokens: number;
+    hasTokens: boolean;
+    tools: Map<string, number>;
+  }>();
+
+  for (const row of rows) {
+    const project = projectName(row.cwd);
+    const current = byProject.get(project) ?? {
+      project,
+      sessions: 0,
+      durationMs: 0,
+      tokens: 0,
+      hasTokens: false,
+      tools: new Map<string, number>(),
+    };
+    current.sessions += 1;
+    current.durationMs += Math.max(0, (row.ended_at ?? now) - row.started_at);
+    const tokens = sessionTokenTotal(row);
+    if (tokens != null) {
+      current.tokens += tokens;
+      current.hasTokens = true;
+    }
+    current.tools.set(row.tool, (current.tools.get(row.tool) ?? 0) + 1);
+    byProject.set(project, current);
+  }
+
+  return [...byProject.values()]
+    .sort((a, b) => b.sessions - a.sessions || b.durationMs - a.durationMs)
+    .slice(0, 4)
+    .map((row) => ({
+      project: row.project,
+      sessions: row.sessions,
+      durationMs: row.durationMs,
+      tokens: row.hasTokens ? row.tokens : null,
+      tools: [...row.tools.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([tool, count]) => ({ tool, count })),
+    }));
+}
+
 function getAgentLive(
   db: ReturnType<typeof getDb>,
   agent: FloatAgentLive['agent'],
@@ -382,6 +519,8 @@ export async function getFloatStats(): Promise<FloatStats> {
       getAgentLive(db, 'claude-code', claudeQuota),
       getAgentLive(db, 'codex', codexQuota),
     ],
+    recentSessions: getRecentSessions(db),
+    projectStats: getProjectStats(db),
     todaySessions,
     totalSessions,
     sessionStatsByAgent,

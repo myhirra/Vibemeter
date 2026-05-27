@@ -10,7 +10,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, symlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -359,6 +359,7 @@ async function pulse(args) {
   }
   lines.push(`today: ${payload.todaySessions} sessions · total: ${payload.totalSessions}`);
   process.stdout.write(lines.join('\n') + '\n');
+  await printCardNudge();
 }
 
 async function fetchDaemonJson(endpoint) {
@@ -371,6 +372,99 @@ async function fetchDaemonJson(endpoint) {
     console.error(`Vibemeter daemon not reachable at ${url}: ${e.message}`);
     console.error('Hint: run `vibemeter start` (or `vibemeter install` for autostart).');
     process.exit(2);
+  }
+}
+
+async function fetchDaemonText(endpoint) {
+  const url = `http://localhost:${PORT}${endpoint}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } catch (e) {
+    console.error(`Vibemeter daemon not reachable at ${url}: ${e.message}`);
+    console.error('Hint: run `vibemeter start` (or `vibemeter install` for autostart).');
+    process.exit(2);
+  }
+}
+
+function argValue(args, names) {
+  for (const name of names) {
+    const i = args.indexOf(name);
+    if (i >= 0) return args[i + 1] ?? null;
+  }
+  return null;
+}
+
+function recapPeriodFromArgs(args) {
+  const raw = argValue(args, ['--period']);
+  if (args.includes('--month') || raw === 'month') return 'month';
+  return '7d';
+}
+
+function recapVariantFromArgs(args) {
+  const raw = argValue(args, ['--size', '--variant']);
+  if (args.includes('--square') || raw === 'square') return 'square';
+  return 'landscape';
+}
+
+function defaultCardPath(period, variant) {
+  const stamp = new Date().toISOString().slice(0, 10);
+  const suffix = variant === 'square' ? '1080x1080' : '1200x675';
+  const dir = join(DATA_DIR, 'cards');
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `vibemeter-recap-${period}-${suffix}-${stamp}.png`);
+}
+
+function renderSvgFileToPng(svg, outPath) {
+  mkdirSync(dirname(outPath), { recursive: true });
+  const tmp = join(DATA_DIR, `recap-${process.pid}-${Date.now()}.svg`);
+  writeFileSync(tmp, svg);
+  try {
+    let result = null;
+    if (platform() === 'darwin' && existsSync('/usr/bin/sips')) {
+      result = spawnSync('/usr/bin/sips', ['-s', 'format', 'png', tmp, '--out', outPath], { encoding: 'utf8' });
+    } else {
+      result = spawnSync('rsvg-convert', ['-f', 'png', '-o', outPath, tmp], { encoding: 'utf8' });
+    }
+    if (result.status !== 0 || !existsSync(outPath)) {
+      const detail = result.stderr?.trim() || result.error?.message || `exit ${result.status}`;
+      throw new Error(`PNG render failed: ${detail}`);
+    }
+  } finally {
+    try { unlinkSync(tmp); } catch { /* ignore */ }
+  }
+}
+
+async function cardCommand(args) {
+  const period = recapPeriodFromArgs(args);
+  const variant = recapVariantFromArgs(args);
+  const out = argValue(args, ['--out', '-o']) ?? defaultCardPath(period, variant);
+  const svg = await fetchDaemonText(`/api/recap-card/svg?period=${encodeURIComponent(period)}&variant=${encodeURIComponent(variant)}`);
+  try {
+    renderSvgFileToPng(svg, out);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : 'PNG render failed');
+    if (platform() !== 'darwin') {
+      console.error('Hint: install `rsvg-convert` or run this command on macOS.');
+    }
+    process.exit(1);
+  }
+  console.log(out);
+}
+
+async function printCardNudge() {
+  try {
+    const payload = await fetchDaemonJson('/api/recap-card?period=7d');
+    const card = payload.card;
+    if (!card?.minimumData?.ok) return;
+    if (card.roiMultiplier != null) {
+      console.log(`\n  ${card.roiMultiplier}x return this week - run \`vibemeter card\` to make a shareable recap.`);
+    } else if (card.valueAtApiRatesUsd > 0) {
+      console.log(`\n  $${card.valueAtApiRatesUsd.toFixed(2)} API-equivalent value this week - run \`vibemeter card\` to make a shareable recap.`);
+    }
+  } catch {
+    // Keep the primary stats output clean if the recap endpoint is unavailable.
   }
 }
 
@@ -800,6 +894,8 @@ Usage:
   vibemeter status           show whether the daemon is loaded + tail logs
   vibemeter pulse [--json]   print current 5h/weekly usage from running daemon
   vibemeter guard [--json]   say whether starting a long agent task is safe
+  vibemeter card             render a shareable weekly recap PNG
+  vibemeter wrapped          alias for card
   vibemeter report [--json]  print a local Markdown usage report
   vibemeter doctor [--json]  check local data sources and setup gaps
   vibemeter notify <t> <s>   speak a notification (used by hooks)
@@ -866,6 +962,10 @@ switch (cmd) {
     break;
   case 'guard':
     await guard(process.argv.slice(3));
+    break;
+  case 'card':
+  case 'wrapped':
+    await cardCommand(process.argv.slice(3));
     break;
   case 'report':
     await shareReport(process.argv.slice(3));

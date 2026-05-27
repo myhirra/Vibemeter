@@ -4,6 +4,7 @@ import { SettingsNotifyPanel } from '@/components/SettingsNotifyPanel';
 import { SettingsAlertsPanel } from '@/components/SettingsAlertsPanel';
 import { SettingsDonatePanel } from '@/components/SettingsDonatePanel';
 import { SettingsBillingPanel } from '@/components/SettingsBillingPanel';
+import { SettingsRecapPanel } from '@/components/SettingsRecapPanel';
 import { RedactToggle } from '@/components/RedactToggle';
 import { SettingsUpgradeLink } from '@/components/SettingsUpgradeLink';
 import { FeatureVoteCard } from '@/components/FeatureVoteCard';
@@ -11,6 +12,7 @@ import { SettingsDashboardLink } from '@/components/SettingsDashboardLink';
 import { LocaleSwitcher } from '@/components/LocaleSwitcher';
 import { getNotifyStatus } from '@/lib/notify-installer';
 import { alertsConfigPath, maskWebhook, readAlertConfig } from '@/lib/alerts/storage';
+import { readRecapSettings } from '@/lib/recap-settings';
 import { getServerLocale } from '@/lib/i18n/server';
 import { t } from '@/lib/i18n';
 
@@ -18,6 +20,7 @@ export default async function SettingsPage() {
   const locale = await getServerLocale();
   const initialStatus = getNotifyStatus();
   const alertConfig = readAlertConfig();
+  const recapSettings = readRecapSettings();
   const initialAlerts = {
     config: {
       channels: alertConfig.channels.map((c) => ({ ...c, webhook: maskWebhook(c.webhook) })),
@@ -46,6 +49,7 @@ export default async function SettingsPage() {
 
         <div className="space-y-6">
           <SettingsBillingPanel />
+          <SettingsRecapPanel initialSettings={recapSettings} />
           <RedactToggle />
           <SettingsNotifyPanel initialStatus={initialStatus} />
           <SettingsAlertsPanel initialConfig={initialAlerts.config} initialConfigPath={initialAlerts.configPath} />

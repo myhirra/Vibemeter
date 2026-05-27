@@ -18,6 +18,9 @@ import { getFloatStats } from '@/lib/float-stats';
 import { decideQuotaGuard } from '@/lib/quota-guard';
 import { DEMO_PROJECTS, DEMO_TITLES, deterministicBucket, redactProject, redactSession } from '@/lib/redact';
 import { getRedactSalt, isRedactEnabled } from '@/lib/redact-server';
+import { buildRecapCard, type RecapCardData } from '@/lib/recap-card';
+import { readRecapSettings } from '@/lib/recap-settings';
+import { evaluateRecapNudge, readActiveRecapNudge } from '@/lib/recap-nudge';
 
 /**
  * Demo path masking — used when `?demo=1` is on so the marketing screenshot
@@ -66,6 +69,16 @@ function injectMockCursorSessions<T extends { id: string; tool: string; started_
     } as T);
   }
   return [...rows, ...extra].sort((a, b) => b.started_at - a.started_at);
+}
+
+function redactRecap(card: RecapCardData, salt: string): RecapCardData {
+  return {
+    ...card,
+    topProjects: card.topProjects.map((p) => ({
+      ...p,
+      project: redactProject(p.project, salt),
+    })),
+  };
 }
 
 const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor']);
@@ -136,6 +149,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   let runwayContextPct: number | null = null;
   let runwayWeekly: number | null = null;
   let runwayWindow5h: { usedPct: number | null; resetAt: number | null } | null = null;
+  let floatStats: Awaited<ReturnType<typeof getFloatStats>> | null = null;
   // API mode detection: Claude API-key users have cost data but no rate_limits.
   // When detected we swap the runway card to show $ spent today / 7d instead
   // of the meaningless empty 5h ring.
@@ -155,7 +169,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     };
     runwayWindow5h = { usedPct: 18, resetAt: demoNow + 90 * 60_000 };
   } else {
-    const floatStats = await getFloatStats();
+    floatStats = await getFloatStats();
     runwayGuard = decideQuotaGuard({ generatedAt: floatStats.generatedAt, quotas: floatStats.quotas });
     runwayContextPct = floatStats.activeContext?.pct ?? null;
     runwayWeekly = floatStats.primary?.remainingWeekly ?? null;
@@ -183,6 +197,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         .reduce((acc, d) => acc + d.claudeUsd, 0);
       runwayApiMode = { costToday, cost7d };
     }
+    evaluateRecapNudge(floatStats, { notify: false });
   }
 
   // For demo, also fabricate a "today's timeline" mostly populated with cursor work
@@ -207,10 +222,18 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const hotspotsList = fileHotspots(8);
   const insight = sessionInsight();
   const cache = cacheStats();
+  const recapSettings = readRecapSettings();
+  const recapCards = {
+    today: buildRecapCard({ period: 'today', settings: recapSettings }),
+    weekly: buildRecapCard({ period: '7d', settings: recapSettings }),
+    monthly: buildRecapCard({ period: 'month', settings: recapSettings }),
+  };
+  const recapNudge = readActiveRecapNudge();
   let redactedTimeline = timeline;
   let redactedHotspots = hotspotsList;
   let redactedInsight = insight;
   let redactedCache = cache;
+  let redactedRecapCards = recapCards;
   if (redact) {
     redactedTimeline = {
       dateLabel: timeline.dateLabel,
@@ -265,6 +288,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         };
       }),
     };
+    redactedRecapCards = {
+      today: redactRecap(recapCards.today, redactSalt),
+      weekly: redactRecap(recapCards.weekly, redactSalt),
+      monthly: redactRecap(recapCards.monthly, redactSalt),
+    };
   }
 
   return (
@@ -308,6 +336,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           achievements={achievements()}
           insight={redactedInsight}
           cache={redactedCache}
+          recapCards={redactedRecapCards}
+          recapNudge={recapNudge}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}
           codexAccounts={codexAccounts}
