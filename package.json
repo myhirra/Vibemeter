@@ -1,6 +1,6 @@
 {
   "name": "@hirra/vibemeter",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "description": "Local quota runway and completion console for Claude Code, Codex, and Cursor.",
   "keywords": [
     "claude-code",
