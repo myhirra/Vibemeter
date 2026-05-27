@@ -231,6 +231,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
                 Close
               </button>
             </div>
+            {/* eslint-disable-next-line @next/next/no-img-element -- Previewing a local Blob URL, not a remote asset. */}
             <img
               src={generated.landscape.url}
               alt="Vibemeter recap preview"
