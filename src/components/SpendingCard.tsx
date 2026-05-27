@@ -31,7 +31,11 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
 
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.spending.title')}</p>
+      <p className="text-xs text-zinc-500 uppercase tracking-wider">{t('card.spending.title')}</p>
+      {/* Disclaimer sits directly under the (renamed) title so it can't be
+          missed — this number is an estimate from public API pricing, not
+          anyone's actual invoice. */}
+      <p className="mb-3 mt-0.5 text-[11px] text-zinc-600">{t('card.spending.disclaimer')}</p>
 
       {/* Totals row */}
       <div className="flex gap-6 mb-4">

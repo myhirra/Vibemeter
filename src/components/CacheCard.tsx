@@ -17,6 +17,34 @@ function rateColor(pct: number): string {
   return 'text-rose-300';
 }
 
+type CacheHealth = 'excellent' | 'good' | 'needs';
+
+function healthFromPct(pct: number): CacheHealth {
+  if (pct >= 85) return 'excellent';
+  if (pct >= 60) return 'good';
+  return 'needs';
+}
+
+function healthBadgeClasses(h: CacheHealth): string {
+  switch (h) {
+    case 'excellent':
+      return 'border-emerald-700/50 bg-emerald-950/50 text-emerald-200';
+    case 'good':
+      return 'border-violet-700/50 bg-violet-950/40 text-violet-200';
+    case 'needs':
+    default:
+      return 'border-rose-700/50 bg-rose-950/40 text-rose-200';
+  }
+}
+
+function healthKey(h: CacheHealth): string {
+  switch (h) {
+    case 'excellent': return 'card.cache.healthExcellent';
+    case 'good': return 'card.cache.healthGood';
+    case 'needs': return 'card.cache.healthNeeds';
+  }
+}
+
 async function openTranscript(path: string) {
   try {
     await fetch('/api/open', {
@@ -29,7 +57,7 @@ async function openTranscript(path: string) {
   }
 }
 
-export function CacheCard({ data }: { data: CacheStats }) {
+export function CacheCard({ data, redact = false }: { data: CacheStats; redact?: boolean }) {
   const t = useT();
 
   if (data.sessionsAnalyzed === 0) {
@@ -46,10 +74,18 @@ export function CacheCard({ data }: { data: CacheStats }) {
   const creationPct = incoming > 0 ? Math.round((data.totalCacheCreation / incoming) * 100) : 0;
   const inputPct = Math.max(0, 100 - readPct - creationPct);
 
+  const health = healthFromPct(data.hitRatePct);
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
-      <div className="mb-3 flex items-baseline justify-between">
-        <p className="text-xs uppercase tracking-wider text-zinc-500">{t('card.cache.title')}</p>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <div className="flex items-baseline gap-2">
+          <p className="text-xs uppercase tracking-wider text-zinc-500">{t('card.cache.title')}</p>
+          {/* Health badge — gives a one-glance verdict (Excellent / Good /
+              Needs attention) before the user looks at the raw percentage. */}
+          <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${healthBadgeClasses(health)}`}>
+            {t(healthKey(health))}
+          </span>
+        </div>
         <p className="text-[10px] text-zinc-600">{t('card.cache.window30d', { n: data.sessionsAnalyzed })}</p>
       </div>
 
@@ -79,6 +115,23 @@ export function CacheCard({ data }: { data: CacheStats }) {
           <p className="mt-1 text-[11px] text-zinc-400">{t(`card.cache.${data.hint}`)}</p>
         )}
       </div>
+
+      {/* Suggested fixes — only shown when the hit rate could actually use
+          help. Bilingual content lives in i18n so we can tune wording per
+          locale without touching this component. */}
+      {health !== 'excellent' && (
+        <div className="mb-3 rounded-md border border-zinc-800 bg-zinc-950 p-3">
+          <p className="mb-1.5 text-[11px] uppercase tracking-wider text-zinc-500">
+            {t('card.cache.suggestionsTitle')}
+          </p>
+          <ul className="space-y-1 text-[11px] text-zinc-400">
+            <li className="flex gap-2"><span className="text-zinc-600">·</span>{t('card.cache.suggestion1')}</li>
+            <li className="flex gap-2"><span className="text-zinc-600">·</span>{t('card.cache.suggestion2')}</li>
+            <li className="flex gap-2"><span className="text-zinc-600">·</span>{t('card.cache.suggestion3')}</li>
+            <li className="flex gap-2"><span className="text-zinc-600">·</span>{t('card.cache.suggestion4')}</li>
+          </ul>
+        </div>
+      )}
 
       {data.topProjects.length > 0 && (
         <div className="mb-3">
@@ -111,14 +164,25 @@ export function CacheCard({ data }: { data: CacheStats }) {
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <span className={`text-sm font-semibold tabular-nums ${rateColor(s.hitRatePct)}`}>{s.hitRatePct}%</span>
-                  {s.transcriptPath && (
+                  {redact ? (
                     <button
                       type="button"
-                      onClick={() => openTranscript(s.transcriptPath!)}
-                      className="text-[10px] text-violet-300 hover:text-violet-200"
+                      disabled
+                      title={t('redact.transcriptHidden')}
+                      className="cursor-not-allowed text-[10px] text-zinc-600"
                     >
                       {t('card.cache.openTranscript')}
                     </button>
+                  ) : (
+                    s.transcriptPath && (
+                      <button
+                        type="button"
+                        onClick={() => openTranscript(s.transcriptPath!)}
+                        className="text-[10px] text-violet-300 hover:text-violet-200"
+                      >
+                        {t('card.cache.openTranscript')}
+                      </button>
+                    )
                   )}
                 </div>
               </li>

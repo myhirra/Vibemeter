@@ -153,6 +153,28 @@ final class FloatView: NSView {
         }
     }
 
+    /// Build a one-line hover tooltip like `Claude · 64% left · reset in 38m`
+    /// using the same `quotaWindow` data the bubble already shows. Falls back
+    /// to a short status string when no quota snapshot exists.
+    func tooltipText() -> String {
+        guard let stats else { return "Vibemeter · no snapshot" }
+        let agents = agentsToShow
+        let parts: [String] = agents.compactMap { agent in
+            let q = quota(for: agent)
+            let window = quotaWindow(q)
+            guard let remaining = window.remaining else { return nil }
+            let pct = Int(floor(max(0, min(100, remaining))))
+            let name = toolName(agent)
+            let reset = resetText(window.resetAt)
+            return "\(name) · \(pct)% left · \(reset)"
+        }
+        if parts.isEmpty {
+            if stats.quotas.isEmpty { return "Vibemeter · no snapshot yet" }
+            return "Vibemeter · \(statusText)"
+        }
+        return parts.joined(separator: "\n")
+    }
+
     func setDisplayStyle(_ value: String) {
         guard displayStyle != value else { return }
         displayStyle = value
@@ -1173,6 +1195,10 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
                 DispatchQueue.main.async {
                     self.contentView?.stats = stats
                     self.contentView?.statusText = stats.quotas.isEmpty ? "no snapshot" : "loaded"
+                    // Hover tooltip — only changed when stats refresh so we
+                    // don't fight with the existing bubble visual. The user
+                    // sees `Claude · 64% left · reset in 38m` on hover.
+                    self.contentView?.toolTip = self.contentView?.tooltipText()
                     self.contentView?.needsDisplay = true
                     self.updateStatusItem(stats)
                     if self.panel?.isVisible == true {

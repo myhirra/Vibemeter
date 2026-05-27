@@ -6,6 +6,7 @@ import { dataDir } from './data-dir';
 import { getDb } from './db';
 import { readLiveContext } from './parsers/session-log';
 import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
+import { normalizeQuotaWindow } from './quota-window';
 
 /**
  * Claude conversation context window (tokens). Claude Sonnet 4.x / Opus 4.x
@@ -13,6 +14,8 @@ import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapsh
  * "compact soon" warning before the model hard-fails.
  */
 const CLAUDE_CONTEXT_LIMIT = 200_000;
+const FIVE_HOUR_WINDOW_MS = 5 * 60 * 60_000;
+const WEEKLY_WINDOW_MS = 7 * 24 * 60 * 60_000;
 
 export interface FloatQuota {
   agent: 'codex' | 'claude-code';
@@ -146,21 +149,21 @@ function quotaFromSnapshot(
   pace: { pace5hExhaustMin: number | null; pace5hPctPerMin: number | null },
 ): FloatQuota | null {
   if (!row) return null;
-  const used5h = row.window_5h_used_pct;
-  const usedWeekly = row.window_weekly_used_pct;
+  const fiveHour = normalizeQuotaWindow(row.window_5h_used_pct, row.reset_at_5h, FIVE_HOUR_WINDOW_MS);
+  const weekly = normalizeQuotaWindow(row.window_weekly_used_pct, row.reset_at_weekly, WEEKLY_WINDOW_MS);
   return {
     agent,
     label,
     accountLabel,
-    remaining5h: used5h == null ? null : Math.max(0, 100 - used5h),
-    used5h,
-    remainingWeekly: usedWeekly == null ? null : Math.max(0, 100 - usedWeekly),
-    usedWeekly,
-    resetAt5h: row.reset_at_5h,
-    resetAtWeekly: row.reset_at_weekly,
+    remaining5h: fiveHour.remaining,
+    used5h: fiveHour.used,
+    remainingWeekly: weekly.remaining,
+    usedWeekly: weekly.used,
+    resetAt5h: fiveHour.resetAt,
+    resetAtWeekly: weekly.resetAt,
     capturedAt: row.captured_at,
-    pace5hExhaustMin: pace.pace5hExhaustMin,
-    pace5hPctPerMin: pace.pace5hPctPerMin,
+    pace5hExhaustMin: fiveHour.rolledOver ? null : pace.pace5hExhaustMin,
+    pace5hPctPerMin: fiveHour.rolledOver ? null : pace.pace5hPctPerMin,
   };
 }
 

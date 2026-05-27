@@ -58,7 +58,14 @@ export function parseStatuslineJson(): StatuslineUsage | null {
     return null;
   }
 
-  const parsed = StatuslineSchema.safeParse(JSON.parse(raw));
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+
+  const parsed = StatuslineSchema.safeParse(json);
   if (!parsed.success) return null;
 
   const d = parsed.data;
