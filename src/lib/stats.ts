@@ -415,6 +415,92 @@ export function cacheStats(windowDays = 30): CacheStats {
   return cacheStatsForRange(Date.now() - windowDays * 86_400_000, Date.now());
 }
 
+export interface RecapDailyPoint {
+  /** YYYY-MM-DD in local time, for stable ordering and debugging. */
+  date: string;
+  valueUsd: number;
+  tokens: number;
+  sessions: number;
+  /** 0–100, integer; 0 on days with no eligible sessions. */
+  cacheHitPct: number;
+}
+
+/**
+ * Build a dense per-day series for the recap card sparklines. Empty days are
+ * filled with zeros so the SVG renderer can rely on a fixed-length array. The
+ * day grid is computed in local time to match the rest of stats.ts.
+ */
+export function recapDailySeries(startMs: number, endMs = Date.now()): RecapDailyPoint[] {
+  const db = getDb();
+
+  // Claude API-equivalent USD: max(cost_total) per (day, session) → sum to day.
+  const claudeRows = db.prepare(`
+    SELECT DATE(captured_at/1000, 'unixepoch', 'localtime') AS day,
+           json_extract(raw_output, '$.session_id') AS sid,
+           MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS cost
+    FROM usage_snapshots
+    WHERE source = 'statusline'
+      AND captured_at >= ?
+      AND captured_at < ?
+      AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+    GROUP BY day, sid
+  `).all(startMs, endMs) as { day: string; sid: string; cost: number }[];
+  const valueByDay = new Map<string, number>();
+  for (const row of claudeRows) {
+    valueByDay.set(row.day, (valueByDay.get(row.day) ?? 0) + (row.cost ?? 0));
+  }
+
+  // Sessions + tokens + cache breakdown per day.
+  const sessionRows = db.prepare(`
+    SELECT DATE(started_at/1000, 'unixepoch', 'localtime') AS day,
+           COUNT(*) AS sessions,
+           COALESCE(SUM(
+             COALESCE(input_tokens, 0)
+             + COALESCE(cache_creation_tokens, 0)
+             + COALESCE(cache_read_tokens, 0)
+             + COALESCE(output_tokens, 0)
+             + COALESCE(tokens_used, 0)
+           ), 0) AS tokens,
+           COALESCE(SUM(COALESCE(input_tokens, 0)), 0)          AS input,
+           COALESCE(SUM(COALESCE(cache_creation_tokens, 0)), 0) AS creation,
+           COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0)     AS read_tokens
+    FROM sessions
+    WHERE started_at >= ?
+      AND started_at < ?
+    GROUP BY day
+  `).all(startMs, endMs) as {
+    day: string;
+    sessions: number;
+    tokens: number;
+    input: number;
+    creation: number;
+    read_tokens: number;
+  }[];
+  const sessionsByDay = new Map(sessionRows.map((r) => [r.day, r]));
+
+  // Build the dense day grid covering [startMs, endMs]. We iterate local-time
+  // calendar days so the keys match the SQL DATE(...) output.
+  const start = new Date(startMs);
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const end = new Date(endMs);
+  const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+
+  const out: RecapDailyPoint[] = [];
+  for (let d = new Date(startDay); d <= endDay; d.setDate(d.getDate() + 1)) {
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const row = sessionsByDay.get(key);
+    const hitPct = row ? ratePct(row.read_tokens, row.input, row.creation) : 0;
+    out.push({
+      date: key,
+      valueUsd: Math.round((valueByDay.get(key) ?? 0) * 100) / 100,
+      tokens: row?.tokens ?? 0,
+      sessions: row?.sessions ?? 0,
+      cacheHitPct: hitPct,
+    });
+  }
+  return out;
+}
+
 export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheStats {
   const db = getDb();
 
