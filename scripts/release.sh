@@ -58,7 +58,7 @@ EXPECTED_SIZE="$(wc -c < vibemeter.tgz | tr -d ' ')"
 echo "  $PACKED + vibemeter.tgz + vibemeter-$VERSION.tgz (${EXPECTED_SIZE} bytes each)"
 
 step "Upload to $REMOTE:$REMOTE_DIR"
-scp vibemeter.tgz "vibemeter-$VERSION.tgz" "$REMOTE:$REMOTE_DIR/"
+scp vibemeter.tgz "vibemeter-$VERSION.tgz" deploy/vibemeter-site/install.sh "$REMOTE:$REMOTE_DIR/"
 
 step "Verify reachability"
 for url in "$SITE_URL/vibemeter.tgz" "$SITE_URL/vibemeter-$VERSION.tgz"; do
