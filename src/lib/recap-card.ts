@@ -1,10 +1,11 @@
 import { getDb } from './db';
-import { cacheStatsForRange, claudeApiEquivalentUsd } from './stats';
+import { cacheStatsForRange, claudeApiEquivalentUsd, recapDailySeries } from './stats';
 import { type RecapSettings, resolveRecapPlan } from './recap-settings';
 
 export type RecapPeriod = 'today' | '7d' | 'month';
 export type RecapVariant = 'landscape' | 'square';
 export type RecapHeroKind = 'roi' | 'value' | 'cache' | 'sessions' | 'not_enough_data';
+export type RecapStyle = 'hero' | 'grid';
 
 export interface RecapPeriodInfo {
   kind: RecapPeriod;
@@ -37,6 +38,17 @@ export interface RecapMinimumData {
   reason: 'ok' | 'no_sessions' | 'trivial_usage';
 }
 
+export interface RecapSeries {
+  /** Per-day API-equivalent USD across the recap period (dense, in order). */
+  value: number[];
+  /** Per-day total tokens. */
+  tokens: number[];
+  /** Per-day session count. */
+  sessions: number[];
+  /** Per-day cache hit rate (0–100 integer). */
+  cacheHit: number[];
+}
+
 export interface RecapCardData {
   generatedAt: number;
   period: RecapPeriodInfo;
@@ -52,6 +64,7 @@ export interface RecapCardData {
   cacheHitRatePct: number;
   cacheSessionsAnalyzed: number;
   topProjects: RecapProject[];
+  series: RecapSeries;
   minimumData: RecapMinimumData;
   watermark: string;
 }
@@ -208,6 +221,14 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     ? roiMultiplier != null ? 'roi' : 'value'
     : 'not_enough_data';
 
+  const dailyPoints = recapDailySeries(period.startMs, period.endMs);
+  const series: RecapSeries = {
+    value: dailyPoints.map((p) => p.valueUsd),
+    tokens: dailyPoints.map((p) => p.tokens),
+    sessions: dailyPoints.map((p) => p.sessions),
+    cacheHit: dailyPoints.map((p) => p.cacheHitPct),
+  };
+
   return {
     generatedAt: options.now ?? Date.now(),
     period,
@@ -223,6 +244,7 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     cacheHitRatePct: cache.hitRatePct,
     cacheSessionsAnalyzed: cache.sessionsAnalyzed,
     topProjects: topProjects(period.startMs, period.endMs, 3),
+    series,
     minimumData: minimum,
     watermark: RECAP_WATERMARK,
   };

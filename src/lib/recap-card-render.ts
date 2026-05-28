@@ -1,4 +1,4 @@
-import type { RecapCardData, RecapHeroKind, RecapVariant } from './recap-card';
+import type { RecapCardData, RecapHeroKind, RecapStyle, RecapVariant } from './recap-card';
 
 export interface RecapDimensions {
   width: number;
@@ -13,6 +13,13 @@ export interface RecapRenderOptions {
    * "different angle" variants without rebuilding the underlying card data.
    */
   heroOverride?: RecapHeroKind;
+  /**
+   * Visual style. `hero` is the classic single-big-number layout; `grid` is
+   * the 2x2 dashboard-style layout (icon + label + number per cell), modeled
+   * after Chinese LLM platform usage panels that have proven to be highly
+   * screenshot-shareable.
+   */
+  style?: RecapStyle;
 }
 
 export function recapDimensions(variant: RecapVariant): RecapDimensions {
@@ -245,6 +252,9 @@ export function renderRecapSvg(
   variant: RecapVariant = 'landscape',
   options: RecapRenderOptions = {},
 ): string {
+  if (options.style === 'grid') {
+    return renderRecapSvgGrid(card, variant);
+  }
   const layout = layoutFor(variant);
   const { width, height, pad } = layout;
   const hero = resolveHero(card, options.heroOverride);
@@ -323,5 +333,220 @@ export function renderRecapSvg(
   <!-- Footer -->
   <circle cx="${bulletX + 5}" cy="${bulletY - 5}" r="5" fill="#a78bfa"/>
   <text x="${bulletX + 20}" y="${layout.footerY}" class="footer">${esc(card.watermark)}</text>
+</svg>`;
+}
+
+// ---------------------------------------------------------------------------
+// Grid style (2x2 dashboard) — inspired by Chinese LLM platform usage panels.
+// Four metric cards: VALUE / TOKENS / CACHE / SESSIONS. Each cell has a
+// colored circular icon, a small label, and a large number. Sparklines are
+// reserved for a future iteration once daily series are wired through
+// RecapCardData; first pass is static for fast visual validation.
+// ---------------------------------------------------------------------------
+
+interface GridCell {
+  label: string;
+  value: string;
+  iconChar: string;
+  iconBg: string;
+  iconFg: string;
+  valueColor: string;
+  /** Raw daily series for the sparkline. Null/empty/length<2 → no line drawn. */
+  series: number[];
+  /** Stroke color for the sparkline; defaults to the icon background. */
+  sparkColor: string;
+}
+
+function gridCellsFor(card: RecapCardData): GridCell[] {
+  const valueStr = money(card.valueAtApiRatesUsd);
+  const tokensStr = card.totalTokens.total.toLocaleString('en-US');
+  const cacheStr = card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—';
+  const sessionsStr = card.totalSessions > 0 ? String(card.totalSessions) : '—';
+
+  return [
+    {
+      label: 'VALUE (API)',
+      value: valueStr,
+      iconChar: '$',
+      iconBg: '#fbbf24',
+      iconFg: '#1c1917',
+      valueColor: '#fde68a',
+      series: card.series.value,
+      sparkColor: '#fbbf24',
+    },
+    {
+      label: 'TOKENS',
+      value: tokensStr,
+      iconChar: 'T',
+      iconBg: '#f472b6',
+      iconFg: '#1c1917',
+      valueColor: '#fbcfe8',
+      series: card.series.tokens,
+      sparkColor: '#f472b6',
+    },
+    {
+      label: 'CACHE',
+      value: cacheStr,
+      iconChar: '%',
+      iconBg: '#60a5fa',
+      iconFg: '#0c1424',
+      valueColor: '#bfdbfe',
+      series: card.series.cacheHit,
+      sparkColor: '#60a5fa',
+    },
+    {
+      label: 'SESSIONS',
+      value: sessionsStr,
+      iconChar: 'S',
+      iconBg: '#fb923c',
+      iconFg: '#1c1917',
+      valueColor: '#fed7aa',
+      series: card.series.sessions,
+      sparkColor: '#fb923c',
+    },
+  ];
+}
+
+/**
+ * Build a polyline path string for a sparkline. Returns an empty string when
+ * the series has fewer than 2 points (in which case the caller should skip
+ * rendering). Normalizes each value into [0, sparkH], inverted so larger
+ * values sit higher on the card (smaller y).
+ */
+function sparklinePath(series: number[], x0: number, y0: number, w: number, h: number): string {
+  if (!series || series.length < 2) return '';
+  const max = Math.max(...series);
+  const min = Math.min(...series);
+  const range = max - min;
+  const step = w / (series.length - 1);
+  // Flat series → render a horizontal line at the vertical midpoint so the
+  // sparkline area still reads as "we have data" instead of looking broken.
+  if (range === 0) {
+    return `M${x0.toFixed(1)} ${(y0 + h / 2).toFixed(1)} H${(x0 + w).toFixed(1)}`;
+  }
+  const parts: string[] = [];
+  for (let i = 0; i < series.length; i++) {
+    const norm = (series[i] - min) / range;
+    const x = x0 + i * step;
+    const y = y0 + h - norm * h;
+    parts.push(`${i === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`);
+  }
+  return parts.join(' ');
+}
+
+/**
+ * Pick a value font size that fits the cell. Long token counts like
+ * "124,541,619" need to shrink so they don't bleed past the cell's right edge.
+ */
+function gridValueFontSize(value: string, cellWidth: number): number {
+  // Rough monospace width estimate: 0.55em per char at the base size.
+  const baseSize = 88;
+  const usable = cellWidth - 80; // 32 inset on both sides + icon space allowance
+  const fits = usable / Math.max(1, value.length) / 0.55;
+  return Math.max(36, Math.min(baseSize, Math.floor(fits)));
+}
+
+function renderRecapSvgGrid(card: RecapCardData, variant: RecapVariant): string {
+  const isSquare = variant === 'square';
+  const width = isSquare ? 1080 : 1200;
+  const height = isSquare ? 1080 : 675;
+  const pad = isSquare ? 60 : 50;
+  const gap = isSquare ? 24 : 20;
+
+  const brandY = isSquare ? 100 : 80;
+  const titleY = isSquare ? 192 : 152;
+  const gridTop = isSquare ? 260 : 200;
+  const footerY = height - (isSquare ? 50 : 36);
+  const gridBottom = footerY - (isSquare ? 40 : 30);
+
+  const cellW = (width - pad * 2 - gap) / 2;
+  const cellH = (gridBottom - gridTop - gap) / 2;
+  const titleFontPx = isSquare ? 56 : 44;
+
+  const periodCaption = periodLabel(card);
+  const titleText = card.minimumData.ok
+    ? `MY CLAUDE CODE ${card.period.shortLabel.toUpperCase()}`
+    : 'WAITING FOR DATA';
+
+  const cells = gridCellsFor(card);
+
+  const cellSvgs = cells.map((cell, index) => {
+    const col = index % 2;
+    const row = Math.floor(index / 2);
+    const x = pad + col * (cellW + gap);
+    const y = gridTop + row * (cellH + gap);
+    const inset = isSquare ? 32 : 26;
+    const iconSize = isSquare ? 56 : 46;
+    const labelFontPx = isSquare ? 18 : 16;
+    const valueFontPx = gridValueFontSize(cell.value, cellW);
+
+    const iconCx = x + inset + iconSize / 2;
+    const iconCy = y + inset + iconSize / 2;
+    const labelX = x + inset + iconSize + 16;
+    const labelY = iconCy + 6;
+    const valueY = y + cellH - inset - 8;
+
+    // Sparkline sits in the top-right of the cell, vertically centered on the
+    // icon/label band. Putting it here (instead of next to the big number)
+    // guarantees long values like "124,541,619" never collide with the line.
+    const sparkW = Math.round(cellW * (isSquare ? 0.34 : 0.30));
+    const sparkH = iconSize - 4;
+    const sparkX = x + cellW - inset - sparkW;
+    const sparkY = iconCy - sparkH / 2;
+    const sparkPath = sparklinePath(cell.series, sparkX, sparkY, sparkW, sparkH);
+
+    const sparkMarkup = sparkPath
+      ? `
+  <path d="${sparkPath}" fill="none" stroke="${cell.sparkColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.85"/>`
+      : '';
+
+    return `
+  <rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="24" ry="24" fill="#16161e" stroke="#27272f" stroke-width="1"/>
+  <circle cx="${iconCx}" cy="${iconCy}" r="${iconSize / 2}" fill="${cell.iconBg}"/>
+  <text x="${iconCx}" y="${iconCy + 8}" class="grid-icon" fill="${cell.iconFg}" text-anchor="middle">${esc(cell.iconChar)}</text>
+  <text x="${labelX}" y="${labelY}" class="grid-label" style="font-size:${labelFontPx}px">${esc(cell.label)}</text>${sparkMarkup}
+  <text x="${x + inset}" y="${valueY}" class="grid-value" style="font-size:${valueFontPx}px" fill="${cell.valueColor}">${esc(cell.value)}</text>`;
+  }).join('');
+
+  const diamondX = pad;
+  const diamondY = brandY - 14;
+  const diamondSize = 14;
+  const footerBulletX = pad;
+  const footerBulletY = footerY - 6;
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Vibemeter recap grid card">
+  <defs>
+    <linearGradient id="bg-grid" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0a0a10"/>
+      <stop offset="55%" stop-color="#101018"/>
+      <stop offset="100%" stop-color="#0a1410"/>
+    </linearGradient>
+    <style>
+      .brand { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 22px; font-weight: 800; letter-spacing: 4px; fill: #f4f4f5; }
+      .period { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 18px; font-weight: 700; letter-spacing: 4px; fill: #a1a1aa; }
+      .grid-title { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: ${titleFontPx}px; font-weight: 800; letter-spacing: 2px; fill: #f4f4f5; }
+      .grid-icon { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 26px; font-weight: 900; }
+      .grid-label { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 700; letter-spacing: 3px; fill: #a1a1aa; }
+      .grid-value { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: 900; letter-spacing: 0.5px; }
+      .footer { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 16px; font-weight: 500; fill: #a1a1aa; letter-spacing: 0.5px; }
+    </style>
+  </defs>
+  <rect width="${width}" height="${height}" fill="url(#bg-grid)"/>
+
+  <!-- Top row: brand mark + period caption -->
+  <rect x="${diamondX}" y="${diamondY}" width="${diamondSize}" height="${diamondSize}" transform="rotate(45 ${diamondX + diamondSize / 2} ${diamondY + diamondSize / 2})" fill="#a78bfa"/>
+  <text x="${diamondX + diamondSize + 16}" y="${brandY}" class="brand">VIBEMETER</text>
+  <text x="${width - pad}" y="${brandY}" class="period" text-anchor="end">${esc(periodCaption)}</text>
+
+  <!-- Title -->
+  <text x="${pad}" y="${titleY}" class="grid-title">${esc(titleText)}</text>
+
+  <!-- 2x2 grid of metric cells -->
+  ${cellSvgs}
+
+  <!-- Footer -->
+  <circle cx="${footerBulletX + 5}" cy="${footerBulletY - 5}" r="5" fill="#a78bfa"/>
+  <text x="${footerBulletX + 20}" y="${footerY}" class="footer">${esc(card.watermark)}</text>
 </svg>`;
 }

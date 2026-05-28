@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import type { RecapCardData, RecapHeroKind, RecapPeriod, RecapVariant } from '@/lib/recap-card';
+import type { RecapCardData, RecapHeroKind, RecapPeriod, RecapStyle, RecapVariant } from '@/lib/recap-card';
 import { availableHeroAngles, recapDimensions, renderRecapSvg } from '@/lib/recap-card-render';
 
 type Status = 'idle' | 'rendering' | 'ready' | 'error';
@@ -16,6 +16,8 @@ interface GeneratedCards {
   square: GeneratedVariant;
   /** Which angle this batch of PNGs was rendered with (so we can label the UI). */
   hero: RecapHeroKind;
+  /** Which visual style was used (classic single-hero vs 2x2 grid). */
+  style: RecapStyle;
 }
 
 interface Props {
@@ -33,16 +35,17 @@ const ANGLE_LABELS: Record<RecapHeroKind, string> = {
   not_enough_data: '—',
 };
 
-function filename(period: RecapPeriod, variant: RecapVariant, hero: RecapHeroKind): string {
+function filename(period: RecapPeriod, variant: RecapVariant, hero: RecapHeroKind, style: RecapStyle): string {
   const dim = recapDimensions(variant);
   const stamp = new Date().toISOString().slice(0, 10);
-  const heroSuffix = hero && hero !== 'not_enough_data' ? `-${hero}` : '';
-  return `vibemeter-recap-${period}${heroSuffix}-${dim.width}x${dim.height}-${stamp}.png`;
+  const heroSuffix = style === 'hero' && hero && hero !== 'not_enough_data' ? `-${hero}` : '';
+  const styleSuffix = style === 'grid' ? '-grid' : '';
+  return `vibemeter-recap-${period}${styleSuffix}${heroSuffix}-${dim.width}x${dim.height}-${stamp}.png`;
 }
 
-function renderPng(card: RecapCardData, variant: RecapVariant, hero: RecapHeroKind): Promise<Blob> {
+function renderPng(card: RecapCardData, variant: RecapVariant, hero: RecapHeroKind, style: RecapStyle): Promise<Blob> {
   const dim = recapDimensions(variant);
-  const svg = renderRecapSvg(card, variant, { heroOverride: hero });
+  const svg = renderRecapSvg(card, variant, { heroOverride: hero, style });
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const svgUrl = URL.createObjectURL(svgBlob);
 
@@ -83,6 +86,7 @@ function revoke(cards: GeneratedCards | null) {
 export function RecapShareButton({ today, weekly, monthly, compact = false }: Props) {
   // Default to the natural sharing cadence ('7d'); user can switch to today / month manually.
   const [period, setPeriod] = useState<RecapPeriod>('7d');
+  const [style, setStyle] = useState<RecapStyle>('hero');
   const [status, setStatus] = useState<Status>('idle');
   const [generated, setGenerated] = useState<GeneratedCards | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -105,20 +109,22 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
 
   useEffect(() => () => revoke(generated), [generated]);
 
-  async function generate(overrideHero?: RecapHeroKind) {
+  async function generate(overrideHero?: RecapHeroKind, overrideStyle?: RecapStyle) {
     setStatus('rendering');
     setMessage(null);
     const heroToUse = overrideHero ?? activeHero;
+    const styleToUse = overrideStyle ?? style;
     try {
       revoke(generated);
       const [landscapeBlob, squareBlob] = await Promise.all([
-        renderPng(card, 'landscape', heroToUse),
-        renderPng(card, 'square', heroToUse),
+        renderPng(card, 'landscape', heroToUse, styleToUse),
+        renderPng(card, 'square', heroToUse, styleToUse),
       ]);
       setGenerated({
         landscape: { blob: landscapeBlob, url: URL.createObjectURL(landscapeBlob) },
         square: { blob: squareBlob, url: URL.createObjectURL(squareBlob) },
         hero: heroToUse,
+        style: styleToUse,
       });
       setStatus('ready');
     } catch (error) {
@@ -131,6 +137,13 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
     setHeroOverride(next);
     if (status === 'ready') {
       await generate(next);
+    }
+  }
+
+  async function selectStyle(next: RecapStyle) {
+    setStyle(next);
+    if (status === 'ready') {
+      await generate(undefined, next);
     }
   }
 
@@ -159,7 +172,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
     const item = generated[variant];
     const a = document.createElement('a');
     a.href = item.url;
-    a.download = filename(period, variant, generated.hero);
+    a.download = filename(period, variant, generated.hero, generated.style);
     document.body.append(a);
     a.click();
     a.remove();
@@ -169,7 +182,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
     if (!generated) return;
     const file = new File(
       [generated.landscape.blob],
-      filename(period, 'landscape', generated.hero),
+      filename(period, 'landscape', generated.hero, generated.style),
       { type: 'image/png' },
     );
     try {
@@ -237,8 +250,26 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
               alt="Vibemeter recap preview"
               className="block w-full rounded-md border border-zinc-800 bg-zinc-900"
             />
-            {/* Angle cycler — only meaningful if more than one angle exists for this card */}
-            {angles.length > 1 && (
+            {/* Style switcher — Classic single-hero vs 2x2 Grid layout */}
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] uppercase tracking-wider text-zinc-500">Style:</span>
+              {(['hero', 'grid'] as const).map((styleOption) => (
+                <button
+                  key={styleOption}
+                  type="button"
+                  onClick={() => selectStyle(styleOption)}
+                  className={`rounded-full px-2.5 py-1 text-[11px] transition-colors ${
+                    generated.style === styleOption
+                      ? 'border border-violet-500/60 bg-violet-500/20 text-violet-100'
+                      : 'border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-100'
+                  }`}
+                >
+                  {styleOption === 'hero' ? 'Classic' : 'Grid 2×2'}
+                </button>
+              ))}
+            </div>
+            {/* Angle cycler — only meaningful for hero style with multiple angles */}
+            {generated.style === 'hero' && angles.length > 1 && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="text-[11px] uppercase tracking-wider text-zinc-500">Different angle:</span>
                 {angles.map((angle) => (

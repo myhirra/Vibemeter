@@ -39,6 +39,12 @@ function card(overrides: Partial<RecapCardData> = {}): RecapCardData {
     cacheHitRatePct: 91,
     cacheSessionsAnalyzed: 6,
     topProjects: [{ project: 'vibemeter', sessions: 5, totalMs: 3_600_000, tokens: 40_000 }],
+    series: {
+      value: [3.2, 5.1, 4.8, 6.7, 8.0, 7.5, 7.2],
+      tokens: [4_000, 7_000, 6_500, 9_000, 11_000, 9_500, 7_000],
+      sessions: [1, 1, 1, 1, 1, 1, 1],
+      cacheHit: [85, 90, 88, 92, 91, 94, 91],
+    },
     minimumData: { ok: true, reason: 'ok' },
     watermark: RECAP_WATERMARK,
     ...overrides,
@@ -86,4 +92,32 @@ test('recap renderer supports roi, value, cache, and not-enough-data hero branch
   }));
   assert.match(empty, /WAITING FOR DATA/);
   assert.match(empty, /Run a few AI coding sessions/);
+});
+
+test('recap renderer grid style outputs four metric cells with labels', () => {
+  const svg = renderRecapSvg(card(), 'square', { style: 'grid' });
+  assert.match(svg, /width="1080" height="1080"/);
+  assert.match(svg, /VALUE \(API\)/);
+  assert.match(svg, /TOKENS/);
+  assert.match(svg, /CACHE/);
+  assert.match(svg, /SESSIONS/);
+  // Tokens formatted with thousands separators, not compact suffix.
+  assert.match(svg, /54,000/);
+  // Sparklines should render when series has ≥ 2 points.
+  assert.match(svg, /<path d="M/);
+});
+
+test('recap renderer grid style works in landscape with the same labels', () => {
+  const svg = renderRecapSvg(card(), 'landscape', { style: 'grid' });
+  assert.match(svg, /width="1200" height="675"/);
+  assert.match(svg, /VALUE \(API\)/);
+  assert.match(svg, /TOKENS/);
+});
+
+test('recap renderer grid style omits sparkline path on degenerate series', () => {
+  const svg = renderRecapSvg(card({
+    series: { value: [], tokens: [], sessions: [], cacheHit: [] },
+  }), 'square', { style: 'grid' });
+  // No <path d="M ..." stroke-width tag should be present when series is empty.
+  assert.doesNotMatch(svg, /<path d="M[^"]+" fill="none"/);
 });
