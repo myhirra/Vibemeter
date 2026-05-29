@@ -204,18 +204,50 @@ function infoPlistXml() {
 `;
 }
 
+function currentMacBinaryArch() {
+  const appleSilicon = spawnSync('/usr/sbin/sysctl', ['-in', 'hw.optional.arm64'], { encoding: 'utf8' });
+  if (appleSilicon.status === 0 && appleSilicon.stdout.trim() === '1') return 'arm64';
+
+  const uname = spawnSync('/usr/bin/uname', ['-m'], { encoding: 'utf8' });
+  return uname.stdout.trim() === 'arm64' ? 'arm64' : 'x86_64';
+}
+
+function floatBinaryArchitectures() {
+  const result = spawnSync('/usr/bin/lipo', ['-archs', APP_BINARY], { encoding: 'utf8' });
+  if (result.status !== 0) return [];
+  return result.stdout.trim().split(/\s+/).filter(Boolean);
+}
+
+function hasCurrentMacArchitecture() {
+  const archs = floatBinaryArchitectures();
+  return archs.includes(currentMacBinaryArch());
+}
+
+function compileFloatBinary() {
+  const arch = currentMacBinaryArch();
+  const target = `${arch}-apple-macos11.0`;
+  const result = spawnSync('/usr/bin/swiftc', ['-target', target, FLOAT_SWIFT, '-o', APP_BINARY], {
+    stdio: 'inherit',
+    env: process.env,
+  });
+  if (result.status === 0 && hasCurrentMacArchitecture()) return true;
+
+  const got = floatBinaryArchitectures().join(', ') || 'unknown';
+  console.error(`Vibemeter: swiftc did not produce a native ${arch} floating app (built: ${got}).`);
+  return false;
+}
+
 function resolveFloatBinary() {
   if (!existsSync(FLOAT_SWIFT)) return null;
-  const stale = !existsSync(APP_BINARY) || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs;
+  const stale = !existsSync(APP_BINARY)
+    || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs
+    || !existsSync(APP_INFO_PLIST)
+    || !hasCurrentMacArchitecture();
   if (!stale && existsSync(APP_INFO_PLIST)) return APP_BINARY;
 
   mkdirSync(dirname(APP_BINARY), { recursive: true });
   writeFileSync(APP_INFO_PLIST, infoPlistXml());
-  const result = spawnSync('/usr/bin/swiftc', [FLOAT_SWIFT, '-o', APP_BINARY], {
-    stdio: 'inherit',
-    env: process.env,
-  });
-  return result.status === 0 ? APP_BINARY : null;
+  return compileFloatBinary() ? APP_BINARY : null;
 }
 
 // macOS-only: surface ~/.vibemeter/Vibemeter.app under /Applications so the

@@ -36,14 +36,46 @@ const INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 `;
 
+function currentMacBinaryArch(): 'arm64' | 'x86_64' {
+  const appleSilicon = spawnSync('/usr/sbin/sysctl', ['-in', 'hw.optional.arm64'], { encoding: 'utf8' });
+  if (appleSilicon.status === 0 && appleSilicon.stdout.trim() === '1') return 'arm64';
+
+  const uname = spawnSync('/usr/bin/uname', ['-m'], { encoding: 'utf8' });
+  return uname.stdout.trim() === 'arm64' ? 'arm64' : 'x86_64';
+}
+
+function appBinaryArchitectures(): string[] {
+  const result = spawnSync('/usr/bin/lipo', ['-archs', APP_BINARY], { encoding: 'utf8' });
+  if (result.status !== 0) return [];
+  return result.stdout.trim().split(/\s+/).filter(Boolean);
+}
+
+function hasCurrentMacArchitecture(): boolean {
+  return appBinaryArchitectures().includes(currentMacBinaryArch());
+}
+
+function compileAppBundle(): { ok: boolean; error?: string } {
+  const arch = currentMacBinaryArch();
+  const target = `${arch}-apple-macos11.0`;
+  const result = spawnSync('/usr/bin/swiftc', ['-target', target, FLOAT_SWIFT, '-o', APP_BINARY], { encoding: 'utf8' });
+  if (result.status === 0 && hasCurrentMacArchitecture()) return { ok: true };
+
+  const got = appBinaryArchitectures().join(', ') || 'unknown';
+  const detail = result.stderr?.trim() || result.error?.message || `swiftc exit ${result.status}`;
+  return { ok: false, error: `${detail}; built ${got}, expected ${arch}` };
+}
+
 function ensureAppBundle(): { built: boolean; path: string | null; error?: string } {
   if (!existsSync(FLOAT_SWIFT)) return { built: false, path: null, error: 'float swift source missing' };
-  const stale = !existsSync(APP_BINARY) || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs;
+  const stale = !existsSync(APP_BINARY)
+    || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs
+    || !existsSync(APP_INFO_PLIST)
+    || !hasCurrentMacArchitecture();
   if (!stale && existsSync(APP_INFO_PLIST)) return { built: false, path: APP_BINARY };
   mkdirSync(dirname(APP_BINARY), { recursive: true });
   writeFileSync(APP_INFO_PLIST, INFO_PLIST);
-  const r = spawnSync('/usr/bin/swiftc', [FLOAT_SWIFT, '-o', APP_BINARY], { stdio: 'pipe' });
-  if (r.status !== 0) return { built: false, path: null, error: r.stderr?.toString().trim() || `swiftc exit ${r.status}` };
+  const compiled = compileAppBundle();
+  if (!compiled.ok) return { built: false, path: null, error: compiled.error };
   return { built: true, path: APP_BINARY };
 }
 
