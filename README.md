@@ -1,6 +1,6 @@
 # Vibemeter
 
-> Don’t let Claude Code or Codex hit limits mid-task. Vibemeter is a local quota runway and completion console for AI coding agents.
+> Know if your next AI coding task can finish before quota, context, or reset timing cuts it off. Vibemeter is a local macOS runway console for Claude Code, Codex, and Cursor heavy users.
 
 > 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and shows quota runway, sessions, and completion alerts from them. That's it.
 
@@ -12,7 +12,7 @@
   <img src="public/float-expanded.png" alt="Vibemeter floating widget expanded" width="380">
 </p>
 
-<p align="center"><sub>Native macOS floating widget — always-on quota ring (left) and expanded panel (right). Stays above your editor; click to refresh, click again to collapse.</sub></p>
+<p align="center"><sub>Native macOS floating widget — always-on quota ring (left) and expanded panel (right). Stays above your editor so the full dashboard is only one click away.</sub></p>
 
 Website: <https://vibemeter.siney.top>
 
@@ -22,23 +22,24 @@ Install and launch with one command:
 curl -fsSL 'https://vibemeter.siney.top/install.sh?src=readme' | bash
 ```
 
-The installer downloads Vibemeter from npm, registers the local background service, waits for it to start, and opens the macOS floating widget. The dashboard runs on your own machine at <http://localhost:9527>.
+The installer downloads Vibemeter from npm, registers the local background service, waits for it to start, and opens the macOS floating widget. The full dashboard runs locally at <http://localhost:9527> for history, settings, reports, and debugging.
 
 ## What you get
 
+- **Task runway check** — `vibemeter guard` tells you whether a long Claude/Codex task is safe to start
+- **macOS runway console** — a native floating meter stays above your editor for live quota and context checks
 - **Quota runway** — 5h / 7-day rate-limit windows for both Claude Code (statusline) and Codex (rollout files)
 - **Context window monitor** *(new in 0.2.0)* — live 200k-token budget for the active Claude Code chat, on the floating widget and dashboard, with a "/compact soon" nudge before auto-compact triggers
-- **Cache hit-rate insight** *(new in 0.2.0)* — what % of every prompt is served from prompt-cache, by project and by session, plus a hint when the rate looks pathological
+- **Completion alerts** — optional macOS voice + notification hooks when Claude Code or Codex finishes
 - **Git ↔ session linking** *(new in 0.2.0)* — every commit in tracked repos is matched to the agent session that produced it; click a row to see the shas
-- **Quota Guard** — `vibemeter guard` tells you whether a long agent task is safe to start
+- **Cache hit-rate insight** *(new in 0.2.0)* — what % of every prompt is served from prompt-cache, by project and by session, plus a hint when the rate looks pathological
 - **Share report** — copy a local Markdown report for V2EX, GitHub issues, or team chat
 - **First-run Doctor** — `vibemeter doctor` checks local data sources, quota setup, and completion hooks
 - **Burn-rate & reset visibility** — see recent usage history before a long agent task runs into a limit
-- **Completion alerts** — optional macOS voice + notification hooks when Claude Code or Codex finishes
 - **Project cost context** — top projects by hours / sessions / tools used, plus Claude Code USD and Codex tokens
 - **Sessions table** — searchable, tag-able, filterable by tool and date range
 - **Activity review** — hour-of-week heatmap, today's timeline ribbon, and daily streak context
-- **Local dashboard** — everything renders from files already on your machine
+- **Local dashboard** — deep history and settings render from files already on your machine
 
 ## Quick start
 

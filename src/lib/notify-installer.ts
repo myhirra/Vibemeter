@@ -17,6 +17,9 @@ const DATA_DIR = process.env.VIBEMETER_DATA_DIR ?? join(homedir(), '.vibemeter')
 const APP_BUNDLE = join(DATA_DIR, 'Vibemeter.app');
 const APP_BINARY = join(APP_BUNDLE, 'Contents', 'MacOS', 'Vibemeter');
 const APP_INFO_PLIST = join(APP_BUNDLE, 'Contents', 'Info.plist');
+const APP_RESOURCES_DIR = join(APP_BUNDLE, 'Contents', 'Resources');
+const APP_ICON_SOURCE = resolve(process.cwd(), 'bin', 'Vibemeter.icns');
+const APP_ICON_FILE = join(APP_RESOURCES_DIR, 'Vibemeter.icns');
 
 const INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -26,6 +29,8 @@ const INFO_PLIST = `<?xml version="1.0" encoding="UTF-8"?>
   <key>CFBundleDisplayName</key><string>Vibemeter</string>
   <key>CFBundleIdentifier</key><string>com.hirra.vibemeter</string>
   <key>CFBundleExecutable</key><string>Vibemeter</string>
+  <key>CFBundleIconFile</key><string>Vibemeter</string>
+  <key>CFBundleIconName</key><string>Vibemeter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -54,6 +59,30 @@ function hasCurrentMacArchitecture(): boolean {
   return appBinaryArchitectures().includes(currentMacBinaryArch());
 }
 
+function appInfoPlistHasIcon(): boolean {
+  if (!existsSync(APP_INFO_PLIST)) return false;
+  try {
+    const body = readFileSync(APP_INFO_PLIST, 'utf8');
+    return body.includes('<key>CFBundleIconFile</key>') && body.includes('<string>Vibemeter</string>');
+  } catch {
+    return false;
+  }
+}
+
+function appIconNeedsRefresh(): boolean {
+  if (!existsSync(APP_ICON_FILE)) return true;
+  if (!existsSync(APP_ICON_SOURCE)) return false;
+  return statSync(APP_ICON_FILE).mtimeMs < statSync(APP_ICON_SOURCE).mtimeMs;
+}
+
+function ensureAppIcon(): void {
+  if (!existsSync(APP_ICON_SOURCE)) return;
+  mkdirSync(APP_RESOURCES_DIR, { recursive: true });
+  if (appIconNeedsRefresh()) {
+    copyFileSync(APP_ICON_SOURCE, APP_ICON_FILE);
+  }
+}
+
 function compileAppBundle(): { ok: boolean; error?: string } {
   const arch = currentMacBinaryArch();
   const target = `${arch}-apple-macos11.0`;
@@ -70,13 +99,20 @@ function ensureAppBundle(): { built: boolean; path: string | null; error?: strin
   const stale = !existsSync(APP_BINARY)
     || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs
     || !existsSync(APP_INFO_PLIST)
+    || !appInfoPlistHasIcon()
+    || appIconNeedsRefresh()
     || !hasCurrentMacArchitecture();
   if (!stale && existsSync(APP_INFO_PLIST)) return { built: false, path: APP_BINARY };
   mkdirSync(dirname(APP_BINARY), { recursive: true });
   writeFileSync(APP_INFO_PLIST, INFO_PLIST);
+  ensureAppIcon();
   const compiled = compileAppBundle();
   if (!compiled.ok) return { built: false, path: null, error: compiled.error };
   return { built: true, path: APP_BINARY };
+}
+
+export function ensureFloatAppBundle(): { built: boolean; path: string | null; error?: string } {
+  return ensureAppBundle();
 }
 
 function osascriptEscape(value: string): string {
@@ -142,6 +178,57 @@ function hookCommand(statusArg: string, locale: string, soundMode: SoundMode): s
   const envs = [`VIBEMETER_NOTIFY_LOCALE=${shellQuote(locale)}`];
   if (soundMode !== 'voice') envs.push(`VIBEMETER_NOTIFY_SOUND_MODE=${shellQuote(soundMode)}`);
   return `${envs.join(' ')} ${shellQuote(NOTIFY_SCRIPT)} Claude ${statusArg}`;
+}
+
+function codexNotifyArgs(locale: string, soundMode: SoundMode): string[] {
+  const envPrefix = soundMode === 'voice'
+    ? `VIBEMETER_NOTIFY_LOCALE=${locale}`
+    : `VIBEMETER_NOTIFY_LOCALE=${locale} VIBEMETER_NOTIFY_SOUND_MODE=${soundMode}`;
+  return ['sh', '-c', `${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`];
+}
+
+export function codexNotifyLine(locale: string, soundMode: SoundMode): string {
+  return `notify = ${JSON.stringify(codexNotifyArgs(locale, soundMode))}`;
+}
+
+function parseCodexNotifyArgs(line: string): string[] | null {
+  const match = line.match(/^\s*notify\s*=\s*(\[[\s\S]*\])\s*$/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function updateCodexNotifyLine(line: string, locale: string, soundMode: SoundMode): string | null {
+  if (!line.includes(HOOK_MARKER)) return null;
+  const args = parseCodexNotifyArgs(line);
+  if (args) {
+    const previousNotifyIndex = args.indexOf('--previous-notify');
+    const previousNotify = args[previousNotifyIndex + 1];
+    if (previousNotifyIndex >= 0 && typeof previousNotify === 'string' && previousNotify.includes(HOOK_MARKER)) {
+      args[previousNotifyIndex + 1] = JSON.stringify(codexNotifyArgs(locale, soundMode));
+      return `notify = ${JSON.stringify(args)}`;
+    }
+  }
+  return codexNotifyLine(locale, soundMode);
+}
+
+export function stripVibemeterFromCodexNotifyLine(line: string): string | null | undefined {
+  if (!line.includes(HOOK_MARKER)) return undefined;
+  const args = parseCodexNotifyArgs(line);
+  if (args) {
+    const previousNotifyIndex = args.indexOf('--previous-notify');
+    const previousNotify = args[previousNotifyIndex + 1];
+    if (previousNotifyIndex >= 0 && typeof previousNotify === 'string' && previousNotify.includes(HOOK_MARKER)) {
+      args.splice(previousNotifyIndex, 2);
+      return `notify = ${JSON.stringify(args)}`;
+    }
+  }
+  return null;
 }
 
 function writeJsonPretty(path: string, obj: unknown) {
@@ -288,18 +375,16 @@ export function installNotifyHooks(opts: { stop?: boolean; notification?: boolea
         if (/^\s*\[/.test(lines[i])) break;
         if (/^\s*notify\s*=/.test(lines[i])) { notifyIndex = i; break; }
       }
-      const envPrefix = soundMode === 'voice'
-        ? `VIBEMETER_NOTIFY_LOCALE=${locale}`
-        : `VIBEMETER_NOTIFY_LOCALE=${locale} VIBEMETER_NOTIFY_SOUND_MODE=${soundMode}`;
-      const want = `notify = ["sh", "-c", ${JSON.stringify(`${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
+      const want = codexNotifyLine(locale, soundMode);
       if (notifyIndex >= 0) {
-        if (lines[notifyIndex].trim() === want) {
+        const updated = updateCodexNotifyLine(lines[notifyIndex], locale, soundMode);
+        if (lines[notifyIndex].trim() === want || lines[notifyIndex] === updated) {
           codexChanged = false;
-        } else if (!lines[notifyIndex].includes(HOOK_MARKER)) {
+        } else if (!updated) {
           codexSkipped = 'foreign-notify';
           codexForeign = lines[notifyIndex].trim();
         } else {
-          lines[notifyIndex] = want;
+          lines[notifyIndex] = updated;
           codexChanged = true;
         }
       } else {
@@ -353,8 +438,11 @@ export function uninstallNotifyHooks(): {
     const lines = readFileSync(CODEX_CONFIG_PATH, 'utf8').split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
       if (/^\s*\[/.test(lines[i])) break;
-      if (/^\s*notify\s*=/.test(lines[i]) && lines[i].includes(HOOK_MARKER)) {
-        lines.splice(i, 1);
+      if (/^\s*notify\s*=/.test(lines[i])) {
+        const stripped = stripVibemeterFromCodexNotifyLine(lines[i]);
+        if (stripped === undefined) continue;
+        if (stripped === null) lines.splice(i, 1);
+        else lines[i] = stripped;
         codexChanged = true;
         break;
       }

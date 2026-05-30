@@ -12,23 +12,17 @@ export default async function AdminPage() {
   const locale = await getServerLocale();
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100 font-mono">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
+            <Link href="/" className="block text-xl font-semibold tracking-tight text-zinc-100 transition-colors hover:text-zinc-200">
               <span className="text-violet-400">Vibe</span>meter {locale === 'zh' ? '· 管理' : 'Admin'}
-            </h1>
+            </Link>
             <p className="text-zinc-600 text-xs mt-1">{t(locale, 'admin.subtitle')}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
             <LocaleSwitcher />
-            <Link
-              href="/"
-              className="rounded-md border border-zinc-800 px-3 py-2 text-xs text-zinc-400 transition-colors hover:border-zinc-600 hover:text-zinc-100"
-            >
-              {t(locale, 'common.dashboard')}
-            </Link>
           </div>
         </div>
 

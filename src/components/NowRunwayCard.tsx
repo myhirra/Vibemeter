@@ -13,8 +13,12 @@ interface Props {
   contextPct?: number | null;
   /** Lowest weekly remaining across agents; we warn when it dips below 30. */
   weeklyRemaining?: number | null;
-  /** Tuple of (used pct, reset epoch ms) for the dominant 5h window. */
-  window5h?: { usedPct: number | null; resetAt: number | null } | null;
+  /**
+   * Used pct + reset epoch ms for the dominant 5h window, plus the agent label
+   * (e.g. "Codex" / "Claude") so the card discloses *which* agent the number
+   * belongs to — `primary` flips to whichever quota is most pressured.
+   */
+  window5h?: { usedPct: number | null; resetAt: number | null; label?: string | null } | null;
   /**
    * Set when Claude is authenticated via API key (no 5h/weekly windows). In
    * that mode the card swaps from "quota runway" to "API spend so far" — the
@@ -116,42 +120,43 @@ export function NowRunwayCard({ guard, contextPct, weeklyRemaining, window5h, ap
   const showPace = guard.pace5hExhaustMin != null && guard.pace5hExhaustMin > 0;
 
   return (
-    <div className={`mb-4 rounded-lg border p-5 ${palette.wrap}`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs uppercase tracking-wider text-zinc-500">{t('card.runway.title')}</p>
-        <span className={`inline-block size-2 rounded-full ${palette.accent}`} aria-hidden />
+    <div className={`mb-4 rounded-lg border px-4 py-3 ${palette.wrap}`}>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0 flex-1">
+          <p className="text-xs uppercase tracking-wider text-zinc-500">{t('card.runway.title')}</p>
+          <p className={`mt-1.5 text-base font-semibold ${palette.text}`}>{t(statusKey(guard.status))}</p>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            {showPace && (
+              <span className="text-amber-300">{t('card.runway.paceExhaust', { n: guard.pace5hExhaustMin! })}</span>
+            )}
+            {showWeekly && (
+              <span className="text-rose-300">{t('card.runway.weeklyHigh')}</span>
+            )}
+            {showContext && (
+              <span className="text-amber-300">{t('card.runway.contextHigh', { pct: contextPct! })}</span>
+            )}
+            <span className={palette.text}>{t(recoKey(guard.status))}</span>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-start gap-3 lg:min-w-48 lg:justify-end">
+          {(usedPct != null || resetRel) && (
+            <div className="rounded-md border border-zinc-800/60 bg-zinc-950/40 px-3 py-1.5 text-right text-xs">
+              <p className="text-[10px] uppercase tracking-wider text-zinc-600">
+                {window5h?.label ? `${window5h.label} · ` : ''}{t('card.runway.window5h')}
+              </p>
+              <p className="mt-1 tabular-nums text-zinc-300">
+                {usedPct != null ? `${Math.ceil(Math.max(0, Math.min(100, usedPct)))}%` : '--'}
+              </p>
+              {resetRel && (
+                <p className="mt-0.5 text-[11px] text-zinc-500">{t('card.runway.resetIn', { rel: resetRel })}</p>
+              )}
+            </div>
+          )}
+          <span className={`mt-1 inline-block size-2 rounded-full ${palette.accent}`} aria-hidden />
+        </div>
       </div>
-
-      <p className={`mt-2 text-lg font-semibold ${palette.text}`}>{t(statusKey(guard.status))}</p>
-      <p className="mt-1 text-xs leading-relaxed text-zinc-400">{guard.detail}</p>
-
-      {(usedPct != null || resetRel) && (
-        <p className="mt-3 text-xs text-zinc-500">
-          <span className="text-zinc-400">{t('card.runway.window5h')}</span>
-          {usedPct != null && (
-            <> · <span className="tabular-nums text-zinc-300">{Math.ceil(Math.max(0, Math.min(100, usedPct)))}%</span></>
-          )}
-          {resetRel && (
-            <> · {t('card.runway.resetIn', { rel: resetRel })}</>
-          )}
-        </p>
-      )}
-
-      <ul className="mt-2 space-y-1 text-xs">
-        {showPace && (
-          <li className="text-amber-300">{t('card.runway.paceExhaust', { n: guard.pace5hExhaustMin! })}</li>
-        )}
-        {showWeekly && (
-          <li className="text-rose-300">{t('card.runway.weeklyHigh')}</li>
-        )}
-        {showContext && (
-          <li className="text-amber-300">{t('card.runway.contextHigh', { pct: contextPct! })}</li>
-        )}
-      </ul>
-
-      <p className={`mt-3 rounded-md border border-zinc-800/60 bg-zinc-950/60 px-3 py-2 text-xs leading-snug ${palette.text}`}>
-        {t(recoKey(guard.status))}
-      </p>
     </div>
   );
 }

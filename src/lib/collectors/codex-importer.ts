@@ -5,6 +5,7 @@ import { getDb } from '../db';
 
 const CODEX_DIR = path.join(os.homedir(), '.codex');
 const STATE_DB = path.join(CODEX_DIR, 'state_5.sqlite');
+const LOGS_DB = path.join(CODEX_DIR, 'logs_2.sqlite');
 const HISTORY_PATH = path.join(CODEX_DIR, 'history.jsonl');
 
 interface ThreadRow {
@@ -67,6 +68,92 @@ function importFromStateDb(): boolean {
   }
 }
 
+function attr(body: string, key: string): string | null {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = body.match(new RegExp(`${escaped}=("[^"]*"|\\S+)`));
+  if (!match) return null;
+  return match[1].replace(/^"|"$/g, '');
+}
+
+function numAttr(body: string, key: string): number {
+  const raw = attr(body, key);
+  const value = raw == null ? 0 : Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function importTokenBreakdownFromLogs(): void {
+  if (!fs.existsSync(LOGS_DB)) return;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const BetterSqlite = require('better-sqlite3') as typeof import('better-sqlite3');
+    const logsDb = new BetterSqlite(LOGS_DB, { readonly: true });
+    const rows = logsDb.prepare(`
+      SELECT thread_id, ts, feedback_log_body
+      FROM logs
+      WHERE target = 'codex_otel.log_only'
+        AND feedback_log_body LIKE '%event.name="codex.sse_event"%'
+        AND feedback_log_body LIKE '%event.kind=response.completed%'
+    `).all() as { thread_id: string | null; ts: number; feedback_log_body: string | null }[];
+
+    const byThread = new Map<string, {
+      input: number;
+      cacheRead: number;
+      output: number;
+      firstTs: number;
+      lastTs: number;
+    }>();
+
+    for (const row of rows) {
+      const body = row.feedback_log_body ?? '';
+      const threadId = row.thread_id ?? attr(body, 'conversation.id');
+      if (!threadId) continue;
+      const inputTotal = numAttr(body, 'input_token_count');
+      const cacheRead = Math.min(inputTotal, numAttr(body, 'cached_token_count'));
+      const output = numAttr(body, 'output_token_count');
+      if (inputTotal <= 0 && cacheRead <= 0 && output <= 0) continue;
+      const current = byThread.get(threadId) ?? { input: 0, cacheRead: 0, output: 0, firstTs: row.ts, lastTs: row.ts };
+      current.input += Math.max(0, inputTotal - cacheRead);
+      current.cacheRead += cacheRead;
+      current.output += output;
+      current.firstTs = Math.min(current.firstTs, row.ts);
+      current.lastTs = Math.max(current.lastTs, row.ts);
+      byThread.set(threadId, current);
+    }
+    logsDb.close();
+
+    if (byThread.size === 0) return;
+    const db = getDb();
+    const update = db.prepare(`
+      UPDATE sessions
+      SET input_tokens = @input,
+          cache_creation_tokens = 0,
+          cache_read_tokens = @cache_read,
+          output_tokens = @output,
+          started_at = COALESCE(started_at, @started_at),
+          ended_at = MAX(COALESCE(ended_at, @ended_at), @ended_at),
+          confidence = 'high'
+      WHERE id = @id
+        AND tool = 'codex'
+    `);
+
+    const updateAll = db.transaction(() => {
+      for (const [id, totals] of byThread) {
+        update.run({
+          id,
+          input: totals.input || null,
+          cache_read: totals.cacheRead || null,
+          output: totals.output || null,
+          started_at: totals.firstTs * 1000,
+          ended_at: totals.lastTs * 1000,
+        });
+      }
+    });
+    updateAll();
+  } catch {
+    return;
+  }
+}
+
 function importFromHistoryJsonl(): void {
   if (!fs.existsSync(HISTORY_PATH)) return;
   interface Entry { session_id: string; ts: number; }
@@ -100,4 +187,5 @@ function importFromHistoryJsonl(): void {
 export function importCodexSessions(): void {
   const usedStateDb = importFromStateDb();
   if (!usedStateDb) importFromHistoryJsonl(); // fallback
+  importTokenBreakdownFromLogs();
 }

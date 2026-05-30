@@ -3,14 +3,14 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Vibemeter — Quota runway for Claude Code, Codex & Cursor</title>
+    <title>Vibemeter | macOS runway console for AI coding agents</title>
     <meta
       name="description"
-      content="See Claude Code and Codex quota runway before long agent tasks hit limits. Vibemeter adds a local dashboard, macOS floating meter, and completion notifications. No telemetry, no cloud."
+      content="Know if your next Claude Code or Codex task can finish before quota, context, or reset timing cuts it off. Local macOS runway console, no telemetry."
     />
     <meta
       name="keywords"
-      content="claude code, codex, cursor, ai coding, usage tracker, session tracker, local-first, dashboard, macOS, anthropic, openai"
+      content="claude code quota, claude code usage tracker, codex rate limit, codex usage tracker, cursor usage tracker, ai coding usage tracker, session tracker, local-first, macOS"
     />
     <link rel="canonical" href="https://vibemeter.siney.top/" />
     <meta name="theme-color" content="#9b7cff" />
@@ -19,10 +19,10 @@
     <!-- Open Graph (Facebook / LinkedIn / 微信 / Slack) -->
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://vibemeter.siney.top/" />
-    <meta property="og:title" content="Vibemeter — AI coding quota runway" />
+    <meta property="og:title" content="Vibemeter — macOS runway console for AI coding" />
     <meta
       property="og:description"
-      content="别让 Claude Code / Codex 长任务跑到一半撞限。Vibemeter 本地显示额度跑道、浮窗和完成提醒，零遥测、零云端。"
+      content="开跑前知道任务能不能跑完，运行中看到额度和上下文风险，完成后收到提醒。Vibemeter 本地运行，零遥测、零云端。"
     />
     <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
     <meta property="og:image:width" content="1440" />
@@ -33,10 +33,10 @@
 
     <!-- Twitter / X Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Vibemeter — AI coding quota runway" />
+    <meta name="twitter:title" content="Vibemeter — macOS runway console for AI coding" />
     <meta
       name="twitter:description"
-      content="Know when Claude Code or Codex will hit quota before a long task gets interrupted — 100% local."
+      content="Know if a long Claude Code or Codex task can finish before quota or context cuts it off — 100% local."
     />
     <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
 
@@ -54,12 +54,12 @@
         "@context": "https://schema.org",
         "@type": "SoftwareApplication",
         "name": "Vibemeter",
-        "description": "Local quota runway for Claude Code, Codex and Cursor usage, with a macOS floating meter and optional completion notifications.",
+        "description": "Local macOS runway console for Claude Code, Codex and Cursor heavy users, with task guard checks, a floating meter, and optional completion notifications.",
         "url": "https://vibemeter.siney.top/",
         "applicationCategory": "DeveloperApplication",
         "operatingSystem": "macOS, Linux, Windows (CLI)",
         "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "softwareVersion": "0.2.0",
+        "softwareVersion": "0.2.4",
         "author": { "@type": "Person", "name": "hirra" },
         "downloadUrl": "https://vibemeter.siney.top/install.sh",
         "image": "https://vibemeter.siney.top/og.png",
@@ -116,6 +116,10 @@
 
       header {
         margin-bottom: 56px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
       }
 
       .brand {
@@ -125,6 +129,26 @@
 
       .brand span {
         color: var(--purple);
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .nav a,
+      .text-link {
+        color: rgba(244, 244, 245, 0.72);
+        text-decoration: none;
+      }
+
+      .nav a:hover,
+      .text-link:hover {
+        color: var(--text);
       }
 
       .hero {
@@ -145,7 +169,7 @@
         max-width: 780px;
         font-size: clamp(34px, 6vw, 72px);
         line-height: 1.02;
-        letter-spacing: -0.01em;
+        letter-spacing: 0;
       }
 
       .lead {
@@ -282,6 +306,24 @@
         gap: 12px;
       }
 
+      .guide-links {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .guide-links a {
+        display: block;
+        min-height: 100%;
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .guide-links a:hover {
+        border-color: rgba(155, 124, 255, 0.5);
+      }
+
       .paths {
         margin-top: 14px;
         display: flex;
@@ -323,6 +365,7 @@
         }
 
         .details,
+        .guide-links,
         .local {
           grid-template-columns: 1fr;
         }
@@ -347,23 +390,29 @@
     <main>
       <header>
         <div class="brand"><span>Vibe</span>meter</div>
+        <nav class="nav" aria-label="Guides">
+          <a href="/claude-code-quota/">Claude Code quota</a>
+          <a href="/codex-rate-limit/">Codex limits</a>
+          <a href="/ai-coding-usage-tracker/">Usage tracker</a>
+          <a href="/pricing/">Pricing</a>
+        </nav>
       </header>
 
       <section class="hero">
         <div>
-          <h1>Don’t let Claude Code or Codex hit limits mid-task.</h1>
+          <h1>Know if your next AI coding task can finish.</h1>
           <p class="lead">
-            Vibemeter shows your AI coding quota runway from local files: 5h / 7-day
-            windows, burn-rate, macOS floating meter, and optional completion alerts
-            when long-running agents finish.
+            Vibemeter is a local macOS runway console for Claude Code, Codex,
+            and Cursor heavy users. Check risk before a long run, watch quota
+            and context while it runs, get notified when it finishes, then trace
+            the session back to the commits it shipped.
           </p>
           <ul class="bullets">
             <li><strong>No cloud:</strong> no telemetry, no account, no remote API.</li>
-            <li><strong>Runway view:</strong> 5h / 7-day windows for Claude Code and Codex.</li>
-            <li><strong>Context monitor:</strong> watch your Claude Code 200k context fill before /compact bites.</li>
-            <li><strong>Cache insight:</strong> see what % of every prompt comes from prompt-cache.</li>
-            <li><strong>Git linkage:</strong> commits in tracked repos pair with the agent session that shipped them.</li>
-            <li><strong>macOS helper:</strong> floating meter plus spoken completion alerts.</li>
+            <li><strong>Before you start:</strong> guard checks whether a long task is safe to run.</li>
+            <li><strong>While it runs:</strong> floating quota, context, burn-rate, and reset runway.</li>
+            <li><strong>When it finishes:</strong> optional spoken macOS completion alerts.</li>
+            <li><strong>Afterward:</strong> session history links agent work to commits and reports.</li>
           </ul>
           <div class="install">
             <code>curl -fsSL 'https://vibemeter.siney.top/install.sh?src=site-copy' | bash</code>
@@ -385,28 +434,28 @@
 
       <section class="details" aria-label="Vibemeter features">
         <div class="card">
-          <h3>Quota runway</h3>
-          <p>Claude Code and Codex 5h / 7-day windows, burn-rate, reset time, and recent burndown history.</p>
+          <h3>Start-task guard</h3>
+          <p>Ask whether a long Claude or Codex run is safe to start before it burns into a limit.</p>
         </div>
         <div class="card">
-          <h3>Context window monitor <span style="color:#9b7cff">· new</span></h3>
-          <p>Live 200k-token budget for the active Claude Code chat, on the floating widget and dashboard. A “/compact soon” nudge fires before auto-compact triggers.</p>
+          <h3>macOS runway console</h3>
+          <p>A native floating meter stays above your editor with 5h / 7-day windows, context, burn-rate, reset time, and recent history.</p>
         </div>
         <div class="card">
-          <h3>Cache hit-rate insight <span style="color:#9b7cff">· new</span></h3>
-          <p>What % of every prompt is served from prompt-cache, broken down by project and session, with a hint when the rate looks pathological.</p>
+          <h3>Completion alerts</h3>
+          <p>Optional voice and notification hooks tell you when Claude Code or Codex finishes so you do not have to watch the terminal.</p>
         </div>
         <div class="card">
           <h3>Git ↔ session linking <span style="color:#9b7cff">· new</span></h3>
           <p>Every commit in tracked repos is matched to the agent session that produced it. Click a session row to see the shas it shipped.</p>
         </div>
         <div class="card">
-          <h3>Project cost context</h3>
-          <p>Sessions, projects, spend, tokens, and activity history so you can explain where AI coding time goes.</p>
+          <h3>Context window monitor <span style="color:#9b7cff">· new</span></h3>
+          <p>Live 200k-token budget for the active Claude Code chat. A “/compact soon” nudge fires before auto-compact triggers.</p>
         </div>
         <div class="card">
-          <h3>macOS helper</h3>
-          <p>Floating meter for quick quota checks. Optional voice notification when Claude Code or Codex completes.</p>
+          <h3>Full local dashboard</h3>
+          <p>Open the browser dashboard for sessions, projects, spend, tokens, cache hit-rate, settings, and share reports.</p>
         </div>
       </section>
 
@@ -426,7 +475,27 @@
         </div>
       </section>
 
-      <footer>Install requires Node.js 20+ and npm. Voice notifications are macOS-only.</footer>
+      <section class="guide-links" aria-label="AI coding usage tracker guides">
+        <a class="card" href="/claude-code-quota/">
+          <h3>Claude Code quota tracker</h3>
+          <p>See the local files Vibemeter reads, the statusline hook it can use, and how the floating meter helps before a 5h or weekly window runs out.</p>
+        </a>
+        <a class="card" href="/codex-rate-limit/">
+          <h3>Codex rate limit tracker</h3>
+          <p>Track Codex rollout windows, reset time, sessions, and completion alerts without sending usage data to a cloud service.</p>
+        </a>
+        <a class="card" href="/ai-coding-usage-tracker/">
+          <h3>AI coding usage tracker</h3>
+          <p>Use one local runway console for Claude Code, Codex, and Cursor sessions, project history, cache insight, and install options.</p>
+        </a>
+      </section>
+
+      <footer>
+        Install requires Node.js 20+ and npm. Voice notifications are macOS-only.
+        <a class="text-link" href="https://github.com/myhirra/Vibemeter">GitHub</a>
+        ·
+        <a class="text-link" href="https://www.npmjs.com/package/@hirra/vibemeter">npm</a>
+      </footer>
     </main>
   </body>
 </html>

@@ -15,13 +15,13 @@ export function SettingsDonatePanel() {
   const alipayLabel = t('donate.alipay');
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
+    <section className="flex h-full flex-col rounded-lg border border-zinc-800 bg-zinc-900 p-6">
       <div className="mb-4">
         <h2 className="text-base font-semibold text-zinc-100">{t('donate.title')}</h2>
         <p className="text-zinc-500 text-xs mt-1">{t('donate.subtitle')}</p>
       </div>
 
-      <div className="flex items-start gap-4">
+      <div className="flex flex-1 items-start gap-4">
         <button
           type="button"
           onClick={() => !missing && setZoom(true)}

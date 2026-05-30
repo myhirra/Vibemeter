@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pricing — Vibemeter</title>
+    <meta
+      name="description"
+      content="Vibemeter is free. Pro Founding License is a $39 one-time purchase that unlocks deeper history, forecast, alerts, cache diagnostics, and reports — no subscription, no telemetry."
+    />
+    <link rel="canonical" href="https://vibemeter.siney.top/pricing/" />
+    <meta name="theme-color" content="#9b7cff" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://vibemeter.siney.top/pricing/" />
+    <meta property="og:title" content="Vibemeter — Pricing (Founding $39 one-time)" />
+    <meta
+      property="og:description"
+      content="Free forever for the floating meter, dashboard, and last 7 days of history. $39 one-time Founding License unlocks full history, forecast, alerts, and Pro reports."
+    />
+    <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Vibemeter — Pricing" />
+    <meta
+      name="twitter:description"
+      content="Free forever + $39 one-time Founding License. No subscription, no telemetry."
+    />
+    <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
+
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307070a'/%3E%3Cpath d='M14 18 L32 50 L50 18' stroke='%239b7cff' stroke-width='8' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E"
+      type="image/svg+xml"
+    />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "Vibemeter Pro — Founding License",
+        "description": "Local macOS runway console for Claude Code, Codex, and Cursor. Founding License unlocks full history, forecast, alerts, cache diagnostics, and Pro reports.",
+        "brand": { "@type": "Brand", "name": "Vibemeter" },
+        "offers": {
+          "@type": "Offer",
+          "price": "39",
+          "priceCurrency": "USD",
+          "availability": "https://schema.org/PreOrder",
+          "url": "https://vibemeter.siney.top/pricing/"
+        }
+      }
+    </script>
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07070a;
+        --panel: #141419;
+        --line: rgba(255, 255, 255, 0.1);
+        --muted: rgba(244, 244, 245, 0.55);
+        --text: #f4f4f5;
+        --purple: #9b7cff;
+        --violet-bg: rgba(155, 124, 255, 0.08);
+        --violet-border: rgba(155, 124, 255, 0.45);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+      main {
+        width: min(1040px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 56px 0 48px;
+      }
+      @media (max-width: 600px) {
+        main { width: calc(100vw - 28px); padding: 32px 0 36px; }
+      }
+
+      header.site {
+        margin-bottom: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+      .brand { font-size: 22px; font-weight: 800; }
+      .brand span { color: var(--purple); }
+      .brand a { color: inherit; text-decoration: none; }
+      .nav {
+        display: flex; flex-wrap: wrap; justify-content: flex-end;
+        gap: 10px; color: var(--muted); font-size: 12px;
+      }
+      .nav a { color: rgba(244, 244, 245, 0.72); text-decoration: none; }
+      .nav a:hover { color: var(--text); }
+
+      .hero {
+        text-align: center;
+        margin-bottom: 40px;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(28px, 4.6vw, 44px);
+        line-height: 1.1;
+        letter-spacing: -0.01em;
+      }
+      .hero .lead {
+        margin: 16px auto 0;
+        max-width: 640px;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.65;
+      }
+
+      .grid {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(3, 1fr);
+      }
+      @media (max-width: 900px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+
+      .plan {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 24px 22px;
+      }
+      .plan.featured {
+        border-color: var(--violet-border);
+        background: linear-gradient(180deg, var(--violet-bg), var(--panel));
+        box-shadow: 0 0 0 1px rgba(155, 124, 255, 0.18);
+      }
+      .plan.muted { opacity: 0.78; }
+      .plan-head {
+        display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+      }
+      .plan-head h2 { margin: 0; font-size: 16px; }
+      .badge {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--purple);
+        border: 1px solid var(--violet-border);
+        border-radius: 999px;
+        padding: 3px 8px;
+        background: rgba(155, 124, 255, 0.08);
+      }
+      .price {
+        margin-top: 14px;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .price strong {
+        font-size: 32px;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+      }
+      .price small { color: var(--muted); font-size: 12px; }
+      .plan-sub { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+
+      ul.features {
+        margin: 18px 0 0;
+        padding: 0;
+        list-style: none;
+        flex: 1;
+        font-size: 13px;
+        color: var(--text);
+      }
+      ul.features li {
+        position: relative;
+        padding: 5px 0 5px 16px;
+        color: rgba(244, 244, 245, 0.85);
+        line-height: 1.55;
+      }
+      ul.features li::before {
+        content: "·";
+        position: absolute;
+        left: 4px;
+        color: var(--muted);
+      }
+      .plan.featured ul.features li::before { color: var(--purple); }
+
+      .cta {
+        margin-top: 20px;
+      }
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 12px 16px;
+        font: inherit;
+        font-weight: 700;
+        font-size: 13px;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .button.primary {
+        background: var(--purple);
+        color: #09090b;
+      }
+      .button.primary[aria-disabled="true"] {
+        background: rgba(155, 124, 255, 0.25);
+        color: rgba(244, 244, 245, 0.6);
+        cursor: not-allowed;
+      }
+      .button.ghost {
+        background: transparent;
+        color: rgba(244, 244, 245, 0.85);
+        border: 1px solid var(--line);
+      }
+      .button.ghost:hover { border-color: rgba(255,255,255,0.3); }
+      .cta-note {
+        margin-top: 8px;
+        text-align: center;
+        font-size: 11px;
+        color: var(--muted);
+      }
+
+      .local {
+        margin-top: 40px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--panel);
+        padding: 22px 24px;
+      }
+      .local h3 { margin: 0 0 6px; font-size: 14px; }
+      .local p { margin: 4px 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+
+      .faq {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 14px;
+      }
+      @media (max-width: 700px) { .faq { grid-template-columns: 1fr; } }
+      .faq dt { font-size: 12px; color: var(--text); font-weight: 600; }
+      .faq dd { margin: 6px 0 0; font-size: 12px; color: var(--muted); line-height: 1.65; }
+
+      footer.site {
+        margin-top: 44px;
+        display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between;
+        font-size: 12px; color: var(--muted);
+      }
+      footer.site a { color: rgba(244, 244, 245, 0.72); text-decoration: none; }
+      footer.site a:hover { color: var(--text); }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header class="site">
+        <div class="brand"><a href="/"><span>Vibe</span>meter</a></div>
+        <nav class="nav" aria-label="Site">
+          <a href="/">Home</a>
+          <a href="/claude-code-quota/">Claude Code quota</a>
+          <a href="/codex-rate-limit/">Codex limits</a>
+          <a href="/ai-coding-usage-tracker/">Usage tracker</a>
+          <a href="https://github.com/myhirra/Vibemeter">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <h1>Free forever. Pro is a one-time $39.</h1>
+        <p class="lead">
+          The floating meter, dashboard, runway, and recent history are free —
+          and stay free. Pro adds full history, forecast, alerts, cache
+          diagnostics, and reports. No subscription. No telemetry.
+        </p>
+      </section>
+
+      <section class="grid" aria-label="Plans">
+        <article class="plan">
+          <div class="plan-head"><h2>Free</h2></div>
+          <div class="price"><strong>$0</strong><small>forever local</small></div>
+          <p class="plan-sub">Local-first, always enough.</p>
+          <ul class="features">
+            <li>Floating meter + full popover</li>
+            <li>Current agent state &middot; 30-min mute</li>
+            <li>Basic reset countdown</li>
+            <li>Local dashboard at <code style="font-size:12px">localhost:9527</code></li>
+            <li>Last 7 days or last 10 sessions</li>
+            <li>Basic activity card</li>
+            <li>Redact mode (screenshot-safe)</li>
+          </ul>
+          <div class="cta">
+            <a class="button ghost" href="/">Install free</a>
+          </div>
+        </article>
+
+        <article class="plan featured">
+          <div class="plan-head">
+            <h2 style="color: var(--purple)">Pro</h2>
+            <span class="badge">Founding</span>
+          </div>
+          <div class="price"><strong>$39</strong><small>one-time &middot; 2 devices</small></div>
+          <p class="plan-sub">$39 Founding early-bird &middot; later $59.</p>
+          <ul class="features">
+            <li>Everything in Free</li>
+            <li>Full history — no 7-day / 10-session cap</li>
+            <li>Advanced quota burn-down forecast</li>
+            <li>Custom threshold &amp; time-window alerts</li>
+            <li>Live context-window pressure monitor</li>
+            <li>Cache hit-rate diagnostics</li>
+            <li>Low-cache session locator</li>
+            <li>Project-level drill-down &amp; search</li>
+            <li>One-click open transcript</li>
+            <li>Git ↔ session ↔ commit linking</li>
+            <li>Markdown report &amp; export</li>
+            <li>2-device license &middot; 1 year of updates</li>
+            <li>14-day no-questions refund</li>
+          </ul>
+          <div class="cta">
+            <a
+              class="button primary"
+              aria-disabled="true"
+              href="mailto:hi@vibemeter.dev?subject=Vibemeter%20Pro%20launch%20notify&body=Please%20email%20me%20when%20the%20Founding%20License%20checkout%20goes%20live."
+            >Checkout coming soon — notify me</a>
+            <div class="cta-note">Lemon Squeezy KYC in progress. Email goes only to launch alert.</div>
+          </div>
+        </article>
+
+        <article class="plan muted">
+          <div class="plan-head"><h2>Team</h2></div>
+          <div class="price"><strong>Soon</strong><small>multi-seat</small></div>
+          <p class="plan-sub">Team reports, shared exports, seats.</p>
+          <ul class="features">
+            <li>Team reports</li>
+            <li>Shared exports</li>
+            <li>Seat management</li>
+            <li>External integrations (Slack / Lark / DingTalk)</li>
+            <li>Priority support</li>
+          </ul>
+          <div class="cta">
+            <a class="button ghost" href="mailto:hi@vibemeter.dev?subject=Vibemeter%20Team">Contact us</a>
+          </div>
+        </article>
+      </section>
+
+      <section class="local">
+        <h3>Fully local-first</h3>
+        <p>No telemetry. No cloud sync. License validation never uploads your coding data.</p>
+        <p>All session metadata and token records stay in <code style="font-size:12px">~/.vibemeter</code> — delete the folder and it's all gone.</p>
+
+        <dl class="faq">
+          <div>
+            <dt>Multi-device?</dt>
+            <dd>Default 2 devices. Going over prompts you to deactivate an older one.</dd>
+          </div>
+          <div>
+            <dt>Offline?</dt>
+            <dd>Yes. License validation enters offline grace if it fails; Pro features keep working.</dd>
+          </div>
+          <div>
+            <dt>Refund?</dt>
+            <dd>Within 14 days, no questions asked.</dd>
+          </div>
+        </dl>
+      </section>
+
+      <footer class="site">
+        <span>&copy; Vibemeter &middot; MIT-licensed source on
+          <a href="https://github.com/myhirra/Vibemeter">GitHub</a>.</span>
+        <span>
+          <a href="/">Home</a>
+          &middot;
+          <a href="https://github.com/myhirra/Vibemeter/blob/main/LICENSE">License</a>
+        </span>
+      </footer>
+    </main>
+  </body>
+</html>

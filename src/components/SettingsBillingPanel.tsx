@@ -81,7 +81,7 @@ export function SettingsBillingPanel() {
   }
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-6">
+    <section className="h-full rounded-lg border border-zinc-800 bg-zinc-900 p-6">
       <div className="mb-4">
         <h2 className="text-base font-semibold text-zinc-100">{t('billing.title')}</h2>
         <p className="text-zinc-500 text-xs mt-1">{t('billing.subtitle')}</p>

@@ -123,6 +123,122 @@ private func menuBarRemainingPercentText(_ remaining: Double) -> String {
     return "\(clamped >= 100 ? 100 : Int(floor(clamped)))%"
 }
 
+enum FloatLanguage: String {
+    case zh
+    case en
+
+    static func normalize(_ value: String?) -> FloatLanguage? {
+        guard let value else { return nil }
+        if value == "en" { return .en }
+        if value == "zh" { return .zh }
+        return nil
+    }
+
+    static func from(url: URL) -> FloatLanguage? {
+        URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first(where: { $0.name == "locale" })
+            .flatMap { normalize($0.value) }
+    }
+}
+
+private let floatCopy: [FloatLanguage: [String: String]] = [
+    .zh: [
+        "status.loading": "加载中",
+        "status.apiUnavailable": "API 不可用",
+        "status.noSnapshot": "暂无快照",
+        "status.loaded": "已加载",
+        "status.decodeFailed": "解析失败",
+        "tooltip.noSnapshot": "暂无快照",
+        "tooltip.noSnapshotYet": "还没有快照",
+        "tooltip.left": "剩余",
+        "window.noSnapshot": "暂无快照",
+        "window.fiveHRemaining": "5h 剩余",
+        "window.weeklyRemaining": "本周剩余",
+        "window.noQuota": "暂无 quota",
+        "action.muted": "已静音 · {n}m",
+        "action.mute": "静音 30m",
+        "action.dashboard": "仪表盘",
+        "action.openLast": "打开上次",
+        "action.switchCodex": "切 Codex",
+        "menu.collapse": "收起",
+        "menu.expand": "展开",
+        "menu.refresh": "刷新",
+        "menu.openDashboard": "打开仪表盘",
+        "menu.quitFloat": "退出 Vibemeter 浮窗",
+        "menu.displayStyle": "显示样式",
+        "menu.styleBall": "圆球",
+        "menu.stylePill": "横条",
+        "menu.showAgents": "显示 Agent",
+        "menu.claudeOnly": "仅 Claude",
+        "menu.codexOnly": "仅 Codex",
+        "menu.both": "两者",
+        "menu.showFloat": "显示浮窗",
+        "menu.quit": "退出",
+        "metric.today": "今天",
+        "metric.total": "累计",
+        "metric.weekly": "本周",
+        "session.active": "活跃",
+        "session.done": "完成",
+        "session.latest": "最近",
+        "session.noRecent": "没有最近的 {tool} 会话",
+        "session.noRecentShort": "暂无最近会话",
+        "footer.hint": "双击打开仪表盘 · 任意处拖拽",
+        "context": "上下文",
+        "reset.none": "无重置时间",
+        "reset.expired": "快照已过期",
+        "reset.in": "{time} 后重置",
+        "pace.exhausts": "约 {n}m 后耗尽",
+    ],
+    .en: [
+        "status.loading": "loading",
+        "status.apiUnavailable": "api unavailable",
+        "status.noSnapshot": "no snapshot",
+        "status.loaded": "loaded",
+        "status.decodeFailed": "decode failed",
+        "tooltip.noSnapshot": "no snapshot",
+        "tooltip.noSnapshotYet": "no snapshot yet",
+        "tooltip.left": "left",
+        "window.noSnapshot": "no snapshot",
+        "window.fiveHRemaining": "5h remaining",
+        "window.weeklyRemaining": "weekly remaining",
+        "window.noQuota": "no quota",
+        "action.muted": "Muted · {n}m",
+        "action.mute": "Mute 30m",
+        "action.dashboard": "Dashboard",
+        "action.openLast": "Open last",
+        "action.switchCodex": "Switch Codex",
+        "menu.collapse": "Collapse",
+        "menu.expand": "Expand",
+        "menu.refresh": "Refresh",
+        "menu.openDashboard": "Open Dashboard",
+        "menu.quitFloat": "Quit Vibemeter Float",
+        "menu.displayStyle": "Display Style",
+        "menu.styleBall": "Ball",
+        "menu.stylePill": "Pill (horizontal)",
+        "menu.showAgents": "Show Agents",
+        "menu.claudeOnly": "Claude only",
+        "menu.codexOnly": "Codex only",
+        "menu.both": "Both",
+        "menu.showFloat": "Show Float",
+        "menu.quit": "Quit",
+        "metric.today": "today",
+        "metric.total": "total",
+        "metric.weekly": "weekly",
+        "session.active": "active",
+        "session.done": "done",
+        "session.latest": "latest",
+        "session.noRecent": "No recent {tool} session",
+        "session.noRecentShort": "no recent session",
+        "footer.hint": "double-click dashboard · drag anywhere",
+        "context": "context",
+        "reset.none": "no reset time",
+        "reset.expired": "snapshot expired",
+        "reset.in": "resets in {time}",
+        "pace.exhausts": "exhausts in ~{n}m",
+    ],
+]
+
 final class FloatingPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
@@ -144,9 +260,11 @@ final class FloatView: NSView {
 
     static let displayStyleKey = "VMFloatDisplayStyle"
     static let agentDisplayKey = "VMFloatAgentDisplay"
+    static let localeKey = "VMFloatLocale"
 
     var stats: FloatStats?
-    var statusText = "loading"
+    var statusTextKey = "status.loading"
+    var language: FloatLanguage = .zh
     var isExpanded = false
     var displayStyle = "ball"
     var agentDisplay = "claude-code"
@@ -157,14 +275,15 @@ final class FloatView: NSView {
     var onTogglePause: (() -> Void)?
     var onOpenLastTranscript: (() -> Void)?
     var onCycleCodex: (() -> Void)?
-    private var dragStart: NSPoint?
+    private var dragMouseStart: NSPoint?
+    private var dragWindowStart: NSPoint?
     private var didDrag = false
     private var hitRects = HitRects()
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
-    func loadSettings() {
+    func loadSettings(defaultLanguage: FloatLanguage? = nil) {
         let defaults = UserDefaults.standard
         if let style = defaults.string(forKey: Self.displayStyleKey), style == "ball" || style == "pill" {
             displayStyle = style
@@ -173,13 +292,36 @@ final class FloatView: NSView {
            agent == "claude-code" || agent == "codex" || agent == "both" {
             agentDisplay = agent
         }
+        _ = loadLocale(defaultLanguage: defaultLanguage)
+    }
+
+    @discardableResult
+    func loadLocale(defaultLanguage: FloatLanguage? = nil) -> Bool {
+        let next = FloatLanguage.normalize(UserDefaults.standard.string(forKey: Self.localeKey))
+            ?? defaultLanguage
+            ?? .zh
+        let changed = next != language
+        language = next
+        return changed
+    }
+
+    func setStatus(_ key: String) {
+        statusTextKey = key
+    }
+
+    func tr(_ key: String, _ vars: [String: String] = [:]) -> String {
+        var text = floatCopy[language]?[key] ?? floatCopy[.en]?[key] ?? key
+        for (name, value) in vars {
+            text = text.replacingOccurrences(of: "{\(name)}", with: value)
+        }
+        return text
     }
 
     /// Build a one-line hover tooltip like `Claude · 64% left · reset in 38m`
     /// using the same `quotaWindow` data the bubble already shows. Falls back
     /// to a short status string when no quota snapshot exists.
     func tooltipText() -> String {
-        guard let stats else { return "Vibemeter · no snapshot" }
+        guard let stats else { return "Vibemeter · \(tr("tooltip.noSnapshot"))" }
         let agents = agentsToShow
         let parts: [String] = agents.compactMap { agent in
             let q = quota(for: agent)
@@ -188,11 +330,11 @@ final class FloatView: NSView {
             let pct = Int(floor(max(0, min(100, remaining))))
             let name = toolName(agent)
             let reset = resetText(window.resetAt)
-            return "\(name) · \(pct)% left · \(reset)"
+            return "\(name) · \(pct)% \(tr("tooltip.left")) · \(reset)"
         }
         if parts.isEmpty {
-            if stats.quotas.isEmpty { return "Vibemeter · no snapshot yet" }
-            return "Vibemeter · \(statusText)"
+            if stats.quotas.isEmpty { return "Vibemeter · \(tr("tooltip.noSnapshotYet"))" }
+            return "Vibemeter · \(tr(statusTextKey))"
         }
         return parts.joined(separator: "\n")
     }
@@ -221,10 +363,27 @@ final class FloatView: NSView {
     }
 
     private func quotaWindow(_ quota: FloatQuota?) -> (remaining: Double?, resetAt: Double?, label: String) {
-        guard let quota else { return (nil, nil, "no snapshot") }
-        if let five = quota.remaining5h { return (five, quota.resetAt5h, "5h remaining") }
-        if let weekly = quota.remainingWeekly { return (weekly, quota.resetAtWeekly, "weekly remaining") }
-        return (nil, nil, "no quota")
+        guard let quota else { return (nil, nil, tr("window.noSnapshot")) }
+        if let five = quota.remaining5h {
+            return normalizeWindow(remaining: five, resetAt: quota.resetAt5h, windowSeconds: 5 * 3600, label: tr("window.fiveHRemaining"))
+        }
+        if let weekly = quota.remainingWeekly {
+            return normalizeWindow(remaining: weekly, resetAt: quota.resetAtWeekly, windowSeconds: 7 * 24 * 3600, label: tr("window.weeklyRemaining"))
+        }
+        return (nil, nil, tr("window.noQuota"))
+    }
+
+    private func normalizeWindow(remaining: Double, resetAt: Double?, windowSeconds: TimeInterval, label: String) -> (remaining: Double?, resetAt: Double?, label: String) {
+        guard let resetAt else {
+            return (max(0, min(100, remaining)), nil, label)
+        }
+        let nowMs = Date().timeIntervalSince1970 * 1000
+        if resetAt <= nowMs {
+            let windowMs = windowSeconds * 1000
+            let elapsed = floor((nowMs - resetAt) / windowMs) + 1
+            return (100, resetAt + elapsed * windowMs, label)
+        }
+        return (max(0, min(100, remaining)), resetAt, label)
     }
 
     private func remainingPercentText(_ remaining: Double?) -> String {
@@ -318,26 +477,26 @@ final class FloatView: NSView {
         if paused {
             let leftMs = (stats!.pausedUntil!) - Date().timeIntervalSince1970 * 1000
             let leftMin = max(0, Int((leftMs / 60_000).rounded()))
-            pauseLabel = "Muted · \(leftMin)m"
+            pauseLabel = tr("action.muted", ["n": "\(leftMin)"])
         } else {
-            pauseLabel = "Mute 30m"
+            pauseLabel = tr("action.mute")
         }
         let pauseRect = drawActionButton(label: pauseLabel, x: x, y: y, accent: paused)
         hitRects.pause = pauseRect
         x = pauseRect.maxX + 6
 
-        let dashboardRect = drawActionButton(label: "Dashboard", x: x, y: y, accent: false)
+        let dashboardRect = drawActionButton(label: tr("action.dashboard"), x: x, y: y, accent: false)
         hitRects.openDashboard = dashboardRect
         x = dashboardRect.maxX + 6
 
         if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
-            let openRect = drawActionButton(label: "Open last", x: x, y: y, accent: false)
+            let openRect = drawActionButton(label: tr("action.openLast"), x: x, y: y, accent: false)
             hitRects.openTranscript = openRect
             x = openRect.maxX + 6
         }
         let showCodex = agentDisplay == "codex" || agentDisplay == "both"
         if showCodex, let accounts = stats?.codexAccounts, accounts.count >= 2 {
-            let switchRect = drawActionButton(label: "Switch Codex", x: x, y: y, accent: false)
+            let switchRect = drawActionButton(label: tr("action.switchCodex"), x: x, y: y, accent: false)
             hitRects.switchCodex = switchRect
         }
     }
@@ -364,7 +523,10 @@ final class FloatView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        dragStart = event.locationInWindow
+        // Anchor the drag in screen coordinates so the reference frame doesn't
+        // shift as the window moves (using locationInWindow caused jitter).
+        dragMouseStart = NSEvent.mouseLocation
+        dragWindowStart = window?.frame.origin
         didDrag = false
         if event.clickCount == 2 {
             onOpenDashboard?()
@@ -372,19 +534,19 @@ final class FloatView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard let window, let start = dragStart else { return }
-        let current = event.locationInWindow
-        var origin = window.frame.origin
-        origin.x += current.x - start.x
-        origin.y += current.y - start.y
-        if abs(current.x - start.x) > 2 || abs(current.y - start.y) > 2 {
+        guard let window, let mouseStart = dragMouseStart, let windowStart = dragWindowStart else { return }
+        let current = NSEvent.mouseLocation
+        let dx = current.x - mouseStart.x
+        let dy = current.y - mouseStart.y
+        if abs(dx) > 2 || abs(dy) > 2 {
             didDrag = true
         }
-        window.setFrameOrigin(origin)
+        window.setFrameOrigin(NSPoint(x: windowStart.x + dx, y: windowStart.y + dy))
     }
 
     override func mouseUp(with event: NSEvent) {
-        dragStart = nil
+        dragMouseStart = nil
+        dragWindowStart = nil
         if didDrag { return }
         if event.clickCount != 1 { return }
 
@@ -446,29 +608,29 @@ final class FloatView: NSView {
 
     override func rightMouseUp(with event: NSEvent) {
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: isExpanded ? "Collapse" : "Expand", action: #selector(toggleFromMenu), keyEquivalent: "e")
+        let toggle = NSMenuItem(title: isExpanded ? tr("menu.collapse") : tr("menu.expand"), action: #selector(toggleFromMenu), keyEquivalent: "e")
         toggle.target = self
         menu.addItem(toggle)
-        let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        let refresh = NSMenuItem(title: tr("menu.refresh"), action: #selector(refreshFromMenu), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
-        let dash = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
+        let dash = NSMenuItem(title: tr("menu.openDashboard"), action: #selector(openDashboardFromMenu), keyEquivalent: "o")
         dash.target = self
         menu.addItem(dash)
         menu.addItem(NSMenuItem.separator())
         menu.addItem(buildDisplayStyleMenuItem())
         menu.addItem(buildAgentDisplayMenuItem())
         menu.addItem(NSMenuItem.separator())
-        let quit = NSMenuItem(title: "Quit Vibemeter Float", action: #selector(quitFromMenu), keyEquivalent: "q")
+        let quit = NSMenuItem(title: tr("menu.quitFloat"), action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
     func buildDisplayStyleMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Display Style", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: tr("menu.displayStyle"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        for (title, value) in [("Ball", "ball"), ("Pill (horizontal)", "pill")] {
+        for (title, value) in [(tr("menu.styleBall"), "ball"), (tr("menu.stylePill"), "pill")] {
             let mi = NSMenuItem(title: title, action: #selector(setDisplayStyleFromMenu(_:)), keyEquivalent: "")
             mi.target = self
             mi.representedObject = value
@@ -480,12 +642,12 @@ final class FloatView: NSView {
     }
 
     func buildAgentDisplayMenuItem() -> NSMenuItem {
-        let item = NSMenuItem(title: "Show Agents", action: nil, keyEquivalent: "")
+        let item = NSMenuItem(title: tr("menu.showAgents"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         let options: [(String, String)] = [
-            ("Claude only", "claude-code"),
-            ("Codex only", "codex"),
-            ("Both", "both"),
+            (tr("menu.claudeOnly"), "claude-code"),
+            (tr("menu.codexOnly"), "codex"),
+            (tr("menu.both"), "both"),
         ]
         for (title, value) in options {
             let mi = NSMenuItem(title: title, action: #selector(setAgentDisplayFromMenu(_:)), keyEquivalent: "")
@@ -660,8 +822,7 @@ final class FloatView: NSView {
 
         let value = remainingPercentText(remaining)
         drawText(value, rect: NSRect(x: rect.minX, y: center.y - 13, width: rect.width, height: 20), size: 15, weight: .bold, color: .white, alignment: .center)
-        let letter = agent == "claude-code" ? "C" : "X"
-        drawText(letter, rect: NSRect(x: rect.minX, y: center.y + 8, width: rect.width, height: 12), size: 9, weight: .semibold, color: NSColor.white.withAlphaComponent(0.55), alignment: .center)
+        drawText(toolName(agent), rect: NSRect(x: rect.minX, y: center.y + 8, width: rect.width, height: 12), size: 9, weight: .semibold, color: NSColor.white.withAlphaComponent(0.55), alignment: .center)
     }
 
     private func drawPillsCollapsed(context: CGContext, in rect: NSRect) {
@@ -781,13 +942,18 @@ final class FloatView: NSView {
 
         let x = rect.minX + 134
         let textWidth = max(120, rect.maxX - x - 18)
-        let baseY = rect.minY + (dual ? 78 : 72) + yOffset
+        let hasPace = (q?.pace5hExhaustMin ?? 0) > 0
+        let hasAccount = q?.accountLabel?.isEmpty == false && !dual
+        let textBlockHeight: CGFloat = hasPace
+            ? (dual ? 65 : 78)
+            : (hasAccount ? 81 : (dual ? 51 : 62))
+        let baseY = center.y - textBlockHeight / 2
         drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: textWidth, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
-        drawText(q == nil ? statusText : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
+        drawText(q == nil ? tr(statusTextKey) : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
         drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
         if let exhaust = q?.pace5hExhaustMin, exhaust > 0 {
             let paceColor = exhaust < 30 ? NSColor.systemPink : NSColor.systemYellow
-            drawText("exhausts in ~\(exhaust)m", rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
+            drawText(tr("pace.exhausts", ["n": "\(exhaust)"]), rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
         } else if let account = q?.accountLabel, !account.isEmpty, !dual {
             drawText(account, rect: NSRect(x: x, y: baseY + 67, width: textWidth, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
         }
@@ -804,14 +970,14 @@ final class FloatView: NSView {
         let gap: CGFloat = 10
         let width = (rect.width - 40 - gap * 2) / 3
         let counts = sessionStats(for: dual ? "both" : focusAgent)
-        drawMetric(title: "today", value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: width, height: 50))
-        drawMetric(title: "total", value: "\(counts.total)", rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
+        drawMetric(title: tr("metric.today"), value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: width, height: 50))
+        drawMetric(title: tr("metric.total"), value: "\(counts.total)", rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
         let weeklyRect = NSRect(x: rect.minX + 20 + (width + gap) * 2, y: top, width: width, height: 50)
         if dual {
             drawDualWeekly(rect: weeklyRect)
         } else {
             let weekly = quota(for: focusAgent)?.remainingWeekly
-            drawMetric(title: "weekly", value: remainingPercentText(weekly), rect: weeklyRect)
+            drawMetric(title: tr("metric.weekly"), value: remainingPercentText(weekly), rect: weeklyRect)
         }
     }
 
@@ -820,13 +986,13 @@ final class FloatView: NSView {
         NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
         NSColor.white.withAlphaComponent(0.06).setStroke()
         NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).stroke()
-        drawText("weekly", rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 12), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
+        drawText(tr("metric.weekly"), rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 12), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
         let c = quota(for: "claude-code")?.remainingWeekly
         let x = quota(for: "codex")?.remainingWeekly
-        let cText = "C \(remainingPercentText(c))"
-        let xText = "X \(remainingPercentText(x))"
-        drawText(cText, rect: NSRect(x: rect.minX, y: rect.minY + 22, width: rect.width, height: 13), size: 11, weight: .semibold, color: .white, alignment: .center)
-        drawText(xText, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 13), size: 11, weight: .semibold, color: NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1), alignment: .center)
+        let cText = "Claude \(remainingPercentText(c))"
+        let xText = "Codex \(remainingPercentText(x))"
+        drawText(cText, rect: NSRect(x: rect.minX, y: rect.minY + 22, width: rect.width, height: 13), size: 10, weight: .semibold, color: .white, alignment: .center)
+        drawText(xText, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 13), size: 10, weight: .semibold, color: NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1), alignment: .center)
     }
 
     private func drawFooter(in rect: NSRect) {
@@ -839,9 +1005,11 @@ final class FloatView: NSView {
         }
         let l = live(for: focusAgent)
         let session = l?.activeSession ?? l?.recentSession
-        let prefix = l?.state == "active" ? "active" : l?.state == "recent" ? "done" : "latest"
+        let prefix = sessionPrefix(l?.state)
         let agentName = toolName(focusAgent)
-        let line = session == nil ? "No recent \(agentName) session" : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
+        let line = session == nil
+            ? tr("session.noRecent", ["tool": agentName])
+            : "\(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
         drawText(line, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 32, width: rect.width - 74, height: 16), size: 11, weight: .medium, color: NSColor.white.withAlphaComponent(0.72))
 
         if focusAgent == "claude-code", let ctx = stats?.activeContext {
@@ -849,7 +1017,7 @@ final class FloatView: NSView {
         } else if let title = session?.title, !title.isEmpty {
             drawText(title, rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.38))
         } else {
-            drawText("double-click dashboard · drag anywhere", rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.35))
+            drawText(tr("footer.hint"), rect: NSRect(x: rect.minX + 22, y: rect.maxY - 17, width: rect.width - 74, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.35))
         }
     }
 
@@ -868,7 +1036,7 @@ final class FloatView: NSView {
 
     private func drawContextBar(in rect: NSRect, ctx: ActiveContext) {
         let labelRect = NSRect(x: rect.minX, y: rect.minY, width: 50, height: rect.height)
-        drawText("context", rect: labelRect, size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.50))
+        drawText(tr("context"), rect: labelRect, size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.50))
 
         let tokensText = "\(formatTokens(ctx.tokens))/\(formatTokens(ctx.limit))"
         let tokensWidth: CGFloat = 78
@@ -896,11 +1064,19 @@ final class FloatView: NSView {
     private func drawFooterLine(agent: String, rect: NSRect) {
         let l = live(for: agent)
         let session = l?.activeSession ?? l?.recentSession
-        let prefix = l?.state == "active" ? "active" : l?.state == "recent" ? "done" : "latest"
+        let prefix = sessionPrefix(l?.state)
         let name = toolName(agent)
-        let line = session == nil ? "\(name) · no recent session" : "\(name) · \(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
+        let line = session == nil
+            ? "\(name) · \(tr("session.noRecentShort"))"
+            : "\(name) · \(prefix) · \(session!.project) · \(durationText(session!.durationMs))"
         let labelColor = agent == "codex" ? NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 0.95) : NSColor.white.withAlphaComponent(0.72)
         drawText(line, rect: rect, size: 11, weight: .medium, color: labelColor)
+    }
+
+    private func sessionPrefix(_ state: String?) -> String {
+        if state == "active" { return tr("session.active") }
+        if state == "recent" { return tr("session.done") }
+        return tr("session.latest")
     }
 
     private func drawMetric(title: String, value: String, rect: NSRect) {
@@ -961,12 +1137,13 @@ final class FloatView: NSView {
     }
 
     private func resetText(_ value: Double?) -> String {
-        guard let value else { return "no reset time" }
+        guard let value else { return tr("reset.none") }
         let diff = (value / 1000) - Date().timeIntervalSince1970
-        if diff <= 0 { return "snapshot expired" }
+        if diff <= 0 { return tr("reset.expired") }
         let hours = Int(diff) / 3600
         let minutes = (Int(diff) % 3600) / 60
-        return hours > 0 ? "resets in \(hours)h \(minutes)m" : "resets in \(minutes)m"
+        let rel = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+        return tr("reset.in", ["time": rel])
     }
 
     private func toolName(_ value: String) -> String {
@@ -987,6 +1164,7 @@ final class FloatView: NSView {
 
 final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private let pageURL: URL
+    private let initialLanguage: FloatLanguage?
     private let apiURL: URL
     private let importURL: URL
     private let pauseURL: URL
@@ -1000,6 +1178,11 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     init(pageURL: URL) {
         self.pageURL = pageURL
+        let language = FloatLanguage.from(url: pageURL)
+        self.initialLanguage = language
+        if let language {
+            UserDefaults.standard.set(language.rawValue, forKey: FloatView.localeKey)
+        }
         var components = URLComponents(url: pageURL, resolvingAgainstBaseURL: false)!
         components.path = "/api/float"
         components.query = nil
@@ -1016,7 +1199,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let view = FloatView(frame: NSRect(x: 0, y: 0, width: 112, height: 112))
-        view.loadSettings()
+        view.loadSettings(defaultLanguage: initialLanguage)
         let initial = view.preferredSize()
 
         let panel = FloatingPanel(
@@ -1029,7 +1212,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.isMovableByWindowBackground = true
+        // Dragging is handled manually in FloatView.mouseDragged; leaving the
+        // system mover on too makes both fight over the frame and flicker.
+        panel.isMovableByWindowBackground = false
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
@@ -1102,13 +1287,13 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private func rebuildStatusMenu() {
         guard let statusItem else { return }
         let menu = NSMenu()
-        let show = NSMenuItem(title: "Show Float", action: #selector(showPanelFromMenu), keyEquivalent: "s")
+        let show = NSMenuItem(title: menuText("menu.showFloat"), action: #selector(showPanelFromMenu), keyEquivalent: "s")
         show.target = self
         menu.addItem(show)
-        let refresh = NSMenuItem(title: "Refresh", action: #selector(refreshFromMenu), keyEquivalent: "r")
+        let refresh = NSMenuItem(title: menuText("menu.refresh"), action: #selector(refreshFromMenu), keyEquivalent: "r")
         refresh.target = self
         menu.addItem(refresh)
-        let dash = NSMenuItem(title: "Open Dashboard", action: #selector(openDashboardFromMenu), keyEquivalent: "o")
+        let dash = NSMenuItem(title: menuText("menu.openDashboard"), action: #selector(openDashboardFromMenu), keyEquivalent: "o")
         dash.target = self
         menu.addItem(dash)
         menu.addItem(NSMenuItem.separator())
@@ -1117,10 +1302,23 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             menu.addItem(view.buildAgentDisplayMenuItem())
             menu.addItem(NSMenuItem.separator())
         }
-        let quit = NSMenuItem(title: "Quit", action: #selector(quitFromMenu), keyEquivalent: "q")
+        let quit = NSMenuItem(title: menuText("menu.quit"), action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         statusItem.menu = menu
+    }
+
+    private func menuText(_ key: String) -> String {
+        contentView?.tr(key) ?? floatCopy[.zh]?[key] ?? floatCopy[.en]?[key] ?? key
+    }
+
+    private func syncLocaleFromDefaults() {
+        guard let view = contentView else { return }
+        if view.loadLocale(defaultLanguage: initialLanguage) {
+            rebuildStatusMenu()
+            view.toolTip = view.isExpanded ? nil : view.tooltipText()
+            view.needsDisplay = true
+        }
     }
 
     private func hidePanel() {
@@ -1203,6 +1401,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     }
 
     private func refreshNow() {
+        syncLocaleFromDefaults()
         if refreshInFlight { return }
         refreshInFlight = true
 
@@ -1223,7 +1422,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             }
             guard let data else {
                 DispatchQueue.main.async {
-                    self.contentView?.statusText = "api unavailable"
+                    self.contentView?.setStatus("status.apiUnavailable")
                     self.contentView?.needsDisplay = true
                 }
                 return
@@ -1231,8 +1430,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             do {
                 let stats = try JSONDecoder().decode(FloatStats.self, from: data)
                 DispatchQueue.main.async {
+                    self.syncLocaleFromDefaults()
                     self.contentView?.stats = stats
-                    self.contentView?.statusText = stats.quotas.isEmpty ? "no snapshot" : "loaded"
+                    self.contentView?.setStatus(stats.quotas.isEmpty ? "status.noSnapshot" : "status.loaded")
                     // Hover tooltip — only the collapsed bubble needs it. In
                     // the expanded popover all that info is already on screen,
                     // so the tooltip overlapping the Dashboard button is just
@@ -1248,7 +1448,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
                 }
             } catch {
                 DispatchQueue.main.async {
-                    self.contentView?.statusText = "decode failed"
+                    self.contentView?.setStatus("status.decodeFailed")
                     self.contentView?.needsDisplay = true
                 }
             }

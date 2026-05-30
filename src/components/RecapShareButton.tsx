@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { RecapCardData, RecapHeroKind, RecapPeriod, RecapStyle, RecapVariant } from '@/lib/recap-card';
 import { availableHeroAngles, recapDimensions, renderRecapSvg } from '@/lib/recap-card-render';
+import { useLocale, useT } from '@/lib/i18n/client';
+import type { Locale } from '@/lib/i18n';
 
 type Status = 'idle' | 'rendering' | 'ready' | 'error';
 
@@ -21,20 +23,22 @@ interface GeneratedCards {
 }
 
 interface Props {
-  today: RecapCardData;
-  weekly: RecapCardData;
-  monthly: RecapCardData;
+  card?: RecapCardData;
+  today?: RecapCardData;
+  weekly?: RecapCardData;
+  monthly?: RecapCardData;
   compact?: boolean;
   period?: RecapPeriod;
   onPeriodChange?: (period: RecapPeriod) => void;
 }
 
-const ANGLE_LABELS: Record<RecapHeroKind, string> = {
-  roi: 'ROI',
-  value: 'Value',
-  cache: 'Cache',
-  sessions: 'Sessions',
-  not_enough_data: '—',
+const ANGLE_LABEL_KEYS: Record<RecapHeroKind, string> = {
+  roi: 'recap.angle.roi',
+  value: 'recap.angle.value',
+  tokens: 'recap.angle.tokens',
+  cache: 'recap.angle.cache',
+  sessions: 'recap.angle.sessions',
+  not_enough_data: 'recap.angle.none',
 };
 
 function filename(period: RecapPeriod, variant: RecapVariant, hero: RecapHeroKind, style: RecapStyle): string {
@@ -45,9 +49,9 @@ function filename(period: RecapPeriod, variant: RecapVariant, hero: RecapHeroKin
   return `vibemeter-recap-${period}${styleSuffix}${heroSuffix}-${dim.width}x${dim.height}-${stamp}.png`;
 }
 
-function renderPng(card: RecapCardData, variant: RecapVariant, hero: RecapHeroKind, style: RecapStyle): Promise<Blob> {
+function renderPng(card: RecapCardData, variant: RecapVariant, hero: RecapHeroKind, style: RecapStyle, locale: Locale): Promise<Blob> {
   const dim = recapDimensions(variant);
-  const svg = renderRecapSvg(card, variant, { heroOverride: hero, style });
+  const svg = renderRecapSvg(card, variant, { heroOverride: hero, style, locale });
   const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
   const svgUrl = URL.createObjectURL(svgBlob);
 
@@ -85,25 +89,38 @@ function revoke(cards: GeneratedCards | null) {
   URL.revokeObjectURL(cards.square.url);
 }
 
-export function RecapShareButton({ today, weekly, monthly, compact = false, period: controlledPeriod, onPeriodChange }: Props) {
-  // Default to the natural sharing cadence ('7d'); user can switch to today / month manually.
+function cardForPeriod(
+  cards: { today?: RecapCardData; weekly?: RecapCardData; monthly?: RecapCardData },
+  period: RecapPeriod,
+): RecapCardData | null {
+  if (period === 'today') return cards.today ?? null;
+  if (period === '7d') return cards.weekly ?? null;
+  return cards.monthly ?? null;
+}
+
+export function RecapShareButton({ card: fixedCard, today, weekly, monthly, compact = false, period: controlledPeriod, onPeriodChange }: Props) {
+  const t = useT();
+  const locale = useLocale();
+  // Default to the natural sharing cadence ('7d'); Dashboard can also pin the
+  // card to its current filter and bypass the local period picker entirely.
   const [internalPeriod, setInternalPeriod] = useState<RecapPeriod>('7d');
   const [style, setStyle] = useState<RecapStyle>('hero');
   const [status, setStatus] = useState<Status>('idle');
   const [generated, setGenerated] = useState<GeneratedCards | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const period = controlledPeriod ?? internalPeriod;
-  const card = period === 'today' ? today : period === '7d' ? weekly : monthly;
+  const card = fixedCard ?? cardForPeriod({ today, weekly, monthly }, period);
+  const showPeriodPicker = !fixedCard && !compact;
 
   // Available hero angles for the active card, in a stable order. Used both by
   // the "different angle" cycler and by the radio-chip UI under the preview.
-  const angles = useMemo(() => availableHeroAngles(card), [card]);
+  const angles = useMemo(() => card ? availableHeroAngles(card) : [], [card]);
   const [heroOverride, setHeroOverride] = useState<RecapHeroKind | null>(null);
   // If the user switches periods the previous angle override might no longer
   // make sense for the new card. We resolve the effective hero at render time
   // (no effect needed) so a stale override silently falls back to the card's
   // natural hero kind.
-  const activeHero: RecapHeroKind = heroOverride && angles.includes(heroOverride) ? heroOverride : card.heroKind;
+  const activeHero: RecapHeroKind = card && heroOverride && angles.includes(heroOverride) ? heroOverride : card?.heroKind ?? 'not_enough_data';
 
   const nativeShareSupported = useMemo(() => {
     if (typeof navigator === 'undefined') return false;
@@ -126,6 +143,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
   }
 
   async function generate(overrideHero?: RecapHeroKind, overrideStyle?: RecapStyle) {
+    if (!card) return;
     setStatus('rendering');
     setMessage(null);
     const heroToUse = overrideHero ?? activeHero;
@@ -133,8 +151,8 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
     try {
       revoke(generated);
       const [landscapeBlob, squareBlob] = await Promise.all([
-        renderPng(card, 'landscape', heroToUse, styleToUse),
-        renderPng(card, 'square', heroToUse, styleToUse),
+        renderPng(card, 'landscape', heroToUse, styleToUse, locale),
+        renderPng(card, 'square', heroToUse, styleToUse, locale),
       ]);
       setGenerated({
         landscape: { blob: landscapeBlob, url: URL.createObjectURL(landscapeBlob) },
@@ -177,9 +195,9 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
       await navigator.clipboard.write([
         new ClipboardItem({ 'image/png': generated.landscape.blob }),
       ]);
-      setMessage('Copied image');
+      setMessage(t('recap.action.copiedImage'));
     } catch {
-      setMessage('Copy unavailable');
+      setMessage(t('recap.action.copyUnavailable'));
     }
   }
 
@@ -204,20 +222,20 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
     try {
       if (navigator.canShare?.({ files: [file] })) {
         await navigator.share({ files: [file], title: 'Vibemeter recap' });
-        setMessage('Shared');
+        setMessage(t('recap.action.shared'));
       } else {
         saveImage('landscape');
       }
     } catch {
-      setMessage('Share canceled');
+      setMessage(t('recap.action.shareCanceled'));
     }
   }
 
   return (
     <div className={compact ? 'flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center justify-end gap-2'}>
-      {!compact && (
+      {showPeriodPicker && (
         <div className="flex gap-1 rounded-full border border-zinc-800 bg-zinc-950 p-0.5">
-          {(['today', '7d', 'month'] as const).map((item) => (
+          {(['today', '7d', '30d'] as const).map((item) => (
             <button
               key={item}
               type="button"
@@ -226,7 +244,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
                 period === item ? 'bg-violet-500/20 text-violet-100' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
-              {item === 'today' ? 'Today' : item === '7d' ? 'Week' : 'Month'}
+              {t(item === 'today' ? 'recap.period.today' : item === '7d' ? 'recap.period.week' : 'recap.period.30d')}
             </button>
           ))}
         </div>
@@ -239,17 +257,17 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
           compact ? 'shrink-0' : ''
         }`}
       >
-        {status === 'rendering' ? 'Making...' : compact ? 'Make card' : 'Share card'}
+        {status === 'rendering' ? t('recap.action.making') : compact ? t('recap.action.makeCard') : t('recap.action.shareCard')}
       </button>
 
-      {status === 'error' && <span className="text-[11px] text-rose-300">Render failed</span>}
+      {status === 'error' && <span className="text-[11px] text-rose-300">{t('recap.action.renderFailed')}</span>}
 
       {generated && status === 'ready' && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 px-4 py-6">
           <div className="w-full max-w-3xl rounded-lg border border-zinc-800 bg-zinc-950 p-4 shadow-2xl shadow-black/60">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-wider text-zinc-500">Recap card ready</p>
+                <p className="text-xs uppercase tracking-wider text-zinc-500">{t('recap.action.ready')}</p>
                 {message && <p className="mt-1 text-[11px] text-emerald-300">{message}</p>}
               </div>
               <button
@@ -257,7 +275,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
                 onClick={() => { revoke(generated); setGenerated(null); setStatus('idle'); setMessage(null); }}
                 className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-100"
               >
-                Close
+                {t('recap.action.close')}
               </button>
             </div>
             {/* eslint-disable-next-line @next/next/no-img-element -- Previewing a local Blob URL, not a remote asset. */}
@@ -268,7 +286,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
             />
             {/* Style switcher — Classic single-hero vs 2x2 Grid layout */}
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <span className="text-[11px] uppercase tracking-wider text-zinc-500">Style:</span>
+              <span className="text-[11px] uppercase tracking-wider text-zinc-500">{t('recap.action.style')}</span>
               {(['hero', 'grid'] as const).map((styleOption) => (
                 <button
                   key={styleOption}
@@ -280,14 +298,14 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
                       : 'border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-100'
                   }`}
                 >
-                  {styleOption === 'hero' ? 'Classic' : 'Grid 2×2'}
+                  {styleOption === 'hero' ? t('recap.action.classic') : t('recap.action.grid')}
                 </button>
               ))}
             </div>
             {/* Angle cycler — only meaningful for hero style with multiple angles */}
             {generated.style === 'hero' && angles.length > 1 && (
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="text-[11px] uppercase tracking-wider text-zinc-500">Different angle:</span>
+                <span className="text-[11px] uppercase tracking-wider text-zinc-500">{t('recap.action.differentAngle')}</span>
                 {angles.map((angle) => (
                   <button
                     key={angle}
@@ -299,7 +317,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
                         : 'border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-100'
                     }`}
                   >
-                    {ANGLE_LABELS[angle]}
+                    {t(ANGLE_LABEL_KEYS[angle])}
                   </button>
                 ))}
                 <button
@@ -307,26 +325,26 @@ export function RecapShareButton({ today, weekly, monthly, compact = false, peri
                   onClick={cycleAngle}
                   className="ml-auto rounded-md border border-zinc-700 px-2 py-1 text-[11px] text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
                 >
-                  Cycle ↻
+                  {t('recap.action.cycle')}
                 </button>
               </div>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={copyImage} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
-                Copy image
+                {t('recap.action.copyImage')}
               </button>
               <button type="button" onClick={() => saveImage('landscape')} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
-                Save 1200x675
+                {t('recap.action.save', { size: '1200x675' })}
               </button>
               <button type="button" onClick={() => saveImage('square')} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
-                Save 1080x1080
+                {t('recap.action.save', { size: '1080x1080' })}
               </button>
               <button
                 type="button"
                 onClick={shareImage}
                 className="rounded-md border border-violet-500/40 bg-violet-500/10 px-3 py-1.5 text-xs text-violet-100 hover:bg-violet-500/20"
               >
-                {nativeShareSupported ? 'Share' : 'Download'}
+                {nativeShareSupported ? t('recap.action.share') : t('recap.action.download')}
               </button>
             </div>
           </div>
