@@ -125,6 +125,22 @@ test('recap renderer grid style outputs four metric cells with labels', () => {
   assert.match(svg, /<path d="M/);
 });
 
+test('recap renderer formats billion-scale tokens with B in zh grid cards', () => {
+  const svg = renderRecapSvg(card({
+    totalTokens: {
+      input: 2_000_000_000,
+      cacheCreation: 3_000_000_000,
+      cacheRead: 6_000_000_000,
+      output: 761_000_000,
+      codex: 0,
+      total: 11_761_000_000,
+    },
+  }), 'landscape', { style: 'grid', locale: 'zh' });
+
+  assert.match(svg, /11\.8B/);
+  assert.doesNotMatch(svg, /11761M/);
+});
+
 test('recap renderer grid style works in landscape with the same labels', () => {
   const svg = renderRecapSvg(card(), 'landscape', { style: 'grid', locale: 'en' });
   assert.match(svg, /width="1200" height="675"/);

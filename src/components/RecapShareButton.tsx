@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { RecapCardData, RecapHeroKind, RecapPeriod, RecapStyle, RecapVariant } from '@/lib/recap-card';
-import { availableHeroAngles, recapDimensions, renderRecapSvg } from '@/lib/recap-card-render';
+import { DEFAULT_RECAP_STYLE, availableHeroAngles, recapDimensions, renderRecapSvg } from '@/lib/recap-card-render';
 import { useLocale, useT } from '@/lib/i18n/client';
 import type { Locale } from '@/lib/i18n';
 
@@ -104,7 +104,7 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
   // Default to the natural sharing cadence ('7d'); Dashboard can also pin the
   // card to its current filter and bypass the local period picker entirely.
   const [internalPeriod, setInternalPeriod] = useState<RecapPeriod>('7d');
-  const [style, setStyle] = useState<RecapStyle>('hero');
+  const [style, setStyle] = useState<RecapStyle>(DEFAULT_RECAP_STYLE);
   const [status, setStatus] = useState<Status>('idle');
   const [generated, setGenerated] = useState<GeneratedCards | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -128,6 +128,27 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
   }, []);
 
   useEffect(() => () => revoke(generated), [generated]);
+
+  useEffect(() => {
+    if (!generated || status !== 'ready') return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      revoke(generated);
+      setGenerated(null);
+      setStatus('idle');
+      setMessage(null);
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [generated, status]);
+
+  function closePreview() {
+    revoke(generated);
+    setGenerated(null);
+    setStatus('idle');
+    setMessage(null);
+  }
 
   function selectPeriod(next: RecapPeriod) {
     if (next === period) return;
@@ -272,7 +293,7 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
               </div>
               <button
                 type="button"
-                onClick={() => { revoke(generated); setGenerated(null); setStatus('idle'); setMessage(null); }}
+                onClick={closePreview}
                 className="rounded-md border border-zinc-700 px-2 py-1 text-xs text-zinc-400 hover:border-zinc-500 hover:text-zinc-100"
               >
                 {t('recap.action.close')}
