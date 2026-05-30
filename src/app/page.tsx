@@ -180,6 +180,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   let runwayContextPct: number | null = null;
   let runwayWeekly: number | null = null;
   let runwayWindow5h: { usedPct: number | null; resetAt: number | null; label?: string | null } | null = null;
+  // Per-agent 5h windows so the dashboard can show the *selected* agent's
+  // figure instead of always the most-pressured `primary`. The user may run
+  // several agents at once, so "active agent" is ambiguous — the tab is the
+  // only reliable signal of which one they're asking about.
+  const runwayWindow5hByAgent: Record<string, { usedPct: number | null; resetAt: number | null; label?: string | null }> = {};
   let floatStats: Awaited<ReturnType<typeof getFloatStats>> | null = null;
   // API mode detection: Claude API-key users have cost data but no rate_limits.
   // When detected we swap the runway card to show $ spent today / 7d instead
@@ -209,6 +214,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         usedPct: floatStats.primary.used5h ?? (floatStats.primary.remaining5h != null ? 100 - floatStats.primary.remaining5h : null),
         resetAt: floatStats.primary.resetAt5h,
         label: floatStats.primary.label,
+      };
+    }
+    for (const q of floatStats.quotas) {
+      runwayWindow5hByAgent[q.agent] = {
+        usedPct: q.used5h ?? (q.remaining5h != null ? 100 - q.remaining5h : null),
+        resetAt: q.resetAt5h,
+        label: q.label,
       };
     }
     // Claude API-mode detection: a Claude quota exists but has no rate-limit
@@ -348,6 +360,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
             contextPct: runwayContextPct,
             weeklyRemaining: runwayWeekly,
             window5h: runwayWindow5h,
+            window5hByAgent: runwayWindow5hByAgent,
             apiMode: runwayApiMode,
           }}
           initialProjectFilter={initialProject}
