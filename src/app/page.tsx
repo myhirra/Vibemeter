@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { Dashboard } from '@/components/Dashboard';
 import Link from 'next/link';
-import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight } from '@/lib/stats';
+import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight, costByProject } from '@/lib/stats';
 import { commitCountsBySession } from '@/lib/git/scan';
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
@@ -265,11 +265,13 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // while hiding which repos they came from.
   const hotspotsList = fileHotspots(8);
   const insight = sessionInsight();
+  const projectCosts = costByProject();
   const recapSettings = readRecapSettings();
   const recapCards = buildRecapCardsByScope(recapSettings);
   let redactedTimeline = timeline;
   let redactedHotspots = hotspotsList;
   let redactedInsight = insight;
+  let redactedProjectCosts = projectCosts;
   let redactedRecapCards = recapCards;
   if (redact) {
     redactedTimeline = {
@@ -307,6 +309,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         };
       }),
     };
+    // Cost-by-project carries real basenames; mask them the same way. The `—`
+    // placeholder for unknown-project sessions is left as-is (nothing to leak).
+    redactedProjectCosts = projectCosts.map((p) => ({
+      ...p,
+      project: p.project === '—' ? p.project : redactProject(p.project, redactSalt),
+    }));
     redactedRecapCards = redactRecapCardsByScope(recapCards, redactSalt);
   }
 
@@ -349,6 +357,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           timeline={redactedTimeline}
           achievements={achievements()}
           insight={redactedInsight}
+          projectCosts={redactedProjectCosts}
           recapCards={redactedRecapCards}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}

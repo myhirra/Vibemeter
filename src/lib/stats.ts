@@ -1,4 +1,5 @@
 import { getDb } from './db';
+import { groupCostByProject, type ProjectCost, type ProjectCostContribution } from './cost-attribution';
 import type { RecapToolFilter } from './recap-card';
 
 export interface ToolSplit {
@@ -259,6 +260,70 @@ export function spendingStats(): SpendingStats {
   }
 
   return { claudeTotalUsd: claudeTotal, codexTotalTokens: codexTotal, daily };
+}
+
+// ── per-project cost attribution ───────────────────────────────────────────
+// The pure fold + types live in cost-attribution.ts (no DB) so they're
+// directly unit-testable; this file owns only the DB query that feeds them.
+
+export type { ProjectCost, ProjectCostContribution } from './cost-attribution';
+export { groupCostByProject } from './cost-attribution';
+
+function projectBasename(cwd: string | null): string {
+  if (!cwd) return '—';
+  return cwd.split('/').filter(Boolean).pop() ?? '—';
+}
+
+/**
+ * Per-project API-equivalent spend over an optional window. Claude cost is the
+ * per-session max `cost.total_cost_usd` from statusline snapshots; Codex cost is
+ * tokens × the blended rate. One row per session feeds `groupCostByProject`.
+ */
+export function costByProject(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): ProjectCost[] {
+  const db = getDb();
+
+  const claudeRows = db.prepare(`
+    SELECT s.cwd AS cwd,
+           (SELECT MAX(CAST(json_extract(us.raw_output, '$.cost.total_cost_usd') AS REAL))
+              FROM usage_snapshots us
+              WHERE us.source = 'statusline'
+                AND json_extract(us.raw_output, '$.session_id') = s.id) AS cost_usd
+    FROM sessions s
+    WHERE s.tool = 'claude-code'
+      AND s.cwd IS NOT NULL
+      AND s.started_at >= ? AND s.started_at < ?
+  `).all(startMs, endMs) as { cwd: string | null; cost_usd: number | null }[];
+
+  const codexRows = db.prepare(`
+    SELECT s.cwd AS cwd,
+           COALESCE(
+             s.tokens_used,
+             COALESCE(s.input_tokens, 0)
+             + COALESCE(s.cache_creation_tokens, 0)
+             + COALESCE(s.cache_read_tokens, 0)
+             + COALESCE(s.output_tokens, 0)
+           ) AS tokens
+    FROM sessions s
+    WHERE s.tool = 'codex'
+      AND s.cwd IS NOT NULL
+      AND s.started_at >= ? AND s.started_at < ?
+  `).all(startMs, endMs) as { cwd: string | null; tokens: number | null }[];
+
+  const contributions: ProjectCostContribution[] = [];
+  for (const r of claudeRows) {
+    if (r.cost_usd == null || r.cost_usd <= 0) continue;
+    contributions.push({ project: projectBasename(r.cwd), claudeUsd: r.cost_usd, codexUsd: 0 });
+  }
+  for (const r of codexRows) {
+    const tokens = r.tokens ?? 0;
+    if (tokens <= 0) continue;
+    contributions.push({
+      project: projectBasename(r.cwd),
+      claudeUsd: 0,
+      codexUsd: (tokens * CODEX_BLENDED_USD_PER_MILLION) / 1_000_000,
+    });
+  }
+  return groupCostByProject(contributions);
 }
 
 export interface TimelineSession {

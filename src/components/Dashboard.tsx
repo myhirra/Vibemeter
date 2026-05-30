@@ -14,7 +14,8 @@ import { AchievementsCard } from './AchievementsCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
 import type { SessionEntry } from './SessionsTable';
-import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight } from '@/lib/stats';
+import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight, ProjectCost } from '@/lib/stats';
+import { ProjectCostCard } from './ProjectCostCard';
 import type { GuardDecision } from '@/lib/quota-guard';
 import type { RecapCardsByScope, RecapToolFilter } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
@@ -49,6 +50,7 @@ interface Props {
   timeline: { dateLabel: string; sessions: TimelineSession[] };
   achievements: Achievement[];
   insight: SessionInsight;
+  projectCosts: ProjectCost[];
   recapCards: RecapCardsByScope;
   runway: {
     guard: GuardDecision;
@@ -151,6 +153,7 @@ export function Dashboard({
   timeline,
   achievements,
   insight,
+  projectCosts,
   recapCards,
   runway,
   initialProjectFilter,
@@ -505,6 +508,12 @@ export function Dashboard({
       <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
         <ProjectLeaderboard sessions={filteredSessions} />
         <ToolSplitCard data={filteredToolSplit} />
+      </div>
+
+      {/* Cost by project — "where did my $ go", the cost-audit question the
+          time-based leaderboard above can't answer. */}
+      <div className="mb-4">
+        <ProjectCostCard projects={projectCosts} />
       </div>
 
       {/* Lower-priority: achievements + heatmap come after the runway, ROI,
