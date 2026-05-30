@@ -1,6 +1,8 @@
 import type { RecapCardData, RecapHeroKind, RecapStyle, RecapVariant } from './recap-card';
 import { DEFAULT_LOCALE, type Locale } from './i18n/types';
 
+export const DEFAULT_RECAP_STYLE: RecapStyle = 'grid';
+
 export interface RecapDimensions {
   width: number;
   height: number;
@@ -58,11 +60,7 @@ function compact(value: number): string {
   return String(Math.round(value));
 }
 
-function compactTokens(value: number, locale: Locale): string {
-  if (locale === 'zh' && value >= 1_000_000) {
-    const millions = value / 1_000_000;
-    return `${millions >= 100 ? millions.toFixed(0) : millions.toFixed(1)}M`;
-  }
+function compactTokens(value: number): string {
   return compact(value);
 }
 
@@ -203,8 +201,8 @@ function heroDisplay(card: RecapCardData, hero: RecapHeroKind, locale: Locale): 
     return {
       big: `${card.cacheHitRatePct}%`,
       subline: locale === 'zh'
-        ? `来自缓存    复读节省 ${compactTokens(card.cacheSummary.inputTokensSaved, locale)} tokens`
-        : `served from cache    ${compactTokens(card.cacheSummary.inputTokensSaved, locale)} tokens saved from re-reads`,
+        ? `来自缓存    复读节省 ${compactTokens(card.cacheSummary.inputTokensSaved)} tokens`
+        : `served from cache    ${compactTokens(card.cacheSummary.inputTokensSaved)} tokens saved from re-reads`,
       accent: '#34d399',
     };
   }
@@ -219,7 +217,7 @@ function heroDisplay(card: RecapCardData, hero: RecapHeroKind, locale: Locale): 
   }
   if (hero === 'tokens' && card.totalTokens.total > 0) {
     return {
-      big: compactTokens(card.totalTokens.total, locale),
+      big: compactTokens(card.totalTokens.total),
       subline: locale === 'zh'
         ? `Token 消耗量 · ${toolName(card, locale)}`
         : `token usage · ${toolName(card, locale)}`,
@@ -230,7 +228,7 @@ function heroDisplay(card: RecapCardData, hero: RecapHeroKind, locale: Locale): 
     // roi fallback when subscription wasn't set: show $ value
     return {
       big: money(card.valueAtApiRatesUsd),
-      subline: `${compactTokens(card.totalTokens.total, locale)} tokens · ${valueCoverage(locale)}`,
+      subline: `${compactTokens(card.totalTokens.total)} tokens · ${valueCoverage(locale)}`,
       accent: '#f4f4f5',
     };
   }
@@ -324,7 +322,7 @@ export function renderRecapSvg(
   const taglineText = tagline(card, hero, locale);
 
   const tokenMetric = {
-    value: compactTokens(card.totalTokens.total, locale),
+    value: compactTokens(card.totalTokens.total),
     label: locale === 'zh' ? 'TOKEN 消耗量' : 'TOKENS',
     color: '#a78bfa',
     className: 'metric-value',
@@ -447,7 +445,7 @@ interface GridCell {
 
 function gridCellsFor(card: RecapCardData, locale: Locale): GridCell[] {
   const valueStr = money(card.valueAtApiRatesUsd);
-  const tokensStr = compactTokens(card.totalTokens.total, locale);
+  const tokensStr = compactTokens(card.totalTokens.total);
   const cacheStr = card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—';
   const sessionsStr = card.totalSessions > 0 ? String(card.totalSessions) : '—';
   // Mark the VALUE label when Codex (a blended estimate) contributes — the

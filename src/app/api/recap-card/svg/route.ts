@@ -1,7 +1,7 @@
-import { buildRecapCard, type RecapCardData, type RecapHeroKind, type RecapPeriod, type RecapToolFilter, type RecapVariant } from '@/lib/recap-card';
+import { buildRecapCard, type RecapCardData, type RecapHeroKind, type RecapPeriod, type RecapStyle, type RecapToolFilter, type RecapVariant } from '@/lib/recap-card';
 import { importUsageSnapshots } from '@/lib/collectors/session-importer';
 import { readRecapSettings } from '@/lib/recap-settings';
-import { renderRecapSvg } from '@/lib/recap-card-render';
+import { DEFAULT_RECAP_STYLE, renderRecapSvg } from '@/lib/recap-card-render';
 import { getRedactSalt, isRedactEnabled } from '@/lib/redact-server';
 import { redactProject } from '@/lib/redact';
 import { getServerLocale } from '@/lib/i18n/server';
@@ -31,6 +31,12 @@ function parseHero(value: string | null): RecapHeroKind | undefined {
   return undefined;
 }
 
+function parseStyle(value: string | null): RecapStyle {
+  if (value === 'hero') return 'hero';
+  if (value === 'grid') return 'grid';
+  return DEFAULT_RECAP_STYLE;
+}
+
 function maybeRedact(card: RecapCardData, redact: boolean, salt: string): RecapCardData {
   if (!redact) return card;
   return {
@@ -56,10 +62,11 @@ export async function GET(request: Request) {
   const tool = parseTool(url.searchParams.get('tool'));
   const variant = parseVariant(url.searchParams.get('variant'));
   const heroOverride = parseHero(url.searchParams.get('hero'));
+  const style = parseStyle(url.searchParams.get('style'));
   const redact = await isRedactEnabled();
   const locale = await getServerLocale();
   const card = buildRecapCard({ period, tool, settings: readRecapSettings() });
-  const svg = renderRecapSvg(maybeRedact(card, redact, redact ? getRedactSalt() : ''), variant, { heroOverride, locale });
+  const svg = renderRecapSvg(maybeRedact(card, redact, redact ? getRedactSalt() : ''), variant, { heroOverride, style, locale });
   return new Response(svg, {
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
