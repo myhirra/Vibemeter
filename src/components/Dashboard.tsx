@@ -55,6 +55,7 @@ interface Props {
     contextPct: number | null;
     weeklyRemaining: number | null;
     window5h: { usedPct: number | null; resetAt: number | null; label?: string | null } | null;
+    window5hByAgent?: Record<string, { usedPct: number | null; resetAt: number | null; label?: string | null }>;
     apiMode: { costToday: number; cost7d: number } | null;
   };
   /**
@@ -297,7 +298,14 @@ export function Dashboard({
           guard={runway.guard}
           contextPct={runway.contextPct}
           weeklyRemaining={runway.weeklyRemaining}
-          window5h={runway.window5h}
+          window5h={
+            // On a specific agent tab, show that agent's own 5h window so the
+            // number matches the selected filter. "全部" keeps the
+            // most-pressured `primary` window as the headline figure.
+            toolFilter === 'all'
+              ? runway.window5h
+              : (runway.window5hByAgent?.[toolFilter] ?? null)
+          }
           apiMode={runway.apiMode}
         />
       </div>
