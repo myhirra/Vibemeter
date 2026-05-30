@@ -10,7 +10,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, unlinkSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -183,6 +183,11 @@ function macStatus() {
 const APP_BUNDLE = join(DATA_DIR, 'Vibemeter.app');
 const APP_BINARY = join(APP_BUNDLE, 'Contents', 'MacOS', 'Vibemeter');
 const APP_INFO_PLIST = join(APP_BUNDLE, 'Contents', 'Info.plist');
+const APP_RESOURCES_DIR = join(APP_BUNDLE, 'Contents', 'Resources');
+const APP_ICON_SOURCE = join(__dirname, 'Vibemeter.icns');
+const APP_ICON_FILE = join(APP_RESOURCES_DIR, 'Vibemeter.icns');
+const INSTALLED_APP_DEFAULT = '/Applications/Vibemeter.app';
+const BUNDLE_ID = 'com.hirra.vibemeter';
 
 function infoPlistXml() {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -193,6 +198,8 @@ function infoPlistXml() {
   <key>CFBundleDisplayName</key><string>Vibemeter</string>
   <key>CFBundleIdentifier</key><string>com.hirra.vibemeter</string>
   <key>CFBundleExecutable</key><string>Vibemeter</string>
+  <key>CFBundleIconFile</key><string>Vibemeter</string>
+  <key>CFBundleIconName</key><string>Vibemeter</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleVersion</key><string>1</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
@@ -223,6 +230,34 @@ function hasCurrentMacArchitecture() {
   return archs.includes(currentMacBinaryArch());
 }
 
+function appInfoPlistHasIcon() {
+  if (!existsSync(APP_INFO_PLIST)) return false;
+  try {
+    const body = readFileSync(APP_INFO_PLIST, 'utf8');
+    return body.includes('<key>CFBundleIconFile</key>') && body.includes('<string>Vibemeter</string>');
+  } catch {
+    return false;
+  }
+}
+
+function appIconNeedsRefresh() {
+  if (!existsSync(APP_ICON_FILE)) return true;
+  if (!existsSync(APP_ICON_SOURCE)) return false;
+  return statSync(APP_ICON_FILE).mtimeMs < statSync(APP_ICON_SOURCE).mtimeMs;
+}
+
+function ensureFloatAppIcon() {
+  if (!existsSync(APP_ICON_SOURCE)) {
+    console.error(`Vibemeter: macOS app icon missing: ${APP_ICON_SOURCE}`);
+    return false;
+  }
+  mkdirSync(APP_RESOURCES_DIR, { recursive: true });
+  if (appIconNeedsRefresh()) {
+    copyFileSync(APP_ICON_SOURCE, APP_ICON_FILE);
+  }
+  return true;
+}
+
 function compileFloatBinary() {
   const arch = currentMacBinaryArch();
   const target = `${arch}-apple-macos11.0`;
@@ -242,17 +277,25 @@ function resolveFloatBinary() {
   const stale = !existsSync(APP_BINARY)
     || statSync(APP_BINARY).mtimeMs < statSync(FLOAT_SWIFT).mtimeMs
     || !existsSync(APP_INFO_PLIST)
+    || !appInfoPlistHasIcon()
+    || appIconNeedsRefresh()
     || !hasCurrentMacArchitecture();
   if (!stale && existsSync(APP_INFO_PLIST)) return APP_BINARY;
 
   mkdirSync(dirname(APP_BINARY), { recursive: true });
   writeFileSync(APP_INFO_PLIST, infoPlistXml());
-  return compileFloatBinary() ? APP_BINARY : null;
+  ensureFloatAppIcon();
+  if (!compileFloatBinary()) return null;
+  syncInstalledCopy();
+  return APP_BINARY;
 }
 
-// macOS-only: surface ~/.vibemeter/Vibemeter.app under /Applications so the
-// floater shows up in Spotlight / Launchpad / Finder. Symlink so swiftc
-// rebuilds from notify-installer pick up automatically.
+// macOS-only: copy ~/.vibemeter/Vibemeter.app into /Applications so Spotlight,
+// Launchpad, and Finder search find it. We use a real copy (not a symlink)
+// because Spotlight's indexer doesn't reliably traverse symlinked .app bundles
+// — users would install Vibemeter and still not find it via Cmd+Space. To
+// keep the copy fresh after swiftc rebuilds, `resolveFloatBinary()` calls
+// `syncInstalledCopy()` whenever it recompiles.
 function installApp(args) {
   if (platform() !== 'darwin') {
     console.error('install-app is macOS-only.');
@@ -269,8 +312,8 @@ function installApp(args) {
       console.log(`Nothing at ${dest}.`);
       return;
     }
-    if (!pointsToOurBundle(dest) && !force) {
-      console.error(`${dest} is not a Vibemeter symlink — refusing to remove without --force.`);
+    if (!isOurInstalledApp(dest) && !force) {
+      console.error(`${dest} is not a Vibemeter install — refusing to remove without --force.`);
       process.exit(1);
     }
     rmSync(dest, { recursive: true, force: true });
@@ -285,13 +328,8 @@ function installApp(args) {
   }
 
   if (existsSync(dest) || isBrokenSymlink(dest)) {
-    if (pointsToOurBundle(dest)) {
-      console.log(`Already installed: ${dest} → ${APP_BUNDLE}`);
-      refreshLaunchServices(dest);
-      return;
-    }
-    const otherId = readBundleId(dest);
-    if (!force) {
+    if (!isOurInstalledApp(dest) && !force) {
+      const otherId = readBundleId(dest);
       console.error(`${dest} already exists (CFBundleIdentifier=${otherId ?? 'unknown'}).`);
       console.error(`Pass --force to replace it, or use --name "Vibemeter Float.app" to install under a different name.`);
       process.exit(1);
@@ -299,21 +337,51 @@ function installApp(args) {
     rmSync(dest, { recursive: true, force: true });
   }
 
-  symlinkSync(APP_BUNDLE, dest);
+  if (!copyBundle(APP_BUNDLE, dest)) {
+    process.exit(1);
+  }
   refreshLaunchServices(dest);
-  console.log(`✓ Installed ${dest} → ${APP_BUNDLE}`);
+  console.log(`✓ Installed ${dest}`);
   console.log('  Spotlight / Launchpad should pick it up within a few seconds.');
   console.log('  Remove with: vibemeter install-app --uninstall');
+}
+
+// Use macOS's `ditto` for .app copies — it preserves bundle metadata and
+// extended attributes that a recursive `cp` can drop, which Launch Services
+// occasionally cares about.
+function copyBundle(src, dest) {
+  mkdirSync(dirname(dest), { recursive: true });
+  const result = spawnSync('/usr/bin/ditto', [src, dest], { stdio: 'inherit' });
+  if (result.status === 0) return true;
+  console.error(`Failed to copy ${src} → ${dest} (ditto exit ${result.status}).`);
+  return false;
+}
+
+// Refresh /Applications/Vibemeter.app after a swiftc rebuild so users
+// launching from Spotlight don't get a stale binary.
+function syncInstalledCopy() {
+  if (platform() !== 'darwin') return;
+  const dest = INSTALLED_APP_DEFAULT;
+  if (!isOurInstalledApp(dest)) return;
+  rmSync(dest, { recursive: true, force: true });
+  if (copyBundle(APP_BUNDLE, dest)) {
+    refreshLaunchServices(dest);
+  }
 }
 
 function isBrokenSymlink(p) {
   try { lstatSync(p); return true; } catch { return false; }
 }
 
-function pointsToOurBundle(p) {
+// True if `p` is a Vibemeter install we own: either the legacy symlink
+// (pre-0.2.x) pointing at APP_BUNDLE, or a real copy carrying our bundle id.
+function isOurInstalledApp(p) {
   try {
-    if (!lstatSync(p).isSymbolicLink()) return false;
-    return readlinkSync(p) === APP_BUNDLE;
+    const st = lstatSync(p);
+    if (st.isSymbolicLink()) {
+      return readlinkSync(p) === APP_BUNDLE;
+    }
+    return readBundleId(p) === BUNDLE_ID;
   } catch { return false; }
 }
 
@@ -738,11 +806,55 @@ function uninstallClaudeHooks() {
 }
 
 function codexNotifyLine(locale = 'zh', soundMode = 'voice') {
+  return `notify = ${JSON.stringify(codexNotifyArgs(locale, soundMode))}`;
+}
+
+function codexNotifyArgs(locale = 'zh', soundMode = 'voice') {
   // Codex's notify config is an exec array — locale prefix needs a sh -c wrapper.
   const envPrefix = soundMode === 'voice'
     ? `VIBEMETER_NOTIFY_LOCALE=${locale}`
     : `VIBEMETER_NOTIFY_LOCALE=${locale} VIBEMETER_NOTIFY_SOUND_MODE=${soundMode}`;
-  return `notify = ["sh", "-c", ${JSON.stringify(`${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`)}]`;
+  return ['sh', '-c', `${envPrefix} ${NOTIFY_SCRIPT.replace(/'/g, `'\\''`)} Codex complete`];
+}
+
+function parseCodexNotifyArgs(line) {
+  const match = line.match(/^\s*notify\s*=\s*(\[[\s\S]*\])\s*$/);
+  if (!match) return null;
+  try {
+    const parsed = JSON.parse(match[1]);
+    if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === 'string')) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function updateCodexNotifyLine(line, locale = 'zh', soundMode = 'voice') {
+  if (!line.includes(HOOK_MARKER)) return null;
+  const args = parseCodexNotifyArgs(line);
+  if (args) {
+    const previousNotifyIndex = args.indexOf('--previous-notify');
+    const previousNotify = args[previousNotifyIndex + 1];
+    if (previousNotifyIndex >= 0 && typeof previousNotify === 'string' && previousNotify.includes(HOOK_MARKER)) {
+      args[previousNotifyIndex + 1] = JSON.stringify(codexNotifyArgs(locale, soundMode));
+      return `notify = ${JSON.stringify(args)}`;
+    }
+  }
+  return codexNotifyLine(locale, soundMode);
+}
+
+function stripVibemeterFromCodexNotifyLine(line) {
+  if (!line.includes(HOOK_MARKER)) return undefined;
+  const args = parseCodexNotifyArgs(line);
+  if (args) {
+    const previousNotifyIndex = args.indexOf('--previous-notify');
+    const previousNotify = args[previousNotifyIndex + 1];
+    if (previousNotifyIndex >= 0 && typeof previousNotify === 'string' && previousNotify.includes(HOOK_MARKER)) {
+      args.splice(previousNotifyIndex, 2);
+      return `notify = ${JSON.stringify(args)}`;
+    }
+  }
+  return null;
 }
 
 function installCodexNotify(locale = 'zh', soundMode = 'voice') {
@@ -760,11 +872,12 @@ function installCodexNotify(locale = 'zh', soundMode = 'voice') {
   }
   const want = codexNotifyLine(locale, soundMode);
   if (notifyIndex >= 0) {
-    if (lines[notifyIndex].trim() === want) return { changed: false, backup: null };
-    if (!lines[notifyIndex].includes(HOOK_MARKER)) {
+    const updated = updateCodexNotifyLine(lines[notifyIndex], locale, soundMode);
+    if (lines[notifyIndex].trim() === want || lines[notifyIndex] === updated) return { changed: false, backup: null };
+    if (!updated) {
       return { changed: false, backup: null, skipped: 'foreign-notify', existing: lines[notifyIndex] };
     }
-    lines[notifyIndex] = want;
+    lines[notifyIndex] = updated;
   } else {
     // Insert before the first [section] header, or at the top if none.
     let insertAt = lines.findIndex((l) => /^\s*\[/.test(l));
@@ -783,8 +896,11 @@ function uninstallCodexNotify() {
   let removed = false;
   for (let i = 0; i < lines.length; i++) {
     if (/^\s*\[/.test(lines[i])) break;
-    if (/^\s*notify\s*=/.test(lines[i]) && lines[i].includes(HOOK_MARKER)) {
-      lines.splice(i, 1);
+    if (/^\s*notify\s*=/.test(lines[i])) {
+      const stripped = stripVibemeterFromCodexNotifyLine(lines[i]);
+      if (stripped === undefined) continue;
+      if (stripped === null) lines.splice(i, 1);
+      else lines[i] = stripped;
       removed = true;
       break;
     }
@@ -934,7 +1050,7 @@ Usage:
   vibemeter notify-install   wire Vibemeter into Claude Code + Codex
   vibemeter notify-uninstall remove Vibemeter from Claude Code + Codex
   vibemeter notify-status    show which voice hooks are installed
-  vibemeter install-app      symlink ~/.vibemeter/Vibemeter.app → /Applications (macOS)
+  vibemeter install-app      copy ~/.vibemeter/Vibemeter.app into /Applications (macOS)
   vibemeter help             this message
 
 Environment:

@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { Dashboard } from '@/components/Dashboard';
 import Link from 'next/link';
-import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight, cacheStats } from '@/lib/stats';
+import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight } from '@/lib/stats';
 import { commitCountsBySession } from '@/lib/git/scan';
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
@@ -18,9 +18,9 @@ import { getFloatStats } from '@/lib/float-stats';
 import { decideQuotaGuard } from '@/lib/quota-guard';
 import { DEMO_PROJECTS, DEMO_TITLES, deterministicBucket, redactProject, redactSession } from '@/lib/redact';
 import { getRedactSalt, isRedactEnabled } from '@/lib/redact-server';
-import { buildRecapCard, type RecapCardData } from '@/lib/recap-card';
+import { buildRecapCard, type RecapCardData, type RecapCardsByScope, type RecapDateFilter, type RecapToolFilter } from '@/lib/recap-card';
 import { readRecapSettings } from '@/lib/recap-settings';
-import { evaluateRecapNudge, readActiveRecapNudge } from '@/lib/recap-nudge';
+import { evaluateRecapNudge } from '@/lib/recap-nudge';
 
 /**
  * Demo path masking — used when `?demo=1` is on so the marketing screenshot
@@ -78,10 +78,41 @@ function redactRecap(card: RecapCardData, salt: string): RecapCardData {
       ...p,
       project: redactProject(p.project, salt),
     })),
+    cacheSummary: {
+      ...card.cacheSummary,
+      topProjects: card.cacheSummary.topProjects.map((p) => ({
+        ...p,
+        project: redactProject(p.project, salt),
+      })),
+    },
   };
 }
 
 const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor']);
+const RECAP_PERIODS: RecapDateFilter[] = ['today', '7d', '30d', 'all'];
+const RECAP_TOOLS: RecapToolFilter[] = ['all', 'claude-code', 'codex', 'cursor'];
+
+function buildRecapCardsByScope(settings: Parameters<typeof buildRecapCard>[0]['settings']): RecapCardsByScope {
+  const out = {} as RecapCardsByScope;
+  for (const tool of RECAP_TOOLS) {
+    out[tool] = {} as RecapCardsByScope[RecapToolFilter];
+    for (const period of RECAP_PERIODS) {
+      out[tool][period] = buildRecapCard({ period, tool, settings });
+    }
+  }
+  return out;
+}
+
+function redactRecapCardsByScope(cards: RecapCardsByScope, salt: string): RecapCardsByScope {
+  const out = {} as RecapCardsByScope;
+  for (const tool of RECAP_TOOLS) {
+    out[tool] = {} as RecapCardsByScope[RecapToolFilter];
+    for (const period of RECAP_PERIODS) {
+      out[tool][period] = redactRecap(cards[tool][period], salt);
+    }
+  }
+  return out;
+}
 
 export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ demo?: string; agent?: string; codexAccount?: string; project?: string; focus?: string }> }) {
   if (process.env.VIBEMETER_SITE === 'marketing') {
@@ -148,7 +179,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   let runwayGuard: ReturnType<typeof decideQuotaGuard>;
   let runwayContextPct: number | null = null;
   let runwayWeekly: number | null = null;
-  let runwayWindow5h: { usedPct: number | null; resetAt: number | null } | null = null;
+  let runwayWindow5h: { usedPct: number | null; resetAt: number | null; label?: string | null } | null = null;
   let floatStats: Awaited<ReturnType<typeof getFloatStats>> | null = null;
   // API mode detection: Claude API-key users have cost data but no rate_limits.
   // When detected we swap the runway card to show $ spent today / 7d instead
@@ -167,7 +198,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       generatedAt: demoNow,
       quotas: [],
     };
-    runwayWindow5h = { usedPct: 18, resetAt: demoNow + 90 * 60_000 };
+    runwayWindow5h = { usedPct: 18, resetAt: demoNow + 90 * 60_000, label: 'Claude' };
   } else {
     floatStats = await getFloatStats();
     runwayGuard = decideQuotaGuard({ generatedAt: floatStats.generatedAt, quotas: floatStats.quotas });
@@ -177,6 +208,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       runwayWindow5h = {
         usedPct: floatStats.primary.used5h ?? (floatStats.primary.remaining5h != null ? 100 - floatStats.primary.remaining5h : null),
         resetAt: floatStats.primary.resetAt5h,
+        label: floatStats.primary.label,
       };
     }
     // Claude API-mode detection: a Claude quota exists but has no rate-limit
@@ -221,18 +253,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   // while hiding which repos they came from.
   const hotspotsList = fileHotspots(8);
   const insight = sessionInsight();
-  const cache = cacheStats();
   const recapSettings = readRecapSettings();
-  const recapCards = {
-    today: buildRecapCard({ period: 'today', settings: recapSettings }),
-    weekly: buildRecapCard({ period: '7d', settings: recapSettings }),
-    monthly: buildRecapCard({ period: 'month', settings: recapSettings }),
-  };
-  const recapNudge = readActiveRecapNudge();
+  const recapCards = buildRecapCardsByScope(recapSettings);
   let redactedTimeline = timeline;
   let redactedHotspots = hotspotsList;
   let redactedInsight = insight;
-  let redactedCache = cache;
   let redactedRecapCards = recapCards;
   if (redact) {
     redactedTimeline = {
@@ -270,42 +295,20 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         };
       }),
     };
-    redactedCache = {
-      ...cache,
-      topProjects: cache.topProjects.map((p) => ({
-        ...p,
-        project: redactProject(p.project, redactSalt),
-      })),
-      worstSessions: cache.worstSessions.map((s) => {
-        const maskedProject = redactProject(s.project, redactSalt);
-        return {
-          ...s,
-          project: maskedProject,
-          aiTitle: s.aiTitle
-            ? DEMO_TITLES[deterministicBucket(s.id, redactSalt) % DEMO_TITLES.length]
-            : null,
-          transcriptPath: null,
-        };
-      }),
-    };
-    redactedRecapCards = {
-      today: redactRecap(recapCards.today, redactSalt),
-      weekly: redactRecap(recapCards.weekly, redactSalt),
-      monthly: redactRecap(recapCards.monthly, redactSalt),
-    };
+    redactedRecapCards = redactRecapCardsByScope(recapCards, redactSalt);
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-mono">
-      <div className="max-w-6xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-start justify-between gap-4">
+    <div className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100 font-mono">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
               <span className="text-violet-400">Vibe</span>meter
             </h1>
             <p className="text-zinc-600 text-xs mt-1">{t(locale, 'header.tagline')}</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="grid w-full grid-cols-3 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center sm:justify-end">
             <OpenFloatButton />
             <DashboardPricingLink label={t(locale, 'pricing.headerLink')} />
             <LocaleSwitcher />
@@ -331,13 +334,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           claudeBurndown={burndownPoints(168, 'statusline')}
           codexBurndown={burndownPoints(168, 'codex', selectedCodexAccountId)}
           hotspots={redactedHotspots}
-          spending={spendingStats()}
           timeline={redactedTimeline}
           achievements={achievements()}
           insight={redactedInsight}
-          cache={redactedCache}
           recapCards={redactedRecapCards}
-          recapNudge={recapNudge}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}
           codexAccounts={codexAccounts}

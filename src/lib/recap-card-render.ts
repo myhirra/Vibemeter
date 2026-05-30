@@ -1,4 +1,5 @@
 import type { RecapCardData, RecapHeroKind, RecapStyle, RecapVariant } from './recap-card';
+import { DEFAULT_LOCALE, type Locale } from './i18n/types';
 
 export interface RecapDimensions {
   width: number;
@@ -20,6 +21,7 @@ export interface RecapRenderOptions {
    * screenshot-shareable.
    */
   style?: RecapStyle;
+  locale?: Locale;
 }
 
 export function recapDimensions(variant: RecapVariant): RecapDimensions {
@@ -56,9 +58,21 @@ function compact(value: number): string {
   return String(Math.round(value));
 }
 
-function duration(ms: number): string {
+function compactTokens(value: number, locale: Locale): string {
+  if (locale === 'zh' && value >= 1_000_000) {
+    const millions = value / 1_000_000;
+    return `${millions >= 100 ? millions.toFixed(0) : millions.toFixed(1)}M`;
+  }
+  return compact(value);
+}
+
+function duration(ms: number, locale: Locale): string {
   const hours = Math.floor(ms / 3_600_000);
   const minutes = Math.round((ms % 3_600_000) / 60_000);
+  if (locale === 'zh') {
+    if (hours <= 0) return `${minutes} 分钟`;
+    return minutes ? `${hours} 小时 ${minutes} 分钟` : `${hours} 小时`;
+  }
   if (hours <= 0) return `${minutes}m`;
   return minutes ? `${hours}h ${minutes}m` : `${hours}h`;
 }
@@ -69,41 +83,70 @@ function truncate(value: string, max: number): string {
 
 const MONTH_SHORT = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'] as const;
 
-/**
- * Build the spaced-caps period label that sits in the top-right of the card.
- * Formats:
- *   today → "TODAY · MAY 27"
- *   7d    → "WEEK OF MAY 19—25"  (or with a year suffix if the window crosses years)
- *   month → "MAY 2026"
- */
-function periodLabel(card: RecapCardData): string {
+function shortDate(d: Date, locale: Locale): string {
+  return locale === 'zh' ? `${d.getMonth() + 1}/${d.getDate()}` : `${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+}
+
+function rangeDate(start: Date, end: Date, locale: Locale): string {
+  if (locale === 'zh') return `${shortDate(start, locale)}-${shortDate(end, locale)}`;
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `${MONTH_SHORT[start.getMonth()]} ${start.getDate()}-${end.getDate()}`;
+  }
+  return `${shortDate(start, locale)} - ${shortDate(end, locale)}`;
+}
+
+function periodName(card: RecapCardData, locale: Locale): string {
+  const kind = card.period.kind;
+  if (locale === 'zh') {
+    if (kind === 'today') return '今天';
+    if (kind === '7d') return '近 7 天';
+    if (kind === '30d') return '近 30 天';
+    if (kind === 'month') return '本月';
+    return '全部时间';
+  }
+  if (kind === 'today') return 'TODAY';
+  if (kind === '7d') return 'WEEK';
+  if (kind === '30d') return '30 DAYS';
+  if (kind === 'month') return 'MONTH';
+  return 'ALL TIME';
+}
+
+function toolName(card: RecapCardData, locale: Locale): string {
+  if (card.tool === 'claude-code') return 'Claude Code';
+  if (card.tool === 'codex') return 'Codex';
+  if (card.tool === 'cursor') return 'Cursor';
+  return locale === 'zh' ? '全部 Agent' : 'All agents';
+}
+
+function valueCoverage(locale: Locale): string {
+  return locale === 'zh' ? 'Claude Code + Codex API 等价估算' : 'Claude Code + Codex API equivalent estimate';
+}
+
+function watermark(locale: Locale): string {
+  return locale === 'zh' ? '由 Vibemeter 生成 · vibemeter.siney.top' : 'made with Vibemeter · vibemeter.siney.top';
+}
+
+function periodLabel(card: RecapCardData, locale: Locale): string {
   const period = card.period;
+  if (period.kind === 'all') return periodName(card, locale);
   if (period.kind === 'today') {
     const d = new Date(period.startMs);
-    return `TODAY · ${MONTH_SHORT[d.getMonth()]} ${d.getDate()}`;
+    return locale === 'zh' ? `今天 · ${shortDate(d, locale)}` : `TODAY · ${shortDate(d, locale)}`;
   }
   if (period.kind === 'month') {
     const d = new Date(period.startMs);
-    return `${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+    return locale === 'zh' ? `本月 · ${d.getMonth() + 1}月 ${d.getFullYear()}` : `${MONTH_SHORT[d.getMonth()]} ${d.getFullYear()}`;
   }
   const start = new Date(period.startMs);
   const end = new Date(period.endMs);
-  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
-    return `WEEK OF ${MONTH_SHORT[start.getMonth()]} ${start.getDate()}—${end.getDate()}`;
-  }
-  return `WEEK OF ${MONTH_SHORT[start.getMonth()]} ${start.getDate()} — ${MONTH_SHORT[end.getMonth()]} ${end.getDate()}`;
+  const name = periodName(card, locale);
+  return locale === 'zh' ? `${name} · ${rangeDate(start, end, locale)}` : `${name} · ${rangeDate(start, end, locale)}`;
 }
 
-/**
- * Tagline copy that sits as the giant secondary headline (`RETURN ON MY CLAUDE
- * CODE WEEK` style). Uses the period.shortLabel upper-cased to fit week/month/
- * today, and adjusts the verb based on which hero angle is leading.
- */
-function tagline(card: RecapCardData, hero: RecapHeroKind): string {
-  if (hero === 'not_enough_data') return 'WAITING FOR DATA';
-  const shortLabel = card.period.shortLabel.toUpperCase();
-  if (hero === 'roi') return `RETURN ON MY CLAUDE CODE ${shortLabel}`;
-  return `MY CLAUDE CODE ${shortLabel}`;
+function tagline(card: RecapCardData, hero: RecapHeroKind, locale: Locale): string {
+  if (hero === 'not_enough_data') return locale === 'zh' ? '等待更多数据' : 'WAITING FOR DATA';
+  if (card.tool === 'all') return locale === 'zh' ? '可计量汇总' : 'METERED TOTAL';
+  return locale === 'zh' ? `${toolName(card, locale)} 汇总` : `${toolName(card, locale).toUpperCase()} TOTAL`;
 }
 
 /**
@@ -116,6 +159,7 @@ export function availableHeroAngles(card: RecapCardData): RecapHeroKind[] {
   const angles: RecapHeroKind[] = [];
   if (card.roiMultiplier != null && card.subscriptionCostUsd != null) angles.push('roi');
   if (card.valueAtApiRatesUsd > 0) angles.push('value');
+  if (card.totalTokens.total > 0) angles.push('tokens');
   if (card.cacheSessionsAnalyzed > 0) angles.push('cache');
   if (card.totalSessions > 0) angles.push('sessions');
   if (angles.length === 0) angles.push('value');
@@ -135,49 +179,64 @@ interface HeroDisplay {
   accent: string;
 }
 
-function heroDisplay(card: RecapCardData, hero: RecapHeroKind): HeroDisplay {
+function heroDisplay(card: RecapCardData, hero: RecapHeroKind, locale: Locale): HeroDisplay {
   if (hero === 'roi' && card.roiMultiplier != null && card.subscriptionCostUsd != null) {
     const roi = card.roiMultiplier >= 100
       ? card.roiMultiplier.toFixed(0)
       : card.roiMultiplier.toFixed(1).replace(/\.0$/, '');
     // "×" is the literal MULTIPLICATION SIGN U+00D7 (not the ASCII letter x).
     const planLabel = card.subscriptionPlanLabel ?? 'subscription';
-    const perPeriod = card.period.kind === 'month' ? '/mo'
-      : card.period.kind === 'today' ? '/day'
-      : '/wk';
+    const perPeriod = locale === 'zh'
+      ? card.period.kind === 'month' ? '/月' : card.period.kind === 'today' ? '/天' : '/周'
+      : card.period.kind === 'month' ? '/mo' : card.period.kind === 'today' ? '/day' : '/wk';
+    // ROI numerator is Claude-only (subscription is Claude); show Claude $
+    // instead of the combined value here so the ratio is visibly consistent.
     return {
       big: `${roi}×`,
-      subline: `${money(card.valueAtApiRatesUsd)} of usage at API rates    ${money(card.subscriptionCostUsd)}${perPeriod} ${planLabel} plan`,
+      subline: locale === 'zh'
+        ? `${money(card.claudeValueUsd)} Claude API 等价    ${money(card.subscriptionCostUsd)}${perPeriod} ${planLabel}`
+        : `${money(card.claudeValueUsd)} Claude usage at API rates    ${money(card.subscriptionCostUsd)}${perPeriod} ${planLabel} plan`,
       accent: '#f4f4f5',
     };
   }
   if (hero === 'cache' && card.cacheSessionsAnalyzed > 0) {
     return {
       big: `${card.cacheHitRatePct}%`,
-      subline: `served from cache    ${compact(card.totalTokens.cacheRead)} tokens saved from re-reads`,
+      subline: locale === 'zh'
+        ? `来自缓存    复读节省 ${compactTokens(card.cacheSummary.inputTokensSaved, locale)} tokens`
+        : `served from cache    ${compactTokens(card.cacheSummary.inputTokensSaved, locale)} tokens saved from re-reads`,
       accent: '#34d399',
     };
   }
   if (hero === 'sessions' && card.totalSessions > 0) {
     const totalMs = card.topProjects.reduce((acc, p) => acc + p.totalMs, 0);
-    const durLabel = totalMs > 0 ? duration(totalMs) : '—';
+    const durLabel = totalMs > 0 ? duration(totalMs, locale) : '—';
     return {
       big: `${card.totalSessions}`,
-      subline: `AI coding sessions    ${durLabel} of focused work`,
+      subline: locale === 'zh' ? `AI 编码会话    ${durLabel} 专注时间` : `AI coding sessions    ${durLabel} of focused work`,
       accent: '#fbbf24',
+    };
+  }
+  if (hero === 'tokens' && card.totalTokens.total > 0) {
+    return {
+      big: compactTokens(card.totalTokens.total, locale),
+      subline: locale === 'zh'
+        ? `Token 消耗量 · ${toolName(card, locale)}`
+        : `token usage · ${toolName(card, locale)}`,
+      accent: '#a78bfa',
     };
   }
   if (hero === 'value' || hero === 'roi') {
     // roi fallback when subscription wasn't set: show $ value
     return {
       big: money(card.valueAtApiRatesUsd),
-      subline: `${compact(card.totalTokens.total)} tokens · ${card.valueCoverageLabel}`,
+      subline: `${compactTokens(card.totalTokens.total, locale)} tokens · ${valueCoverage(locale)}`,
       accent: '#f4f4f5',
     };
   }
   return {
     big: '—',
-    subline: 'Run a few AI coding sessions, then make the card.',
+    subline: locale === 'zh' ? '先跑几次 AI 编码会话，再生成卡片。' : 'Run a few AI coding sessions, then make the card.',
     accent: '#a78bfa',
   };
 }
@@ -252,22 +311,51 @@ export function renderRecapSvg(
   variant: RecapVariant = 'landscape',
   options: RecapRenderOptions = {},
 ): string {
+  const locale = options.locale ?? DEFAULT_LOCALE;
   if (options.style === 'grid') {
-    return renderRecapSvgGrid(card, variant);
+    return renderRecapSvgGrid(card, variant, locale);
   }
   const layout = layoutFor(variant);
   const { width, height, pad } = layout;
   const hero = resolveHero(card, options.heroOverride);
-  const display = heroDisplay(card, hero);
+  const display = heroDisplay(card, hero, locale);
   const heroFontPx = heroFontSize(display.big, layout.heroFontPx);
-  const periodCaption = periodLabel(card);
-  const taglineText = tagline(card, hero);
+  const periodCaption = periodLabel(card, locale);
+  const taglineText = tagline(card, hero, locale);
 
-  // Three-column bottom strip
-  const tokensLabel = compact(card.totalTokens.total);
-  const cacheLabel = card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—';
+  const tokenMetric = {
+    value: compactTokens(card.totalTokens.total, locale),
+    label: locale === 'zh' ? 'TOKEN 消耗量' : 'TOKENS',
+    color: '#a78bfa',
+    className: 'metric-value',
+  };
+  const valueMetric = {
+    value: money(card.valueAtApiRatesUsd),
+    label: locale === 'zh' ? '价值' : 'VALUE',
+    color: '#f4f4f5',
+    className: 'metric-value',
+  };
+  const cacheMetric = {
+    value: card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—',
+    label: locale === 'zh' ? 'CACHE 命中' : 'SERVED FROM CACHE',
+    color: '#34d399',
+    className: 'metric-value',
+  };
   const topProject = card.topProjects[0];
-  const topProjectName = topProject ? truncate(topProject.project, 18) : 'no project';
+  const topProjectName = topProject ? truncate(topProject.project, 18) : locale === 'zh' ? '暂无项目' : 'no project';
+  const projectMetric = {
+    value: topProjectName,
+    label: locale === 'zh' ? 'TOP 项目' : 'TOP PROJECT',
+    color: '#f4f4f5',
+    className: 'metric-value-text',
+  };
+  const metricStrip = hero === 'value' || hero === 'roi'
+    ? [tokenMetric, cacheMetric, projectMetric]
+    : hero === 'tokens'
+      ? [valueMetric, cacheMetric, projectMetric]
+      : hero === 'cache'
+        ? [tokenMetric, valueMetric, projectMetric]
+        : [tokenMetric, valueMetric, cacheMetric];
 
   // Three columns of the bottom strip, evenly distributed across the usable width
   const col1X = pad;
@@ -321,18 +409,18 @@ export function renderRecapSvg(
   <path d="M${pad} ${layout.ruleY} H${width - pad}" stroke="#27272f" stroke-width="1"/>
 
   <!-- Bottom strip: three columns -->
-  <text x="${col1X}" y="${layout.metricsValueY}" class="metric-value" fill="#a78bfa">${esc(tokensLabel)}</text>
-  <text x="${col1X}" y="${layout.metricsValueY + 32}" class="metric-label">TOKENS</text>
+  <text x="${col1X}" y="${layout.metricsValueY}" class="${metricStrip[0].className}" fill="${metricStrip[0].color}">${esc(metricStrip[0].value)}</text>
+  <text x="${col1X}" y="${layout.metricsValueY + 32}" class="metric-label">${esc(metricStrip[0].label)}</text>
 
-  <text x="${col2X}" y="${layout.metricsValueY}" class="metric-value" fill="#34d399">${esc(cacheLabel)}</text>
-  <text x="${col2X}" y="${layout.metricsValueY + 32}" class="metric-label">SERVED FROM CACHE</text>
+  <text x="${col2X}" y="${layout.metricsValueY}" class="${metricStrip[1].className}" fill="${metricStrip[1].color}">${esc(metricStrip[1].value)}</text>
+  <text x="${col2X}" y="${layout.metricsValueY + 32}" class="metric-label">${esc(metricStrip[1].label)}</text>
 
-  <text x="${col3X}" y="${layout.metricsValueY}" class="metric-value-text">${esc(topProjectName)}</text>
-  <text x="${col3X}" y="${layout.metricsValueY + 32}" class="metric-label">TOP PROJECT</text>
+  <text x="${col3X}" y="${layout.metricsValueY}" class="${metricStrip[2].className}" fill="${metricStrip[2].color}">${esc(metricStrip[2].value)}</text>
+  <text x="${col3X}" y="${layout.metricsValueY + 32}" class="metric-label">${esc(metricStrip[2].label)}</text>
 
   <!-- Footer -->
   <circle cx="${bulletX + 5}" cy="${bulletY - 5}" r="5" fill="#a78bfa"/>
-  <text x="${bulletX + 20}" y="${layout.footerY}" class="footer">${esc(card.watermark)}</text>
+  <text x="${bulletX + 20}" y="${layout.footerY}" class="footer">${esc(watermark(locale))}</text>
 </svg>`;
 }
 
@@ -357,15 +445,21 @@ interface GridCell {
   sparkColor: string;
 }
 
-function gridCellsFor(card: RecapCardData): GridCell[] {
+function gridCellsFor(card: RecapCardData, locale: Locale): GridCell[] {
   const valueStr = money(card.valueAtApiRatesUsd);
-  const tokensStr = card.totalTokens.total.toLocaleString('en-US');
+  const tokensStr = compactTokens(card.totalTokens.total, locale);
   const cacheStr = card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—';
   const sessionsStr = card.totalSessions > 0 ? String(card.totalSessions) : '—';
+  // Mark the VALUE label when Codex (a blended estimate) contributes — the
+  // hero subline already discloses this, but the grid layout has no subline
+  // per cell, so the label is the only spot to flag it.
+  const valueLabel = card.codexValueUsd > 0
+    ? (locale === 'zh' ? '价值（含估算）' : 'VALUE (API + est.)')
+    : (locale === 'zh' ? '价值' : 'VALUE (API)');
 
   return [
     {
-      label: 'VALUE (API)',
+      label: valueLabel,
       value: valueStr,
       iconChar: '$',
       iconBg: '#fbbf24',
@@ -375,7 +469,7 @@ function gridCellsFor(card: RecapCardData): GridCell[] {
       sparkColor: '#fbbf24',
     },
     {
-      label: 'TOKENS',
+      label: locale === 'zh' ? 'TOKEN 消耗量' : 'TOKENS',
       value: tokensStr,
       iconChar: 'T',
       iconBg: '#f472b6',
@@ -385,7 +479,7 @@ function gridCellsFor(card: RecapCardData): GridCell[] {
       sparkColor: '#f472b6',
     },
     {
-      label: 'CACHE',
+      label: locale === 'zh' ? 'CACHE 命中率' : 'CACHE',
       value: cacheStr,
       iconChar: '%',
       iconBg: '#60a5fa',
@@ -395,7 +489,7 @@ function gridCellsFor(card: RecapCardData): GridCell[] {
       sparkColor: '#60a5fa',
     },
     {
-      label: 'SESSIONS',
+      label: locale === 'zh' ? '会话' : 'SESSIONS',
       value: sessionsStr,
       iconChar: 'S',
       iconBg: '#fb923c',
@@ -446,7 +540,7 @@ function gridValueFontSize(value: string, cellWidth: number): number {
   return Math.max(36, Math.min(baseSize, Math.floor(fits)));
 }
 
-function renderRecapSvgGrid(card: RecapCardData, variant: RecapVariant): string {
+function renderRecapSvgGrid(card: RecapCardData, variant: RecapVariant, locale: Locale): string {
   const isSquare = variant === 'square';
   const width = isSquare ? 1080 : 1200;
   const height = isSquare ? 1080 : 675;
@@ -463,12 +557,12 @@ function renderRecapSvgGrid(card: RecapCardData, variant: RecapVariant): string 
   const cellH = (gridBottom - gridTop - gap) / 2;
   const titleFontPx = isSquare ? 56 : 44;
 
-  const periodCaption = periodLabel(card);
+  const periodCaption = periodLabel(card, locale);
   const titleText = card.minimumData.ok
-    ? `MY CLAUDE CODE ${card.period.shortLabel.toUpperCase()}`
-    : 'WAITING FOR DATA';
+    ? tagline(card, card.heroKind, locale)
+    : locale === 'zh' ? '等待更多数据' : 'WAITING FOR DATA';
 
-  const cells = gridCellsFor(card);
+  const cells = gridCellsFor(card, locale);
 
   const cellSvgs = cells.map((cell, index) => {
     const col = index % 2;
@@ -547,6 +641,6 @@ function renderRecapSvgGrid(card: RecapCardData, variant: RecapVariant): string 
 
   <!-- Footer -->
   <circle cx="${footerBulletX + 5}" cy="${footerBulletY - 5}" r="5" fill="#a78bfa"/>
-  <text x="${footerBulletX + 20}" y="${footerY}" class="footer">${esc(card.watermark)}</text>
+  <text x="${footerBulletX + 20}" y="${footerY}" class="footer">${esc(watermark(locale))}</text>
 </svg>`;
 }

@@ -48,15 +48,15 @@ export default async function SettingsPage() {
         </div>
 
         <div className="space-y-6">
-          <SettingsBillingPanel />
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <SettingsBillingPanel />
+            <SettingsDonatePanel />
+          </div>
           <SettingsRecapPanel initialSettings={recapSettings} />
           <RedactToggle />
           <SettingsNotifyPanel initialStatus={initialStatus} />
           <SettingsAlertsPanel initialConfig={initialAlerts.config} initialConfigPath={initialAlerts.configPath} />
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <SettingsDonatePanel />
-            <FeatureVoteCard />
-          </div>
+          <FeatureVoteCard />
         </div>
       </div>
     </div>

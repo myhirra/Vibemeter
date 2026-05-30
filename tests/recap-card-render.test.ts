@@ -20,7 +20,10 @@ function card(overrides: Partial<RecapCardData> = {}): RecapCardData {
       days: 7,
       billingDenominatorDays: 30.436875,
     },
+    tool: 'all',
     valueAtApiRatesUsd: 42.5,
+    claudeValueUsd: 42.5,
+    codexValueUsd: 0,
     valueCoverageLabel: 'Claude API-equivalent',
     subscriptionPlanLabel: null,
     subscriptionMonthlyUsd: null,
@@ -38,6 +41,14 @@ function card(overrides: Partial<RecapCardData> = {}): RecapCardData {
     },
     cacheHitRatePct: 91,
     cacheSessionsAnalyzed: 6,
+    cacheSummary: {
+      totalInput: 2_000,
+      totalCacheCreation: 3_000,
+      totalCacheRead: 45_000,
+      totalOutput: 4_000,
+      inputTokensSaved: 40_500,
+      topProjects: [{ project: 'vibemeter', sessions: 5, hitRatePct: 91 }],
+    },
     topProjects: [{ project: 'vibemeter', sessions: 5, totalMs: 3_600_000, tokens: 40_000 }],
     series: {
       value: [3.2, 5.1, 4.8, 6.7, 8.0, 7.5, 7.2],
@@ -69,17 +80,17 @@ test('recap renderer supports roi, value, cache, and not-enough-data hero branch
     roiMultiplier: 9.2,
     heroKind: 'roi',
   });
-  assert.deepEqual(availableHeroAngles(roi), ['roi', 'value', 'cache', 'sessions']);
+  assert.deepEqual(availableHeroAngles(roi), ['roi', 'value', 'tokens', 'cache', 'sessions']);
   assert.match(renderRecapSvg(roi), /9\.2/);
-  assert.match(renderRecapSvg(roi), /RETURN ON MY CLAUDE CODE WEEK/);
+  assert.match(renderRecapSvg(roi, 'landscape', { locale: 'en' }), /METERED TOTAL/);
 
-  const value = renderRecapSvg(card({ heroKind: 'value' }));
+  const value = renderRecapSvg(card({ heroKind: 'value' }), 'landscape', { locale: 'en' });
   assert.match(value, /\$42\.5/);
-  assert.match(value, /Claude API-equivalent/);
+  assert.match(value, /Claude Code \+ Codex API equivalent estimate/);
 
-  const cache = renderRecapSvg(card({ heroKind: 'value' }), 'landscape', { heroOverride: 'cache' });
+  const cache = renderRecapSvg(card({ heroKind: 'value' }), 'landscape', { heroOverride: 'cache', locale: 'en' });
   assert.match(cache, /91%/);
-  assert.match(cache, /SERVED FROM CACHE/);
+  assert.match(cache, /served from cache/);
 
   const empty = renderRecapSvg(card({
     heroKind: 'not_enough_data',
@@ -87,28 +98,35 @@ test('recap renderer supports roi, value, cache, and not-enough-data hero branch
     totalSessions: 0,
     cacheSessionsAnalyzed: 0,
     topProjects: [],
+    cacheSummary: {
+      totalInput: 0,
+      totalCacheCreation: 0,
+      totalCacheRead: 0,
+      totalOutput: 0,
+      inputTokensSaved: 0,
+      topProjects: [],
+    },
     totalTokens: { input: 0, cacheCreation: 0, cacheRead: 0, output: 0, codex: 0, total: 0 },
     minimumData: { ok: false, reason: 'no_sessions' },
-  }));
+  }), 'landscape', { locale: 'en' });
   assert.match(empty, /WAITING FOR DATA/);
   assert.match(empty, /Run a few AI coding sessions/);
 });
 
 test('recap renderer grid style outputs four metric cells with labels', () => {
-  const svg = renderRecapSvg(card(), 'square', { style: 'grid' });
+  const svg = renderRecapSvg(card(), 'square', { style: 'grid', locale: 'en' });
   assert.match(svg, /width="1080" height="1080"/);
   assert.match(svg, /VALUE \(API\)/);
   assert.match(svg, /TOKENS/);
   assert.match(svg, /CACHE/);
   assert.match(svg, /SESSIONS/);
-  // Tokens formatted with thousands separators, not compact suffix.
-  assert.match(svg, /54,000/);
+  assert.match(svg, /54K/);
   // Sparklines should render when series has ≥ 2 points.
   assert.match(svg, /<path d="M/);
 });
 
 test('recap renderer grid style works in landscape with the same labels', () => {
-  const svg = renderRecapSvg(card(), 'landscape', { style: 'grid' });
+  const svg = renderRecapSvg(card(), 'landscape', { style: 'grid', locale: 'en' });
   assert.match(svg, /width="1200" height="675"/);
   assert.match(svg, /VALUE \(API\)/);
   assert.match(svg, /TOKENS/);

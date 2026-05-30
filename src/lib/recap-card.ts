@@ -1,10 +1,12 @@
 import { getDb } from './db';
-import { cacheStatsForRange, claudeApiEquivalentUsd, recapDailySeries } from './stats';
+import { cacheStatsForRange, claudeApiEquivalentUsd, codexApiEquivalentUsd, recapDailySeries } from './stats';
 import { type RecapSettings, resolveRecapPlan } from './recap-settings';
 
-export type RecapPeriod = 'today' | '7d' | 'month';
+export type RecapPeriod = 'today' | '7d' | '30d' | 'month' | 'all';
+export type RecapDateFilter = 'today' | '7d' | '30d' | 'all';
+export type RecapToolFilter = 'all' | 'claude-code' | 'codex' | 'cursor';
 export type RecapVariant = 'landscape' | 'square';
-export type RecapHeroKind = 'roi' | 'value' | 'cache' | 'sessions' | 'not_enough_data';
+export type RecapHeroKind = 'roi' | 'value' | 'tokens' | 'cache' | 'sessions' | 'not_enough_data';
 export type RecapStyle = 'hero' | 'grid';
 
 export interface RecapPeriodInfo {
@@ -49,10 +51,28 @@ export interface RecapSeries {
   cacheHit: number[];
 }
 
+export interface RecapCacheSummary {
+  totalInput: number;
+  totalCacheCreation: number;
+  totalCacheRead: number;
+  totalOutput: number;
+  inputTokensSaved: number;
+  topProjects: Array<{
+    project: string;
+    sessions: number;
+    hitRatePct: number;
+  }>;
+}
+
 export interface RecapCardData {
   generatedAt: number;
   period: RecapPeriodInfo;
+  tool: RecapToolFilter;
   valueAtApiRatesUsd: number;
+  /** Claude portion of valueAtApiRatesUsd — measured from real per-session $. */
+  claudeValueUsd: number;
+  /** Codex portion — blended estimate (see CODEX_BLENDED_USD_PER_MILLION). */
+  codexValueUsd: number;
   valueCoverageLabel: string;
   subscriptionPlanLabel: string | null;
   subscriptionMonthlyUsd: number | null;
@@ -63,14 +83,18 @@ export interface RecapCardData {
   totalTokens: RecapTokenTotals;
   cacheHitRatePct: number;
   cacheSessionsAnalyzed: number;
+  cacheSummary: RecapCacheSummary;
   topProjects: RecapProject[];
   series: RecapSeries;
   minimumData: RecapMinimumData;
   watermark: string;
 }
 
+export type RecapCardsByScope = Record<RecapToolFilter, Record<RecapDateFilter, RecapCardData>>;
+
 export interface RecapCardOptions {
   period?: RecapPeriod;
+  tool?: RecapToolFilter;
   now?: number;
   settings: RecapSettings;
 }
@@ -119,6 +143,28 @@ export function recapPeriodInfo(period: RecapPeriod, now = Date.now()): RecapPer
       billingDenominatorDays: monthDays,
     };
   }
+  if (period === '30d') {
+    return {
+      kind: '30d',
+      label: 'last 30 days',
+      shortLabel: '30d',
+      startMs: endMs - 30 * DAY_MS,
+      endMs,
+      days: 30,
+      billingDenominatorDays: AVG_MONTH_DAYS,
+    };
+  }
+  if (period === 'all') {
+    return {
+      kind: 'all',
+      label: 'all time',
+      shortLabel: 'all',
+      startMs: 0,
+      endMs,
+      days: 0,
+      billingDenominatorDays: AVG_MONTH_DAYS,
+    };
+  }
 
   return {
     kind: '7d',
@@ -131,24 +177,64 @@ export function recapPeriodInfo(period: RecapPeriod, now = Date.now()): RecapPer
   };
 }
 
+function toolWhere(tool: RecapToolFilter, alias = ''): { sql: string; params: RecapToolFilter[] } {
+  if (tool === 'all') return { sql: '', params: [] };
+  const prefix = alias ? `${alias}.` : '';
+  return { sql: ` AND ${prefix}tool = ?`, params: [tool] };
+}
+
+function allTimeStartMs(tool: RecapToolFilter, fallback: number): number {
+  const filter = toolWhere(tool);
+  const row = getDb().prepare(`
+    SELECT MIN(started_at) AS start_ms
+    FROM sessions
+    WHERE 1 = 1
+      ${filter.sql}
+  `).get(...filter.params) as { start_ms: number | null };
+  return row.start_ms ?? fallback;
+}
+
+function resolvePeriod(period: RecapPeriod, tool: RecapToolFilter, now = Date.now()): RecapPeriodInfo {
+  const info = recapPeriodInfo(period, now);
+  if (info.kind !== 'all') return info;
+  const startMs = allTimeStartMs(tool, now);
+  return {
+    ...info,
+    startMs,
+    days: Math.max(0, (info.endMs - startMs) / DAY_MS),
+  };
+}
+
 export function proratedSubscriptionCost(monthlyUsd: number, period: RecapPeriodInfo): number {
   const denominator = period.billingDenominatorDays > 0 ? period.billingDenominatorDays : AVG_MONTH_DAYS;
   return Math.round((monthlyUsd * period.days / denominator) * 100) / 100;
 }
 
-function tokenTotals(startMs: number, endMs: number): { sessions: number; tokens: RecapTokenTotals } {
+function tokenTotals(startMs: number, endMs: number, tool: RecapToolFilter): { sessions: number; tokens: RecapTokenTotals } {
+  const filter = toolWhere(tool);
   const row = getDb().prepare(`
     SELECT
       COUNT(*) AS sessions,
-      COALESCE(SUM(COALESCE(input_tokens, 0)), 0) AS input,
-      COALESCE(SUM(COALESCE(cache_creation_tokens, 0)), 0) AS creation,
-      COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0) AS read,
-      COALESCE(SUM(COALESCE(output_tokens, 0)), 0) AS output,
-      COALESCE(SUM(COALESCE(tokens_used, 0)), 0) AS codex
+      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(input_tokens, 0) ELSE 0 END), 0) AS input,
+      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(cache_creation_tokens, 0) ELSE 0 END), 0) AS creation,
+      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(cache_read_tokens, 0) ELSE 0 END), 0) AS read,
+      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(output_tokens, 0) ELSE 0 END), 0) AS output,
+      COALESCE(SUM(CASE
+        WHEN tool = 'codex' THEN
+          COALESCE(
+            tokens_used,
+            COALESCE(input_tokens, 0)
+            + COALESCE(cache_creation_tokens, 0)
+            + COALESCE(cache_read_tokens, 0)
+            + COALESCE(output_tokens, 0)
+          )
+        ELSE 0
+      END), 0) AS codex
     FROM sessions
     WHERE started_at >= ?
       AND started_at < ?
-  `).get(startMs, endMs) as {
+      ${filter.sql}
+  `).get(startMs, endMs, ...filter.params) as {
     sessions: number;
     input: number;
     creation: number;
@@ -167,27 +253,39 @@ function tokenTotals(startMs: number, endMs: number): { sessions: number; tokens
   return { sessions: row.sessions ?? 0, tokens };
 }
 
-function topProjects(startMs: number, endMs: number, limit = 3): RecapProject[] {
+function topProjects(startMs: number, endMs: number, tool: RecapToolFilter, limit = 3): RecapProject[] {
+  const filter = toolWhere(tool);
   const rows = getDb().prepare(`
     SELECT
       cwd,
       COUNT(*) AS sessions,
       SUM(COALESCE(ended_at, started_at) - started_at) AS total_ms,
       COALESCE(SUM(
-        COALESCE(input_tokens, 0)
-        + COALESCE(cache_creation_tokens, 0)
-        + COALESCE(cache_read_tokens, 0)
-        + COALESCE(output_tokens, 0)
-        + COALESCE(tokens_used, 0)
+        CASE
+          WHEN tool = 'codex' THEN
+            COALESCE(
+              tokens_used,
+              COALESCE(input_tokens, 0)
+              + COALESCE(cache_creation_tokens, 0)
+              + COALESCE(cache_read_tokens, 0)
+              + COALESCE(output_tokens, 0)
+            )
+          ELSE
+            COALESCE(input_tokens, 0)
+            + COALESCE(cache_creation_tokens, 0)
+            + COALESCE(cache_read_tokens, 0)
+            + COALESCE(output_tokens, 0)
+        END
       ), 0) AS tokens
     FROM sessions
     WHERE started_at >= ?
       AND started_at < ?
+      ${filter.sql}
       AND cwd IS NOT NULL
     GROUP BY cwd
     ORDER BY total_ms DESC, tokens DESC
     LIMIT ?
-  `).all(startMs, endMs, limit) as { cwd: string; sessions: number; total_ms: number | null; tokens: number }[];
+  `).all(startMs, endMs, ...filter.params, limit) as { cwd: string; sessions: number; total_ms: number | null; tokens: number }[];
 
   return rows.map((row) => ({
     project: row.cwd.split('/').filter(Boolean).pop() ?? 'unknown',
@@ -204,24 +302,42 @@ function minimumData(totalSessions: number, totalTokens: number, valueUsd: numbe
 }
 
 export function buildRecapCard(options: RecapCardOptions): RecapCardData {
-  const period = recapPeriodInfo(options.period ?? '7d', options.now);
+  const tool = options.tool ?? 'all';
+  const period = resolvePeriod(options.period ?? '7d', tool, options.now);
   const plan = resolveRecapPlan(options.settings);
-  const valueAtApiRatesUsd = claudeApiEquivalentUsd(period.startMs, period.endMs);
-  const { sessions, tokens } = tokenTotals(period.startMs, period.endMs);
-  const cache = cacheStatsForRange(period.startMs, period.endMs);
+  // Value now sums Claude + Codex API-equivalent. Cursor has no rate we trust,
+  // so it stays at 0. Per-tool filter drops the irrelevant side.
+  const claudeValue = tool === 'codex' || tool === 'cursor'
+    ? 0
+    : claudeApiEquivalentUsd(period.startMs, period.endMs);
+  const codexValue = tool === 'claude-code' || tool === 'cursor'
+    ? 0
+    : codexApiEquivalentUsd(period.startMs, period.endMs);
+  const valueAtApiRatesUsd = claudeValue + codexValue;
+  const { sessions, tokens } = tokenTotals(period.startMs, period.endMs, tool);
+  const cache = cacheStatsForRange(period.startMs, period.endMs, tool);
   const minimum = minimumData(sessions, tokens.total, valueAtApiRatesUsd);
 
-  const subscriptionCostUsd = plan.kind === 'subscription' && plan.monthlyUsd != null
+  const subscriptionCostUsd = period.kind !== 'all' && plan.kind === 'subscription' && plan.monthlyUsd != null
     ? proratedSubscriptionCost(plan.monthlyUsd, period)
     : null;
+  // ROI compares Claude-only value against the Claude subscription cost — the
+  // user paid Anthropic, not OpenAI, so Codex spend on API rates would inflate
+  // the ratio with a number that has nothing to do with that subscription.
   const roiMultiplier = minimum.ok && subscriptionCostUsd != null && subscriptionCostUsd > 0
-    ? Math.round((valueAtApiRatesUsd / subscriptionCostUsd) * 10) / 10
+    ? Math.round((claudeValue / subscriptionCostUsd) * 10) / 10
     : null;
-  const heroKind = minimum.ok
-    ? roiMultiplier != null ? 'roi' : 'value'
-    : 'not_enough_data';
+  let heroKind: RecapHeroKind = 'not_enough_data';
+  if (minimum.ok) {
+    if (roiMultiplier != null) heroKind = 'roi';
+    else if (tool === 'codex' && tokens.total > 0) heroKind = 'tokens';
+    else if (valueAtApiRatesUsd > 0) heroKind = 'value';
+    else if (tokens.total > 0) heroKind = 'tokens';
+    else if (cache.sessionsAnalyzed > 0) heroKind = 'cache';
+    else heroKind = 'sessions';
+  }
 
-  const dailyPoints = recapDailySeries(period.startMs, period.endMs);
+  const dailyPoints = recapDailySeries(period.startMs, period.endMs, tool);
   const series: RecapSeries = {
     value: dailyPoints.map((p) => p.valueUsd),
     tokens: dailyPoints.map((p) => p.tokens),
@@ -232,8 +348,15 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
   return {
     generatedAt: options.now ?? Date.now(),
     period,
+    tool,
     valueAtApiRatesUsd,
-    valueCoverageLabel: 'Claude API-equivalent',
+    claudeValueUsd: claudeValue,
+    codexValueUsd: codexValue,
+    valueCoverageLabel: tool === 'codex'
+      ? 'Codex API-equivalent'
+      : tool === 'claude-code'
+        ? 'Claude API-equivalent'
+        : 'Claude + Codex API-equivalent',
     subscriptionPlanLabel: plan.kind === 'subscription' ? plan.label : null,
     subscriptionMonthlyUsd: plan.kind === 'subscription' ? plan.monthlyUsd : null,
     subscriptionCostUsd,
@@ -243,7 +366,19 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     totalTokens: tokens,
     cacheHitRatePct: cache.hitRatePct,
     cacheSessionsAnalyzed: cache.sessionsAnalyzed,
-    topProjects: topProjects(period.startMs, period.endMs, 3),
+    cacheSummary: {
+      totalInput: cache.totalInput,
+      totalCacheCreation: cache.totalCacheCreation,
+      totalCacheRead: cache.totalCacheRead,
+      totalOutput: cache.totalOutput,
+      inputTokensSaved: cache.inputTokensSaved,
+      topProjects: cache.topProjects.map((project) => ({
+        project: project.project,
+        sessions: project.sessions,
+        hitRatePct: project.hitRatePct,
+      })),
+    },
+    topProjects: topProjects(period.startMs, period.endMs, tool, 3),
     series,
     minimumData: minimum,
     watermark: RECAP_WATERMARK,

@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI coding usage tracker | Vibemeter</title>
+    <meta
+      name="description"
+      content="Local AI coding usage tracker for Claude Code, Codex, and Cursor sessions, quota runway, context, cache hit-rate, and completion alerts."
+    />
+    <link rel="canonical" href="https://vibemeter.siney.top/ai-coding-usage-tracker/" />
+    <meta name="theme-color" content="#f5c542" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://vibemeter.siney.top/ai-coding-usage-tracker/" />
+    <meta property="og:title" content="Local AI coding usage tracker for agent work" />
+    <meta
+      property="og:description"
+      content="Use one local dashboard for Claude Code, Codex, and Cursor usage, quota runway, sessions, and completion alerts."
+    />
+    <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AI coding usage tracker | Vibemeter" />
+    <meta
+      name="twitter:description"
+      content="Local usage tracking for Claude Code, Codex, and Cursor without cloud telemetry."
+    />
+    <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vibemeter",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows (CLI)",
+        "description": "A local AI coding usage tracker for Claude Code, Codex, and Cursor sessions, quota runway, context usage, cache hit-rate, and completion alerts.",
+        "url": "https://vibemeter.siney.top/ai-coding-usage-tracker/",
+        "downloadUrl": "https://vibemeter.siney.top/install.sh",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "softwareVersion": "0.2.4",
+        "author": { "@type": "Person", "name": "hirra" }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "What AI coding tools does Vibemeter track?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Vibemeter tracks local data from Claude Code, Codex, and Cursor. If a tool has no local data yet, its cards show no data while the rest of the dashboard still works."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is Vibemeter a cloud analytics service?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Vibemeter runs locally and reads files already on your machine. It does not require a hosted account or telemetry."
+            }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07070a;
+        --panel: #141419;
+        --line: rgba(255, 255, 255, 0.1);
+        --muted: rgba(244, 244, 245, 0.58);
+        --text: #f4f4f5;
+        --gold: #f5c542;
+        --purple: #9b7cff;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono",
+          monospace;
+      }
+
+      main {
+        width: min(960px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 44px 0 52px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 54px;
+      }
+
+      .brand,
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .brand {
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .brand span {
+        color: var(--purple);
+      }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      nav a:hover,
+      .text-link:hover {
+        color: var(--text);
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--gold);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 820px;
+        font-size: clamp(34px, 7vw, 68px);
+        line-height: 1.04;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        max-width: 780px;
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      .install {
+        margin-top: 32px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+      }
+
+      code {
+        display: block;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101014;
+        padding: 14px 16px;
+        color: #ffffff;
+        font-size: 13.5px;
+        line-height: 1.5;
+      }
+
+      .panel code {
+        display: inline-block;
+        padding: 4px 6px;
+        font-size: 12px;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 8px;
+        background: var(--gold);
+        color: #151006;
+        padding: 14px 18px;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .grid {
+        margin-top: 42px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .panel h2,
+      .panel h3 {
+        margin: 0;
+        font-size: 14px;
+      }
+
+      .panel p,
+      .panel li {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+
+      .panel p {
+        margin: 10px 0 0;
+      }
+
+      .panel ul {
+        margin: 12px 0 0;
+        padding-left: 18px;
+      }
+
+      .wide {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr 0.72fr;
+        gap: 12px;
+      }
+
+      .text-link {
+        color: rgba(244, 244, 245, 0.74);
+      }
+
+      footer {
+        margin-top: 52px;
+        color: rgba(244, 244, 245, 0.42);
+        font-size: 13px;
+      }
+
+      @media (max-width: 820px) {
+        main {
+          width: calc(100vw - 28px);
+          padding-top: 34px;
+        }
+
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          margin-bottom: 36px;
+        }
+
+        nav {
+          justify-content: flex-start;
+        }
+
+        .install,
+        .grid,
+        .wide {
+          grid-template-columns: 1fr;
+        }
+
+        .button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/"><span>Vibe</span>meter</a>
+        <nav aria-label="Site">
+          <a href="/claude-code-quota/">Claude Code quota</a>
+          <a href="/codex-rate-limit/">Codex limits</a>
+          <a href="https://github.com/myhirra/Vibemeter">GitHub</a>
+        </nav>
+      </header>
+
+      <section>
+        <p class="eyebrow">AI coding usage tracker</p>
+        <h1>One local dashboard for Claude Code, Codex, and Cursor usage.</h1>
+        <p class="lead">
+          Vibemeter tracks AI coding sessions from files already on your machine:
+          quota runway, context usage, project activity, cache hit-rate, commits,
+          and completion alerts. It is built for developers who want usage context
+          without adding another analytics service.
+        </p>
+        <div class="install">
+          <code>curl -fsSL 'https://vibemeter.siney.top/install.sh?src=ai-coding-usage-tracker' | bash</code>
+          <button class="button" type="button" onclick="navigator.clipboard.writeText(&quot;curl -fsSL 'https://vibemeter.siney.top/install.sh?src=ai-coding-usage-tracker' | bash&quot;)">
+            Copy
+          </button>
+        </div>
+      </section>
+
+      <section class="grid" aria-label="AI coding usage tracking details">
+        <div class="panel">
+          <h2>Quota runway</h2>
+          <p>Show Claude Code and Codex 5-hour and weekly windows, reset time, and recent burn-rate before starting long agent work.</p>
+        </div>
+        <div class="panel">
+          <h2>Session history</h2>
+          <p>Review sessions by tool, project, time, and tags so AI coding work is easier to explain after the fact.</p>
+        </div>
+        <div class="panel">
+          <h2>Local data model</h2>
+          <p>No cloud account and no telemetry. Vibemeter reads local files and stores its own local database under your home directory.</p>
+        </div>
+      </section>
+
+      <section class="wide" aria-label="What Vibemeter tracks">
+        <div class="panel">
+          <h2>What the dashboard combines</h2>
+          <ul>
+            <li>Claude Code usage, context window, cache hit-rate, and project sessions.</li>
+            <li>Codex rollout windows, token usage, local session metadata, and notifications.</li>
+            <li>Cursor workspace sessions so the timeline covers more than one coding agent.</li>
+            <li>Git-to-session linking for commits made during tracked agent work.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h2>Best fit</h2>
+          <ul>
+            <li>Solo developers running long coding-agent tasks.</li>
+            <li>Consultants who need local project and session context.</li>
+            <li>Teams that prefer local-first developer tools over hosted usage dashboards.</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer>
+        More focused pages:
+        <a class="text-link" href="/claude-code-quota/">Claude Code quota tracker</a>
+        ·
+        <a class="text-link" href="/codex-rate-limit/">Codex rate limit tracker</a>
+      </footer>
+    </main>
+  </body>
+</html>

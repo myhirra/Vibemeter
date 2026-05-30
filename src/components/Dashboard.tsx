@@ -7,20 +7,16 @@ import { SessionsTable } from './SessionsTable';
 import { ToolSplitCard } from './ToolSplitCard';
 import { BurndownChart } from './BurndownChart';
 import { FileHotspots } from './FileHotspots';
-import { SpendingCard } from './SpendingCard';
+import { UsageTotalCard } from './UsageTotalCard';
 import { ActivityCard } from './ActivityCard';
 import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
-import { SessionInsightCard } from './SessionInsightCard';
-import { CacheCard } from './CacheCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
-import { RecapNudgeBanner } from './RecapNudgeBanner';
 import type { SessionEntry } from './SessionsTable';
-import type { StreakInfo, BurndownPoint, FileHotspot, SpendingStats, TimelineSession, Achievement, SessionInsight, CacheStats } from '@/lib/stats';
+import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight } from '@/lib/stats';
 import type { GuardDecision } from '@/lib/quota-guard';
-import type { RecapCardData } from '@/lib/recap-card';
-import type { RecapNudge } from '@/lib/recap-nudge';
+import type { RecapCardsByScope, RecapToolFilter } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
 
 export interface UsageInfo {
@@ -50,22 +46,15 @@ interface Props {
   codexAccounts: CodexAccountOption[];
   selectedCodexAccountId: string | null;
   initialToolFilter: ToolFilter;
-  spending: SpendingStats;
   timeline: { dateLabel: string; sessions: TimelineSession[] };
   achievements: Achievement[];
   insight: SessionInsight;
-  cache: CacheStats;
-  recapCards: {
-    today: RecapCardData;
-    weekly: RecapCardData;
-    monthly: RecapCardData;
-  };
-  recapNudge: RecapNudge | null;
+  recapCards: RecapCardsByScope;
   runway: {
     guard: GuardDecision;
     contextPct: number | null;
     weeklyRemaining: number | null;
-    window5h: { usedPct: number | null; resetAt: number | null } | null;
+    window5h: { usedPct: number | null; resetAt: number | null; label?: string | null } | null;
     apiMode: { costToday: number; cost7d: number } | null;
   };
   /**
@@ -88,8 +77,8 @@ interface Props {
   redact: boolean;
 }
 
-const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const;
-type ToolFilter = typeof TOOLS[number];
+const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const satisfies readonly RecapToolFilter[];
+type ToolFilter = RecapToolFilter;
 const TOOL_LABEL_KEYS: Record<ToolFilter, string> = {
   all: 'dashboard.toolAll',
   'claude-code': 'dashboard.toolClaude',
@@ -158,13 +147,10 @@ export function Dashboard({
   codexAccounts,
   selectedCodexAccountId,
   initialToolFilter,
-  spending,
   timeline,
   achievements,
   insight,
-  cache,
   recapCards,
-  recapNudge,
   runway,
   initialProjectFilter,
   initialFocusCurrent,
@@ -253,12 +239,6 @@ export function Dashboard({
       .sort((a, b) => b.totalMs - a.totalMs);
   }, [filteredSessions]);
 
-  const filteredSpending = useMemo(() => {
-    if (since === 0) return spending;
-    const sinceDate = new Date(since).toISOString().slice(0, 10);
-    return { ...spending, daily: spending.daily.filter((d) => d.date >= sinceDate) };
-  }, [spending, since]);
-
   async function refreshData() {
     setRefreshState('refreshing');
     setRefreshMessage(null);
@@ -322,13 +302,6 @@ export function Dashboard({
         />
       </div>
 
-      <RecapNudgeBanner
-        nudge={recapNudge}
-        today={recapCards.today}
-        weekly={recapCards.weekly}
-        monthly={recapCards.monthly}
-      />
-
       {/* Project-filter hint when the floater deep-linked us with ?project=… */}
       {projectFilter && initialProjectFilter && (
         <p className="mb-3 flex items-center gap-2 text-[11px] text-zinc-500">
@@ -356,8 +329,8 @@ export function Dashboard({
       )}
 
       {/* Filters row */}
-      <div className="flex flex-wrap items-center justify-between mb-4 gap-3">
-        <div className="flex flex-wrap gap-2">
+      <div className="flex flex-col gap-3 mb-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap lg:w-auto">
           {TOOLS
             .filter((tool) => tool === 'all' || (toolCounts[tool] ?? 0) > 0)
             .sort((a, b) => {
@@ -378,8 +351,8 @@ export function Dashboard({
             </button>
           ))}
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="flex gap-1">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-start lg:w-auto lg:justify-end">
+          <div className="contents sm:flex sm:flex-wrap sm:justify-start sm:gap-1 lg:justify-end">
           {DATE_PRESETS.map((p) => (
             <button key={p} onClick={() => setDatePreset(p)}
               className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
@@ -498,20 +471,15 @@ export function Dashboard({
         );
       })()}
 
-      {/* ROI — API-equivalent value + per-session insight live together at the
-          top of the data area. Achievements were paired here before; they
-          moved further down per the new priority ordering. */}
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <SpendingCard data={filteredSpending} toolFilter={toolFilter} />
-        <SessionInsightCard data={insight} redact={redact} recapCards={recapCards} />
-      </div>
-
-      {/* Cache */}
-      <div className="grid grid-cols-1 gap-4 mb-4 md:grid-cols-2">
-        <CacheCard data={cache} redact={redact} />
-        <BurndownChart
-          data={toolFilter === 'codex' ? codexBurndown : toolFilter === 'claude-code' ? claudeBurndown : allBurndown}
-          label={toolFilter === 'codex' ? selectedCodexLabel : toolFilter === 'claude-code' ? t('dashboard.claudeCodeLower') : t('dashboard.allAgents')}
+      {/* Total — value, tokens, and cache are one story, so keep the summary
+          together and put secondary detail into equal-height columns. */}
+      <div className="mb-4">
+        <UsageTotalCard
+          insight={insight}
+          recapCards={recapCards}
+          period={datePreset}
+          toolFilter={toolFilter}
+          redact={redact}
         />
       </div>
 
@@ -538,7 +506,11 @@ export function Dashboard({
         <AchievementsCard data={achievements} />
       </div>
 
-      <div className="mb-4">
+      <div className="grid grid-cols-1 gap-4 mb-4 lg:grid-cols-2">
+        <BurndownChart
+          data={toolFilter === 'codex' ? codexBurndown : toolFilter === 'claude-code' ? claudeBurndown : allBurndown}
+          label={toolFilter === 'codex' ? selectedCodexLabel : toolFilter === 'claude-code' ? t('dashboard.claudeCodeLower') : t('dashboard.allAgents')}
+        />
         <ActivityCard sessions={filteredSessions} streak={streak} timeline={timeline} />
       </div>
 

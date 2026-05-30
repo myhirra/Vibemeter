@@ -32,6 +32,30 @@ export function SettingsNotifyPanel({ initialStatus }: Props) {
   const [pending, setPending] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  async function previewSound() {
+    if (soundMode === 'off' || previewing) return;
+    setPreviewing(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/settings/notify/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: soundMode }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.error ?? 'Preview failed');
+      }
+      // beep ~0.4s, voice ~1.5s — keep the button locked briefly so it doesn't
+      // turn into a one-second auto-repeater.
+      window.setTimeout(() => setPreviewing(false), soundMode === 'voice' ? 1600 : 600);
+    } catch (err) {
+      setError(t('notify.soundPreviewFailed', { error: err instanceof Error ? err.message : String(err) }));
+      setPreviewing(false);
+    }
+  }
 
   const enabled = status.claudeStop || status.claudeNotification || status.codex;
 
@@ -112,21 +136,32 @@ export function SettingsNotifyPanel({ initialStatus }: Props) {
 
       <div className="mb-5">
         <div className="text-xs text-zinc-400 mb-2">{t('notify.soundLabel')}</div>
-        <div className="inline-flex rounded-md border border-zinc-800 overflow-hidden text-xs">
-          {(['voice', 'beep', 'off'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              onClick={() => setSoundMode(mode)}
-              className={`px-3 py-1.5 transition-colors ${
-                soundMode === mode
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200'
-              }`}
-            >
-              {t(`notify.sound.${mode}`)}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-md border border-zinc-800 overflow-hidden text-xs">
+            {(['voice', 'beep', 'off'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setSoundMode(mode)}
+                className={`px-3 py-1.5 transition-colors ${
+                  soundMode === mode
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-zinc-950 text-zinc-400 hover:text-zinc-200'
+                }`}
+              >
+                {t(`notify.sound.${mode}`)}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={previewSound}
+            disabled={soundMode === 'off' || previewing}
+            title={soundMode === 'off' ? t('notify.soundPreviewMutedTitle') : undefined}
+            className="rounded-md border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-300 transition-colors hover:border-zinc-500 hover:text-zinc-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-zinc-700 disabled:hover:text-zinc-300"
+          >
+            {previewing ? t('notify.soundPreviewing') : `▶ ${t('notify.soundPreview')}`}
+          </button>
         </div>
         <p className="mt-1.5 text-[11px] text-zinc-600">{t(`notify.soundHint.${soundMode}`)}</p>
       </div>

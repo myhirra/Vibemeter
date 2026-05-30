@@ -1,4 +1,5 @@
 import { getDb } from './db';
+import type { RecapToolFilter } from './recap-card';
 
 export interface ToolSplit {
   tool: string;
@@ -159,6 +160,47 @@ export function claudeApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTE
     )
   `).get(startMs, endMs) as { total: number };
   return row.total ?? 0;
+}
+
+/**
+ * Blended USD-per-1M-tokens for Codex sessions, applied to `tokens_used`.
+ *
+ * `tokens_used` from Codex's threads table is **cumulative across turns** —
+ * every turn re-sends system+history, so in a multi-turn coding session the
+ * dominant cost is cached input re-reads. Sampled rows show breakdown sums
+ * orders of magnitude smaller than `tokens_used` (e.g. 211K vs 24M), which
+ * matches that pattern.
+ *
+ * Mix assumes ~95% cached input, ~4% fresh input, ~1% output, applied to
+ * gpt-5-codex pricing (cached $0.125/M · input $1.25/M · output $10/M):
+ *   0.95 * 0.125 + 0.04 * 1.25 + 0.01 * 10 = 0.269 USD/M ≈ $0.27/M
+ *
+ * Tune this constant if the price sheet shifts or the cache-hit assumption
+ * looks off. Keep it conservative: better to under-claim "value" on shared
+ * cards than to over-claim with a number we can't defend.
+ */
+const CODEX_BLENDED_USD_PER_MILLION = 0.27;
+
+export function codexApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): number {
+  // Fall back to the input+cache+output sum when `tokens_used` is null — keeps
+  // pricing consistent with `tokenTotals` in recap-card, which uses the same
+  // COALESCE pattern for codex token totals.
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(
+      COALESCE(
+        tokens_used,
+        COALESCE(input_tokens, 0)
+        + COALESCE(cache_creation_tokens, 0)
+        + COALESCE(cache_read_tokens, 0)
+        + COALESCE(output_tokens, 0)
+      )
+    ), 0) AS total
+    FROM sessions
+    WHERE tool = 'codex'
+      AND started_at >= ?
+      AND started_at < ?
+  `).get(startMs, endMs) as { total: number };
+  return (row.total ?? 0) * CODEX_BLENDED_USD_PER_MILLION / 1_000_000;
 }
 
 export function spendingStats(): SpendingStats {
@@ -430,36 +472,60 @@ export interface RecapDailyPoint {
  * filled with zeros so the SVG renderer can rely on a fixed-length array. The
  * day grid is computed in local time to match the rest of stats.ts.
  */
-export function recapDailySeries(startMs: number, endMs = Date.now()): RecapDailyPoint[] {
+function toolWhere(tool: RecapToolFilter, alias = ''): { sql: string; params: RecapToolFilter[] } {
+  if (tool === 'all') return { sql: '', params: [] };
+  const prefix = alias ? `${alias}.` : '';
+  return { sql: ` AND ${prefix}tool = ?`, params: [tool] };
+}
+
+function meteredToolWhere(tool: RecapToolFilter): { sql: string; params: RecapToolFilter[] } {
+  if (tool === 'all') return { sql: " AND tool IN ('claude-code', 'codex')", params: [] };
+  return { sql: ' AND tool = ?', params: [tool] };
+}
+
+export function recapDailySeries(startMs: number, endMs = Date.now(), tool: RecapToolFilter = 'all'): RecapDailyPoint[] {
   const db = getDb();
 
   // Claude API-equivalent USD: max(cost_total) per (day, session) → sum to day.
-  const claudeRows = db.prepare(`
-    SELECT DATE(captured_at/1000, 'unixepoch', 'localtime') AS day,
-           json_extract(raw_output, '$.session_id') AS sid,
-           MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS cost
-    FROM usage_snapshots
-    WHERE source = 'statusline'
-      AND captured_at >= ?
-      AND captured_at < ?
-      AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
-    GROUP BY day, sid
-  `).all(startMs, endMs) as { day: string; sid: string; cost: number }[];
+  const claudeRows = tool === 'codex' || tool === 'cursor'
+    ? []
+    : db.prepare(`
+      SELECT DATE(captured_at/1000, 'unixepoch', 'localtime') AS day,
+             json_extract(raw_output, '$.session_id') AS sid,
+             MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS cost
+      FROM usage_snapshots
+      WHERE source = 'statusline'
+        AND captured_at >= ?
+        AND captured_at < ?
+        AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+      GROUP BY day, sid
+    `).all(startMs, endMs) as { day: string; sid: string; cost: number }[];
   const valueByDay = new Map<string, number>();
   for (const row of claudeRows) {
     valueByDay.set(row.day, (valueByDay.get(row.day) ?? 0) + (row.cost ?? 0));
   }
 
   // Sessions + tokens + cache breakdown per day.
+  const filter = toolWhere(tool);
   const sessionRows = db.prepare(`
     SELECT DATE(started_at/1000, 'unixepoch', 'localtime') AS day,
            COUNT(*) AS sessions,
            COALESCE(SUM(
-             COALESCE(input_tokens, 0)
-             + COALESCE(cache_creation_tokens, 0)
-             + COALESCE(cache_read_tokens, 0)
-             + COALESCE(output_tokens, 0)
-             + COALESCE(tokens_used, 0)
+             CASE
+               WHEN tool = 'codex' THEN
+                 COALESCE(
+                   tokens_used,
+                   COALESCE(input_tokens, 0)
+                   + COALESCE(cache_creation_tokens, 0)
+                   + COALESCE(cache_read_tokens, 0)
+                   + COALESCE(output_tokens, 0)
+                 )
+               ELSE
+                 COALESCE(input_tokens, 0)
+                 + COALESCE(cache_creation_tokens, 0)
+                 + COALESCE(cache_read_tokens, 0)
+                 + COALESCE(output_tokens, 0)
+             END
            ), 0) AS tokens,
            COALESCE(SUM(COALESCE(input_tokens, 0)), 0)          AS input,
            COALESCE(SUM(COALESCE(cache_creation_tokens, 0)), 0) AS creation,
@@ -467,8 +533,9 @@ export function recapDailySeries(startMs: number, endMs = Date.now()): RecapDail
     FROM sessions
     WHERE started_at >= ?
       AND started_at < ?
+      ${filter.sql}
     GROUP BY day
-  `).all(startMs, endMs) as {
+  `).all(startMs, endMs, ...filter.params) as {
     day: string;
     sessions: number;
     tokens: number;
@@ -501,8 +568,9 @@ export function recapDailySeries(startMs: number, endMs = Date.now()): RecapDail
   return out;
 }
 
-export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheStats {
+export function cacheStatsForRange(startMs: number, endMs = Date.now(), tool: RecapToolFilter = 'all'): CacheStats {
   const db = getDb();
+  const filter = meteredToolWhere(tool);
 
   const totals = db.prepare(`
     SELECT
@@ -512,11 +580,12 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
       COALESCE(SUM(output_tokens), 0)         AS output,
       COUNT(*)                                AS sessions
     FROM sessions
-    WHERE tool = 'claude-code'
+    WHERE 1 = 1
+      ${filter.sql}
       AND started_at > ?
       AND started_at < ?
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
-  `).get(startMs, endMs) as { input: number; creation: number; read: number; output: number; sessions: number };
+  `).get(...filter.params, startMs, endMs) as { input: number; creation: number; read: number; output: number; sessions: number };
 
   const hitRatePct = ratePct(totals.read, totals.input, totals.creation);
   // cache_read costs 0.1x of normal input tokens → saved ≈ 0.9 * cache_read tokens worth of input
@@ -530,7 +599,8 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
            COALESCE(SUM(cache_read_tokens), 0)     AS read,
            COALESCE(SUM(output_tokens), 0)         AS output
     FROM sessions
-    WHERE tool = 'claude-code'
+    WHERE 1 = 1
+      ${filter.sql}
       AND started_at > ?
       AND started_at < ?
       AND cwd IS NOT NULL
@@ -538,7 +608,7 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
     GROUP BY cwd
     ORDER BY (input + creation + read) DESC
     LIMIT 8
-  `).all(startMs, endMs) as { cwd: string; sessions: number; input: number; creation: number; read: number; output: number }[];
+  `).all(...filter.params, startMs, endMs) as { cwd: string; sessions: number; input: number; creation: number; read: number; output: number }[];
 
   const topProjects: CacheBreakdownRow[] = projectRows.map((r) => ({
     project: r.cwd.split('/').filter(Boolean).pop() ?? '—',
@@ -551,12 +621,13 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
   }));
 
   const worstRows = db.prepare(`
-    SELECT id, cwd, ai_title, started_at,
+    SELECT id, tool, cwd, ai_title, started_at,
            COALESCE(input_tokens, 0)          AS input,
            COALESCE(cache_creation_tokens, 0) AS creation,
            COALESCE(cache_read_tokens, 0)     AS read
     FROM sessions
-    WHERE tool = 'claude-code'
+    WHERE 1 = 1
+      ${filter.sql}
       AND started_at > ?
       AND started_at < ?
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
@@ -565,7 +636,7 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
              NULLIF(input_tokens + cache_creation_tokens + cache_read_tokens, 0)) ASC,
              (input_tokens + cache_creation_tokens + cache_read_tokens) DESC
     LIMIT 5
-  `).all(startMs, endMs) as { id: string; cwd: string | null; ai_title: string | null; started_at: number; input: number; creation: number; read: number }[];
+  `).all(...filter.params, startMs, endMs) as { id: string; tool: string; cwd: string | null; ai_title: string | null; started_at: number; input: number; creation: number; read: number }[];
 
   const worstSessions = worstRows.map((r) => ({
     id: r.id,
@@ -576,7 +647,7 @@ export function cacheStatsForRange(startMs: number, endMs = Date.now()): CacheSt
     inputTokens: r.input,
     cacheCreationTokens: r.creation,
     cacheReadTokens: r.read,
-    transcriptPath: transcriptPathFor('claude-code', r.cwd, r.id),
+    transcriptPath: transcriptPathFor(r.tool, r.cwd, r.id),
   }));
 
   const hint = (() => {
