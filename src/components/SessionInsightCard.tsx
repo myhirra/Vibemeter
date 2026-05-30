@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import type { SessionInsight } from '@/lib/stats';
-import type { RecapCardData } from '@/lib/recap-card';
+import type { RecapCardData, RecapPeriod } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
 import { RecapShareButton } from './RecapShareButton';
 
@@ -32,6 +33,28 @@ async function openTranscript(path: string) {
   }
 }
 
+const VALUE_PLANS = [
+  { name: 'Pro $20', priceUsd: 20 },
+  { name: 'Max $100', priceUsd: 100 },
+  { name: 'Max $200', priceUsd: 200 },
+];
+
+function recapCardForPeriod(
+  cards: { today: RecapCardData; weekly: RecapCardData; monthly: RecapCardData },
+  period: RecapPeriod,
+) {
+  return period === 'today' ? cards.today : period === '7d' ? cards.weekly : cards.monthly;
+}
+
+function periodPlanCost(monthlyUsd: number, card: RecapCardData): number {
+  const denominator = card.period.billingDenominatorDays > 0 ? card.period.billingDenominatorDays : 365.2425 / 12;
+  return Math.round((monthlyUsd * card.period.days / denominator) * 100) / 100;
+}
+
+function periodLabelKey(period: RecapPeriod) {
+  return period === 'today' ? 'today' : period === '7d' ? '7d' : 'month';
+}
+
 export function SessionInsightCard({
   data,
   redact = false,
@@ -42,14 +65,28 @@ export function SessionInsightCard({
   recapCards?: { today: RecapCardData; weekly: RecapCardData; monthly: RecapCardData };
 }) {
   const t = useT();
+  const [recapPeriod, setRecapPeriod] = useState<RecapPeriod>('7d');
   const { retryRate7d, topExpensive, value } = data;
-  const bestPlan = value.plans.reduce((best, p) => (p.multiplier >= 1 && (!best || p.priceUsd > best.priceUsd) ? p : best), null as null | typeof value.plans[number]);
-  const tipPlan = bestPlan ?? value.plans[value.plans.length - 1] ?? null;
+  const selectedRecap = recapCards ? recapCardForPeriod(recapCards, recapPeriod) : null;
+  const displayValueUsd = selectedRecap?.valueAtApiRatesUsd ?? value.monthToDateUsd;
+  const valuePlans = selectedRecap
+    ? VALUE_PLANS.map((p) => {
+      const priceUsd = periodPlanCost(p.priceUsd, selectedRecap);
+      return {
+        name: p.name,
+        priceUsd,
+        multiplier: priceUsd > 0 ? Math.round((displayValueUsd / priceUsd) * 10) / 10 : 0,
+      };
+    })
+    : value.plans;
+  const bestPlan = valuePlans.reduce((best, p) => (p.multiplier >= 1 && (!best || p.priceUsd > best.priceUsd) ? p : best), null as null | typeof valuePlans[number]);
+  const tipPlan = bestPlan ?? valuePlans[valuePlans.length - 1] ?? null;
   const valueTip = tipPlan
-    ? t('card.insight.valueTip', {
-      cost: `$${value.monthToDateUsd.toFixed(2)}`,
+    ? t(selectedRecap ? 'card.insight.valueTipPeriod' : 'card.insight.valueTip', {
+      period: t(`card.insight.period.${periodLabelKey(recapPeriod)}`),
+      cost: `$${displayValueUsd.toFixed(2)}`,
       plan: tipPlan.name,
-      price: `$${tipPlan.priceUsd}`,
+      price: `$${tipPlan.priceUsd.toFixed(tipPlan.priceUsd >= 10 ? 0 : 2)}`,
       x: tipPlan.multiplier,
     })
     : null;
@@ -78,9 +115,11 @@ export function SessionInsightCard({
               </span>
             )}
           </span>
-          <span className="text-lg font-semibold text-emerald-300">${value.monthToDateUsd.toFixed(2)}</span>
+          <span className="text-lg font-semibold text-emerald-300">${displayValueUsd.toFixed(2)}</span>
         </div>
-        <p className="mt-1 text-[11px] text-zinc-500">{t('card.insight.valueSub')}</p>
+        <p className="mt-1 text-[11px] text-zinc-500">
+          {selectedRecap ? t(`card.insight.valueSub.${periodLabelKey(recapPeriod)}`) : t('card.insight.valueSub')}
+        </p>
         {bestPlan && (
           <p className="mt-1 text-[11px] text-emerald-200/80">
             {t('card.insight.valuePlan', { plan: bestPlan.name, x: bestPlan.multiplier })}
@@ -88,7 +127,13 @@ export function SessionInsightCard({
         )}
         {recapCards && (
           <div className="mt-3 flex justify-end">
-            <RecapShareButton today={recapCards.today} weekly={recapCards.weekly} monthly={recapCards.monthly} />
+            <RecapShareButton
+              today={recapCards.today}
+              weekly={recapCards.weekly}
+              monthly={recapCards.monthly}
+              period={recapPeriod}
+              onPeriodChange={setRecapPeriod}
+            />
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import type { SpendingStats } from '@/lib/stats';
 import { useT } from '@/lib/i18n/client';
 
@@ -34,8 +35,24 @@ function sumWindow(daily: SpendingStats['daily'], days: number) {
 
 export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFilter: ToolFilter }) {
   const t = useT();
-  const showClaude = toolFilter === 'all' || toolFilter === 'claude-code';
-  const showCodex  = toolFilter === 'all' || toolFilter === 'codex';
+  const canShowClaude = toolFilter === 'all' || toolFilter === 'claude-code';
+  const canShowCodex  = toolFilter === 'all' || toolFilter === 'codex';
+  const [hiddenSeries, setHiddenSeries] = useState({ claude: false, codex: false });
+  const [activeDate, setActiveDate] = useState<string | null>(data.daily.at(-1)?.date ?? null);
+
+  const showClaude = canShowClaude && !hiddenSeries.claude;
+  const showCodex  = canShowCodex && !hiddenSeries.codex;
+  const activeDay = data.daily.find((d) => d.date === activeDate) ?? data.daily.at(-1) ?? null;
+
+  function toggleSeries(kind: 'claude' | 'codex') {
+    setHiddenSeries((current) => {
+      const next = { ...current, [kind]: !current[kind] };
+      const nextShowsClaude = canShowClaude && !next.claude;
+      const nextShowsCodex = canShowCodex && !next.codex;
+      if (!nextShowsClaude && !nextShowsCodex) return current;
+      return next;
+    });
+  }
 
   const maxClaude = showClaude ? Math.max(...data.daily.map((d) => d.claudeUsd), 0.01) : 0.01;
   const maxCodex  = showCodex  ? Math.max(...data.daily.map((d) => d.codexTokens), 1) : 1;
@@ -47,7 +64,7 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
   const last7d = sumWindow(data.daily, 7);
   const last30d = sumWindow(data.daily, 30);
 
-  if (!showClaude && !showCodex) {
+  if (!canShowClaude && !canShowCodex) {
     return (
       <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-5">
         <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">{t('card.spending.title')}</p>
@@ -108,22 +125,34 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
           const claudePct = showClaude ? (d.claudeUsd / maxClaude) * 100 : 0;
           const codexPct  = showCodex  ? (d.codexTokens / maxCodex) * 100 : 0;
           const label = d.date.slice(5);
+          const active = activeDay?.date === d.date;
           const tip = [
             label,
             showClaude ? `Claude $${d.claudeUsd.toFixed(2)}` : '',
             showCodex  ? `Codex ${fmtTokens(d.codexTokens)} tokens` : '',
           ].filter(Boolean).join('\n');
           return (
-            <div key={d.date} className="flex-1 flex flex-col items-center" title={tip}>
+            <button
+              key={d.date}
+              type="button"
+              title={tip}
+              aria-label={tip}
+              onClick={() => setActiveDate(d.date)}
+              onFocus={() => setActiveDate(d.date)}
+              onMouseEnter={() => setActiveDate(d.date)}
+              className={`group flex flex-1 flex-col items-center rounded-sm outline-none transition-colors ${
+                active ? 'bg-zinc-800/40' : 'hover:bg-zinc-800/25 focus:bg-zinc-800/25'
+              }`}
+            >
               <div className="w-full flex flex-col justify-end gap-px" style={{ height: '208px' }}>
                 {showCodex && d.codexTokens > 0 && (
-                  <div className="w-full bg-emerald-600/60 rounded-sm" style={{ height: `${Math.max(codexPct * 2.08, 1)}px` }} />
+                  <div className={`w-full rounded-sm ${active ? 'bg-emerald-400/80' : 'bg-emerald-600/60'}`} style={{ height: `${Math.max(codexPct * 2.08, 1)}px` }} />
                 )}
                 {showClaude && d.claudeUsd > 0 && (
-                  <div className="w-full bg-violet-500/70 rounded-sm" style={{ height: `${Math.max(claudePct * 2.08, 1)}px` }} />
+                  <div className={`w-full rounded-sm ${active ? 'bg-violet-300/90' : 'bg-violet-500/70'}`} style={{ height: `${Math.max(claudePct * 2.08, 1)}px` }} />
                 )}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
@@ -132,17 +161,47 @@ export function SpendingCard({ data, toolFilter }: { data: SpendingStats; toolFi
         <span className="text-zinc-700 text-xs">{data.daily[data.daily.length - 1]?.date.slice(5)}</span>
       </div>
 
+      {activeDay && (
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
+          <span className="font-medium text-zinc-300">{activeDay.date.slice(5)}</span>
+          {canShowClaude && (
+            <span className={showClaude ? 'text-violet-300' : 'text-zinc-700'}>
+              {t('card.spending.legendClaude')} ${activeDay.claudeUsd.toFixed(2)}
+            </span>
+          )}
+          {canShowCodex && (
+            <span className={showCodex ? 'text-emerald-300' : 'text-zinc-700'}>
+              {t('card.spending.legendCodex')} {fmtTokens(activeDay.codexTokens)}
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Legend */}
       <div className="flex gap-4 mt-2">
-        {showClaude && (
-          <span className="flex items-center gap-1 text-xs text-zinc-600">
-            <span className="w-2 h-2 rounded-sm bg-violet-500/70 inline-block" /> {t('card.spending.legendClaude')}
-          </span>
+        {canShowClaude && (
+          <button
+            type="button"
+            onClick={() => toggleSeries('claude')}
+            aria-pressed={showClaude}
+            className={`flex items-center gap-1 rounded px-1 py-0.5 text-xs transition-colors ${
+              showClaude ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-700 hover:text-zinc-500'
+            }`}
+          >
+            <span className={`inline-block h-2 w-2 rounded-sm ${showClaude ? 'bg-violet-500/70' : 'bg-zinc-700'}`} /> {t('card.spending.legendClaude')}
+          </button>
         )}
-        {showCodex && (
-          <span className="flex items-center gap-1 text-xs text-zinc-600">
-            <span className="w-2 h-2 rounded-sm bg-emerald-600/60 inline-block" /> {t('card.spending.legendCodex')}
-          </span>
+        {canShowCodex && (
+          <button
+            type="button"
+            onClick={() => toggleSeries('codex')}
+            aria-pressed={showCodex}
+            className={`flex items-center gap-1 rounded px-1 py-0.5 text-xs transition-colors ${
+              showCodex ? 'text-zinc-500 hover:text-zinc-300' : 'text-zinc-700 hover:text-zinc-500'
+            }`}
+          >
+            <span className={`inline-block h-2 w-2 rounded-sm ${showCodex ? 'bg-emerald-600/60' : 'bg-zinc-700'}`} /> {t('card.spending.legendCodex')}
+          </button>
         )}
       </div>
     </div>

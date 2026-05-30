@@ -25,6 +25,8 @@ interface Props {
   weekly: RecapCardData;
   monthly: RecapCardData;
   compact?: boolean;
+  period?: RecapPeriod;
+  onPeriodChange?: (period: RecapPeriod) => void;
 }
 
 const ANGLE_LABELS: Record<RecapHeroKind, string> = {
@@ -83,13 +85,14 @@ function revoke(cards: GeneratedCards | null) {
   URL.revokeObjectURL(cards.square.url);
 }
 
-export function RecapShareButton({ today, weekly, monthly, compact = false }: Props) {
+export function RecapShareButton({ today, weekly, monthly, compact = false, period: controlledPeriod, onPeriodChange }: Props) {
   // Default to the natural sharing cadence ('7d'); user can switch to today / month manually.
-  const [period, setPeriod] = useState<RecapPeriod>('7d');
+  const [internalPeriod, setInternalPeriod] = useState<RecapPeriod>('7d');
   const [style, setStyle] = useState<RecapStyle>('hero');
   const [status, setStatus] = useState<Status>('idle');
   const [generated, setGenerated] = useState<GeneratedCards | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const period = controlledPeriod ?? internalPeriod;
   const card = period === 'today' ? today : period === '7d' ? weekly : monthly;
 
   // Available hero angles for the active card, in a stable order. Used both by
@@ -108,6 +111,19 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
   }, []);
 
   useEffect(() => () => revoke(generated), [generated]);
+
+  function selectPeriod(next: RecapPeriod) {
+    if (next === period) return;
+    setHeroOverride(null);
+    if (generated) {
+      revoke(generated);
+      setGenerated(null);
+      setStatus('idle');
+      setMessage(null);
+    }
+    if (onPeriodChange) onPeriodChange(next);
+    else setInternalPeriod(next);
+  }
 
   async function generate(overrideHero?: RecapHeroKind, overrideStyle?: RecapStyle) {
     setStatus('rendering');
@@ -205,7 +221,7 @@ export function RecapShareButton({ today, weekly, monthly, compact = false }: Pr
             <button
               key={item}
               type="button"
-              onClick={() => setPeriod(item)}
+              onClick={() => selectPeriod(item)}
               className={`rounded-full px-2 py-1 text-[10px] transition-colors ${
                 period === item ? 'bg-violet-500/20 text-violet-100' : 'text-zinc-500 hover:text-zinc-300'
               }`}
