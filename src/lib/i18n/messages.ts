@@ -406,8 +406,15 @@ const zh: Messages = {
   'card.insight.openTranscript': '打开 transcript',
   'card.insight.valueTitle': '订阅划算度',
   'card.insight.valueSub': '本月 Claude Code 累计 API 等价成本',
+  'card.insight.valueSub.today': '今日 Claude Code API 等价成本',
+  'card.insight.valueSub.7d': '近 7 天 Claude Code API 等价成本',
+  'card.insight.valueSub.month': '本月 Claude Code API 等价成本',
   'card.insight.valuePlan': '相当于 {plan} 订阅的 {x}×',
+  'card.insight.period.today': '今日',
+  'card.insight.period.7d': '近 7 天',
+  'card.insight.period.month': '本月',
   'card.insight.valueTip': '计算方式：本月从 Claude Code statusline 抓到每个 session 的最大 cost.total_cost_usd 并求和，得到 API 等价成本 {cost}；再除以 {plan} 的月费 {price}，所以是 {x}×。它不是实际扣费。',
+  'card.insight.valueTipPeriod': '计算方式：{period}内，从 Claude Code statusline 抓到每个 session 的最大 cost.total_cost_usd 并求和，得到 API 等价成本 {cost}；再除以 {plan} 在同周期折算的成本 {price}，所以是 {x}×。它不是实际扣费。',
 
   // ── cache hit-rate card ───────────────────────────────────────────────
   'card.cache.title': 'Cache 命中率',
@@ -1018,8 +1025,15 @@ const en: Messages = {
   'card.insight.openTranscript': 'Open transcript',
   'card.insight.valueTitle': 'Subscription value',
   'card.insight.valueSub': 'This month’s Claude Code API-equivalent spend',
+  'card.insight.valueSub.today': "Today’s Claude Code API-equivalent spend",
+  'card.insight.valueSub.7d': 'Last 7 days of Claude Code API-equivalent spend',
+  'card.insight.valueSub.month': 'This month’s Claude Code API-equivalent spend',
   'card.insight.valuePlan': '{x}× a {plan} plan',
+  'card.insight.period.today': 'today',
+  'card.insight.period.7d': 'the last 7 days',
+  'card.insight.period.month': 'this month',
   'card.insight.valueTip': 'Calculation: for this month, Vibemeter sums each Claude Code session’s max cost.total_cost_usd from statusline snapshots to estimate API-equivalent spend ({cost}), then divides it by the {plan} monthly price ({price}) to get {x}×. This is not your actual bill.',
+  'card.insight.valueTipPeriod': 'Calculation: for {period}, Vibemeter sums each Claude Code session’s max cost.total_cost_usd from statusline snapshots to estimate API-equivalent spend ({cost}), then divides it by the prorated {plan} cost for the same period ({price}) to get {x}×. This is not your actual bill.',
 
   // ── cache hit-rate card ───────────────────────────────────────────────
   'card.cache.title': 'Cache hit rate',
