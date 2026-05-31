@@ -7,6 +7,8 @@ import {
   isoWeekWindow,
   parseIsoWeek,
 } from '@/lib/report/iso-week';
+import { hasFeature } from '@/lib/entitlements';
+import { getCurrentState } from '@/lib/license/service';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,6 +41,7 @@ export async function GET(request: Request) {
   const weekParam = url.searchParams.get('week');
   const locale = await getServerLocale();
   const now = new Date();
+  const isPro = hasFeature('dashboard.weeklyReportFull', getCurrentState().plan);
 
   // ?week=2026-W22 — validated below. Defaults to the ISO week containing `now`.
   let weekIso: string;
@@ -70,17 +73,32 @@ export async function GET(request: Request) {
         { status: 400 },
       );
     }
+    // Historical-week navigation is a Pro feature. Without this gate, Free
+    // users can iterate ?week= to read arbitrary history that the UI hides.
+    if (weekOffset !== 0 && !isPro) {
+      return NextResponse.json(
+        { error: 'historical weeks require Pro' },
+        { status: 403 },
+      );
+    }
   }
 
   const key = cacheKey(weekIso, locale);
+  let report: WeeklyReport;
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) {
-    return NextResponse.json(hit.payload);
+    report = hit.payload;
+  } else {
+    report = buildWeeklyReport({ now, weekOffset, locale });
+    cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload: report });
   }
-
-  const report = buildWeeklyReport({ now, weekOffset, locale });
-  cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, payload: report });
-  return NextResponse.json(report);
+  // Strip the Pro-only narrative for Free callers. We cache the full report
+  // and gate on serve so a Free request doesn't poison the cache for a Pro
+  // request on the same key.
+  const payload: WeeklyReport = isPro
+    ? report
+    : { ...report, paragraphs: [], recommendations: [] };
+  return NextResponse.json(payload);
 }
 
 /**

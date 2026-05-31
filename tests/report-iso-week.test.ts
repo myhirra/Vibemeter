@@ -26,6 +26,14 @@ test('parseIsoWeek: rejects malformed inputs', () => {
   assert.equal(parseIsoWeek('2026-W54'), null);  // week >53 invalid
 });
 
+test('parseIsoWeek: rejects W53 in years that do not have one', () => {
+  // 2025 is a 52-week ISO year (Jan 1 was Wednesday, not leap). W53 must reject
+  // instead of silently rolling over to 2026-W01.
+  assert.equal(parseIsoWeek('2025-W53'), null);
+  // 2026 IS a 53-week ISO year (Jan 1 is Thursday) — W53 must round-trip.
+  assert.deepEqual(parseIsoWeek('2026-W53'), { year: 2026, week: 53, iso: '2026-W53' });
+});
+
 // ── isoWeekFromDate ────────────────────────────────────────────────────────
 
 test('isoWeekFromDate: Monday lands in the week starting that Monday', () => {

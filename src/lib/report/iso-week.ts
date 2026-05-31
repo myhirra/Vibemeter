@@ -48,6 +48,11 @@ export function formatIso(year: number, week: number): string {
 
 /**
  * Parse "YYYY-Www". Returns null on bad input — callers decide whether to 400.
+ *
+ * Validates that the requested week actually exists in the given ISO year.
+ * Most years have 52 weeks; only years whose Jan 1 is Thursday (or leap years
+ * whose Jan 1 is Wednesday) carry a W53. Without this check, `?week=2025-W53`
+ * silently rolls over to 2026-W01 and returns the wrong window's data.
  */
 export function parseIsoWeek(value: string): IsoWeek | null {
   const match = /^(\d{4})-W(\d{2})$/.exec(value);
@@ -56,6 +61,11 @@ export function parseIsoWeek(value: string): IsoWeek | null {
   const week = Number(match[2]);
   if (!Number.isFinite(year) || !Number.isFinite(week)) return null;
   if (week < 1 || week > 53) return null;
+  if (week === 53) {
+    // Cross-check: does this ISO year actually have a W53?
+    const resolved = isoWeekFromDate(isoWeekStart(year, 53));
+    if (resolved.year !== year || resolved.week !== 53) return null;
+  }
   return { year, week, iso: formatIso(year, week) };
 }
 
