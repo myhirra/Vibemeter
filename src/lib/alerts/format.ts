@@ -194,6 +194,27 @@ export function formatVendorEvent(
   return { title, body };
 }
 
+const BUDGET_PERIOD_LABELS: Record<PushLocale, Record<'today' | '7d' | 'month', string>> = {
+  zh: { today: '今日', '7d': '近 7 天', month: '本月' },
+  en: { today: 'today', '7d': 'last 7d', month: 'this month' },
+};
+
+export function formatBudgetAlert(
+  rule: Extract<AlertRule, { kind: 'budget' }>,
+  spendUsd: number,
+  locale: PushLocale = 'zh',
+): { title: string; body: string } {
+  const periodLabel = BUDGET_PERIOD_LABELS[locale][rule.period];
+  const money = (n: number) => `$${n.toFixed(2)}`;
+  const title = locale === 'en'
+    ? `💸 Vibemeter · ${periodLabel} spend ${money(spendUsd)} ≥ ${money(rule.amountUsd)} budget`
+    : `💸 Vibemeter · ${periodLabel}用量 ${money(spendUsd)} ≥ 预算 ${money(rule.amountUsd)}`;
+  const body = locale === 'en'
+    ? `**${periodLabel}** API-equivalent spend reached **${money(spendUsd)}**, at or over your **${money(rule.amountUsd)}** budget.`
+    : `**${periodLabel}** 的 API 等价用量已达 **${money(spendUsd)}**，达到/超过你设定的 **${money(rule.amountUsd)}** 预算。`;
+  return { title, body };
+}
+
 export function formatTestMessage(locale: PushLocale = 'zh'): { title: string; body: string } {
   return locale === 'en'
     ? {

@@ -10,7 +10,7 @@ import { importUsageSnapshots } from '@/lib/collectors/session-importer';
 import { getDb } from '@/lib/db';
 import { getRecentUsageSnapshots, type UsageSnapshotRecord, type UsageSource } from '@/lib/usage-snapshots';
 import { dispatch } from './dispatch';
-import { formatDailySummary, formatResetReminder, formatThresholdAlert, formatVendorEvent } from './format';
+import { formatBudgetAlert, formatDailySummary, formatResetReminder, formatThresholdAlert, formatVendorEvent } from './format';
 import { readAlertConfig, readAlertState, writeAlertState } from './storage';
 import { evaluateRecapNudge } from '@/lib/recap-nudge';
 import type {
@@ -120,6 +120,43 @@ function evaluateDaily(
     body,
     nextState: { kind: 'daily', lastFiredDay: day },
   };
+}
+
+// ISO-8601 week key (YYYY-Www) so a `7d` budget fires at most once per week.
+function isoWeekKey(d: Date): string {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (date.getUTCDay() + 6) % 7; // Mon=0
+  date.setUTCDate(date.getUTCDate() - dayNum + 3); // Thursday of this ISO week
+  const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const week = 1 + Math.round((date.getTime() - firstThursday.getTime()) / (7 * 24 * 3600 * 1000));
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+function budgetBucketKey(period: 'today' | '7d' | 'month', now: Date): string {
+  if (period === 'month') return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  if (period === '7d') return isoWeekKey(now);
+  return todayKey(now);
+}
+
+function windowSpendUsd(stats: FloatStats, period: 'today' | '7d' | 'month'): number | null {
+  const row = stats.periodMetrics.find((m) => m.period === period && m.tool === 'all');
+  return row ? row.valueUsd : null;
+}
+
+export function evaluateBudget(
+  rule: Extract<AlertRule, { kind: 'budget' }>,
+  prev: RuleState | undefined,
+  stats: FloatStats,
+  locale: PushLocale,
+  now: Date,
+): PendingFire | null {
+  const bucket = budgetBucketKey(rule.period, now);
+  // One alert per natural period — don't re-nudge until the bucket rolls over.
+  if (prev?.kind === 'budget' && prev.lastFiredForBucket === bucket) return null;
+  const spend = windowSpendUsd(stats, rule.period);
+  if (spend == null || spend < rule.amountUsd) return null;
+  const { title, body } = formatBudgetAlert(rule, spend, locale);
+  return { rule, channels: [], title, body, nextState: { kind: 'budget', lastFiredForBucket: bucket } };
 }
 
 function snapshotResetAt(record: UsageSnapshotRecord, metric: ResetMetric): number | null {
@@ -266,6 +303,13 @@ export async function runAlertsOnce(now: Date = new Date()): Promise<RunReport> 
       stateUpdates[rule.id] = r.nextState;
     } else if (rule.kind === 'vendor_event') {
       const r = evaluateVendorEvent(rule, prev, vendorDeps, pushLocale);
+      if (!r) continue;
+      const channels = channelsByIds(config, rule.channelIds);
+      if (!channels.length) continue;
+      pending.push({ ...r, channels });
+      stateUpdates[rule.id] = r.nextState;
+    } else if (rule.kind === 'budget') {
+      const r = evaluateBudget(rule, prev, stats, pushLocale, now);
       if (!r) continue;
       const channels = channelsByIds(config, rule.channelIds);
       if (!channels.length) continue;

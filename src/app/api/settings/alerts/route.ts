@@ -85,6 +85,14 @@ function validateRule(r: unknown): AlertRule {
     if (!Number.isFinite(remainingPctAbove) || remainingPctAbove < 0 || remainingPctAbove > 100) throw new Error('reset_reminder.remainingPctAbove 0-100');
     return { id, kind: 'reset_reminder', label, metric: metric as (typeof allowedReset)[number], minutesBefore, remainingPctAbove, channelIds, enabled };
   }
+  if (obj.kind === 'budget') {
+    const period = String(obj.period ?? '');
+    const amountUsd = Number(obj.amountUsd);
+    const allowedPeriods = ['today', '7d', 'month'] as const;
+    if (!allowedPeriods.includes(period as (typeof allowedPeriods)[number])) throw new Error('budget.period invalid');
+    if (!Number.isFinite(amountUsd) || amountUsd <= 0) throw new Error('budget.amountUsd must be > 0');
+    return { id, kind: 'budget', label, period: period as (typeof allowedPeriods)[number], amountUsd, channelIds, enabled };
+  }
   throw new Error(`Unknown rule.kind: ${String(obj.kind)}`);
 }
 

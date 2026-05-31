@@ -30,7 +30,10 @@ type Rule =
   | { id: string; kind: 'threshold'; label?: string; metric: AlertMetric; below: number; channelIds: string[]; enabled: boolean }
   | { id: string; kind: 'daily'; label?: string; hour: number; minute: number; channelIds: string[]; enabled: boolean }
   | { id: string; kind: 'reset_reminder'; label?: string; metric: ResetMetric; minutesBefore: number; remainingPctAbove: number; channelIds: string[]; enabled: boolean }
-  | { id: string; kind: 'vendor_event'; label?: string; metric: ResetMetric; minUsedPctBefore: number; maxUsedPctAfter: number; channelIds: string[]; enabled: boolean };
+  | { id: string; kind: 'vendor_event'; label?: string; metric: ResetMetric; minUsedPctBefore: number; maxUsedPctAfter: number; channelIds: string[]; enabled: boolean }
+  | { id: string; kind: 'budget'; label?: string; period: 'today' | '7d' | 'month'; amountUsd: number; channelIds: string[]; enabled: boolean };
+
+const BUDGET_PERIOD_KEYS: Array<'today' | '7d' | 'month'> = ['today', '7d', 'month'];
 
 type PushLocale = 'zh' | 'en';
 interface Config { channels: Channel[]; rules: Rule[]; pushLocale?: PushLocale }
@@ -63,6 +66,9 @@ function newRule(kind: Rule['kind'], firstChannelId: string | null): Rule {
   }
   if (kind === 'vendor_event') {
     return { id: newId(), kind, metric: 'claude_weekly', minUsedPctBefore: 5, maxUsedPctAfter: 1, channelIds, enabled: true };
+  }
+  if (kind === 'budget') {
+    return { id: newId(), kind, period: 'month', amountUsd: 100, channelIds, enabled: true };
   }
   return { id: newId(), kind: 'reset_reminder', metric: 'claude_5h', minutesBefore: 60, remainingPctAbove: 50, channelIds, enabled: true };
 }
@@ -308,6 +314,9 @@ export function SettingsAlertsPanel({ initialConfig, initialConfigPath }: Props)
             <button type="button" onClick={() => addRule('vendor_event')} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500">
               {t('alerts.addRuleVendor')}
             </button>
+            <button type="button" onClick={() => addRule('budget')} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500">
+              {t('alerts.addRuleBudget')}
+            </button>
           </div>
         </div>
         {config.rules.length === 0 ? (
@@ -389,7 +398,9 @@ function RuleRow({
       ? t('alerts.kindDaily')
       : rule.kind === 'vendor_event'
         ? t('alerts.kindVendor')
-        : t('alerts.kindReset');
+        : rule.kind === 'budget'
+          ? t('alerts.kindBudget')
+          : t('alerts.kindReset');
 
   return (
     <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3">
@@ -486,6 +497,32 @@ function RuleRow({
               className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
             />
             <span className="text-zinc-500">%</span>
+          </label>
+        </div>
+      )}
+
+      {rule.kind === 'budget' && (
+        <div className="grid sm:grid-cols-2 gap-2 text-xs">
+          <label className="flex items-center gap-2">
+            <span className="text-zinc-500 w-16 shrink-0">{t('alerts.budgetPeriod')}</span>
+            <select
+              value={rule.period}
+              onChange={(e) => onChange({ period: e.target.value as 'today' | '7d' | 'month' })}
+              className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
+            >
+              {BUDGET_PERIOD_KEYS.map((v) => (
+                <option key={v} value={v}>{t(`alerts.budgetPeriod.${v}`)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-zinc-500 w-16 shrink-0">{t('alerts.budgetAmount')}</span>
+            <span className="text-zinc-500">$</span>
+            <input
+              type="number" min={1} step={1} value={rule.amountUsd}
+              onChange={(e) => onChange({ amountUsd: Number(e.target.value) })}
+              className="w-24 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
+            />
           </label>
         </div>
       )}

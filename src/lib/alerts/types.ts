@@ -63,6 +63,18 @@ export type AlertRule =
       maxUsedPctAfter: number; // collapse threshold (e.g. 1 — effectively zero)
       channelIds: string[];
       enabled: boolean;
+    }
+  | {
+      // Spend guardrail: fire when the API-equivalent value ("$ spend") in a
+      // window reaches a budget. Fires at most once per natural bucket (day for
+      // `today`, ISO week for `7d`, month for `month`).
+      id: string;
+      kind: 'budget';
+      label?: string;
+      period: 'today' | '7d' | 'month';
+      amountUsd: number; // fire when window spend >= this
+      channelIds: string[];
+      enabled: boolean;
     };
 
 export type PushLocale = 'zh' | 'en';
@@ -92,6 +104,10 @@ export type RuleState =
       // resetAt observed at the moment of the last fire — dedupe so a vendor
       // event isn't reported twice while the same post-reset window persists.
       lastFiredForResetAt: number | null;
+    }
+  | {
+      kind: 'budget';
+      lastFiredForBucket: string | null; // natural-period key at last fire
     };
 
 export interface AlertState {
