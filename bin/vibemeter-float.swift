@@ -188,7 +188,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.none": "无重置时间",
         "reset.expired": "快照已过期",
         "reset.in": "{time} 后重置",
-        "pace.exhausts": "约 {n}m 后耗尽",
+        "pace.exhausts": "约 {n} 后耗尽",
     ],
     .en: [
         "status.loading": "loading",
@@ -235,7 +235,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.none": "no reset time",
         "reset.expired": "snapshot expired",
         "reset.in": "resets in {time}",
-        "pace.exhausts": "exhausts in ~{n}m",
+        "pace.exhausts": "exhausts in ~{n}",
     ],
 ]
 
@@ -953,7 +953,7 @@ final class FloatView: NSView {
         drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
         if let exhaust = q?.pace5hExhaustMin, exhaust > 0 {
             let paceColor = exhaust < 30 ? NSColor.systemPink : NSColor.systemYellow
-            drawText(tr("pace.exhausts", ["n": "\(exhaust)"]), rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
+            drawText(tr("pace.exhausts", ["n": paceText(exhaust)]), rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
         } else if let account = q?.accountLabel, !account.isEmpty, !dual {
             drawText(account, rect: NSRect(x: x, y: baseY + 67, width: textWidth, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
         }
@@ -976,8 +976,12 @@ final class FloatView: NSView {
         if dual {
             drawDualWeekly(rect: weeklyRect)
         } else {
-            let weekly = quota(for: focusAgent)?.remainingWeekly
-            drawMetric(title: tr("metric.weekly"), value: remainingPercentText(weekly), rect: weeklyRect)
+            let q = quota(for: focusAgent)
+            // Reset countdown lives under the % so the user can answer "when
+            // does this week refresh" without opening the dashboard. Falls back
+            // to the title-only layout when there's no snapshot.
+            let sub = q.flatMap { weeklyResetText($0.resetAtWeekly) }
+            drawMetric(title: tr("metric.weekly"), value: remainingPercentText(q?.remainingWeekly), subtitle: sub, rect: weeklyRect)
         }
     }
 
@@ -1079,13 +1083,22 @@ final class FloatView: NSView {
         return tr("session.latest")
     }
 
-    private func drawMetric(title: String, value: String, rect: NSRect) {
+    private func drawMetric(title: String, value: String, subtitle: String? = nil, rect: NSRect) {
         NSColor.black.withAlphaComponent(0.20).setFill()
         NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
         NSColor.white.withAlphaComponent(0.06).setStroke()
         NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).stroke()
-        drawText(title, rect: NSRect(x: rect.minX, y: rect.minY + 9, width: rect.width, height: 13), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
-        drawText(value, rect: NSRect(x: rect.minX, y: rect.minY + 25, width: rect.width, height: 20), size: 15, weight: .semibold, color: .white, alignment: .center)
+        let hasSub = subtitle != nil
+        // Slide the title up a hair and shrink the value when a subtitle is
+        // present, so the 50px tile still fits the third line without clipping.
+        let titleY = hasSub ? rect.minY + 6 : rect.minY + 9
+        let valueY = hasSub ? rect.minY + 20 : rect.minY + 25
+        let valueSize: CGFloat = hasSub ? 13 : 15
+        drawText(title, rect: NSRect(x: rect.minX, y: titleY, width: rect.width, height: 13), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
+        drawText(value, rect: NSRect(x: rect.minX, y: valueY, width: rect.width, height: 18), size: valueSize, weight: .semibold, color: .white, alignment: .center)
+        if let subtitle {
+            drawText(subtitle, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 11), size: 9, weight: .regular, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
+        }
     }
 
     private func drawIconButton(_ text: String, rect: NSRect, active: Bool) {
@@ -1144,6 +1157,24 @@ final class FloatView: NSView {
         let minutes = (Int(diff) % 3600) / 60
         let rel = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
         return tr("reset.in", ["time": rel])
+    }
+
+    private func paceText(_ minutes: Int) -> String {
+        if minutes < 60 { return "\(minutes)m" }
+        return "\(minutes / 60)h \(minutes % 60)m"
+    }
+
+    private func weeklyResetText(_ value: Double?) -> String? {
+        guard let value else { return nil }
+        let diff = (value / 1000) - Date().timeIntervalSince1970
+        if diff <= 0 { return nil }
+        let totalMinutes = Int(diff) / 60
+        let days = totalMinutes / (24 * 60)
+        let hours = (totalMinutes % (24 * 60)) / 60
+        let minutes = totalMinutes % 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(minutes)m" }
+        return "\(minutes)m"
     }
 
     private func toolName(_ value: String) -> String {

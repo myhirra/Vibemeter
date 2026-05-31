@@ -156,7 +156,7 @@ const zh: Messages = {
   'card.runway.window5h': '5h 窗口',
   'card.runway.weeklyHigh': '本周用量偏高',
   'card.runway.contextHigh': 'Claude 上下文 {pct}%，建议尽快 /compact',
-  'card.runway.paceExhaust': '按当前速度约 {n} 分钟后耗尽',
+  'card.runway.paceExhaust': '按当前速度约 {n} 后耗尽',
   'card.runway.resetIn': '{rel}后重置',
   'card.runway.recoSafe': '可以放心启动一次完整测试 / 重构循环。',
   'card.runway.recoWatch': '建议小任务或限定 scope，跑完再启长任务。',
@@ -301,6 +301,59 @@ const zh: Messages = {
   'outcome.refactor': '重构',
   'outcome.explore': '探索',
   'outcome.bugfix': '修 bug',
+
+  // ── weekly report (Phase 2) ───────────────────────────────────────────
+  // Pro-only narrative card. Tone: 第二人称、数字优先、不打鸡血、不绕弯。
+  // 模板占位符与 narrator.ts 的 key 一一对应；空指标的行直接由调用方丢弃，
+  // 这里不放任何 "数据不足" 兜底文案。
+  'report.card.title': '本周报告',
+  'report.card.subtitle': 'ISO 周 · 周一 00:00 起算',
+  'report.card.weekPicker': '选择周次',
+  'report.card.exportImage': '导出图片',
+  'report.card.proLock.title': '解锁 Pro 看完整报告',
+  'report.card.proLock.body': 'Pro Founding License 解锁：完整周报段落 + 历史周次选择 + 图片导出 + 行动建议。',
+  'report.card.proLock.cta': '升级到 Pro',
+  'report.card.proLock.bullet1': '完整文字段落（成本、专注、势能）',
+  'report.card.proLock.bullet2': '近 8 周历史',
+  'report.card.proLock.bullet3': '一键导出为可分享图片',
+  'report.card.recommendations': '行动建议',
+  'report.card.empty': '本周还没有数据可分析。',
+  'report.card.weekLabel': '{iso} · {start} – {end}',
+
+  // Headline (one-liner)
+  'report.headline.quietWeek': '本周静默 — 没有抓到会话。',
+  'report.headline.untaggedMajority': '{total} 个会话，全部未分类。补上 outcome，下周报告才有结论。',
+  'report.headline.strongRoi': '花了 {usd}，发布 {shipped} 个会话。Token 效率不错。',
+  'report.headline.cleanExecution': '本周你 {tagged} 个有标签会话里发布了 {shipped} 个 — 节奏稳。',
+  'report.headline.lowShipRate': '{total} 个会话，发布 {shipped} 个。值得问一下其它 {others} 个去哪了。',
+  'report.headline.noShipped': '本周零发布。要么在深探索，要么哪里卡住了。',
+  'report.headline.steady': '本周 {total} 个会话 · 发布 {shipped} 个。',
+  'report.headline.steadyAccelerating': '本周 {total} 个会话 · 发布 {shipped} 个，节奏在加速。',
+  'report.headline.steadyCooling': '本周 {total} 个会话 · 发布 {shipped} 个，节奏在降温。',
+
+  // Burn paragraph
+  'report.burn.totalOnly': '本周花了 {usd}，分布在 {projects} 个项目。',
+  'report.burn.dominant': '本周花了 {usd}，分布在 {projects} 个项目。{topProject} 占大头 {topUsd}（{topSessions} 会话，发布 {topShipped} 个）。',
+  'report.burn.spread': '本周花了 {usd}，分布在 {projects} 个项目，最大单项 {topProject} 占 {topUsd}。',
+
+  // Focus paragraph
+  'report.focus.focused': '专注度 {score}/100 — 时间集中在少数几个项目上。',
+  'report.focus.balanced': '专注度 {score}/100 — 同时在 {projects} 个项目之间均衡分配。',
+  'report.focus.scattered': '专注度 {score}/100 — {projects} 个项目并行，注意力分散。',
+  'report.focus.zeroOne': '{project} 这周开了 {sessions} 个会话但零发布。',
+  'report.focus.zeroMany': '{project}（{sessions} 会话）、{other} 等共 {count} 个项目本周零发布。',
+
+  // Momentum paragraph
+  'report.momentum.accelerating': '本周 {sessions} 个会话，是过去 3 周均值的 {ratio}%。势能在上升。',
+  'report.momentum.steady': '本周 {sessions} 个会话，与过去 3 周均值持平（{ratio}%）。',
+  'report.momentum.cooling': '本周 {sessions} 个会话，仅为过去 3 周均值的 {ratio}%。节奏在下滑。',
+
+  // Recommendations
+  'report.rec.pauseZeroDeploy': '暂停 {project} — 本周 {sessions} 会话 0 发布。',
+  'report.rec.tagUntagged': '把 {count} 个未标签会话补上 outcome，下周报告会更准。',
+  'report.rec.leanIntoBest': '继续押注 {project} — 本周发布 {shipped} 个，Token 性价比最高。',
+  'report.rec.coolingNudge': '势能跌到 3 周均值的 {ratio}% — 下周挑一个能在周五前发出去的小任务。',
+  'report.rec.acceleratingNudge': '势能拉到 3 周均值的 {ratio}% — 别把所有会话都堆到本周，留点 buffer。',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter · 管理',
@@ -471,7 +524,7 @@ const zh: Messages = {
   'float.statWeekly': '本周',
   'float.noToday': '今天还没有会话',
   'float.latest': '最近',
-  'float.paceExhaust': '约 {n} 分钟后耗尽',
+  'float.paceExhaust': '约 {n} 后耗尽',
   'float.paceStable': '速度: 平稳',
   'float.paceFlat': '速度: 空闲',
   'float.actionPause': '静音 30 分钟',
@@ -877,7 +930,7 @@ const en: Messages = {
   'card.runway.window5h': '5h window',
   'card.runway.weeklyHigh': 'Weekly usage high',
   'card.runway.contextHigh': 'Claude context {pct}% — consider /compact soon',
-  'card.runway.paceExhaust': 'At current pace, exhausts in ~{n} min',
+  'card.runway.paceExhaust': 'At current pace, exhausts in ~{n}',
   'card.runway.resetIn': 'resets in {rel}',
   'card.runway.recoSafe': 'Safe to start a long test-fix or refactor loop.',
   'card.runway.recoWatch': 'Keep the task narrow; refresh before kicking off a long run.',
@@ -1022,6 +1075,59 @@ const en: Messages = {
   'outcome.refactor': 'refactor',
   'outcome.explore': 'explore',
   'outcome.bugfix': 'bugfix',
+
+  // ── weekly report (Phase 2) ───────────────────────────────────────────
+  // Pro-only narrative card. Tone: second person, numbers always, project
+  // names always, no cheerleading. Placeholders match narrator.ts. The
+  // caller drops paragraphs that come back null so there's no "N/A" fallback.
+  'report.card.title': 'Weekly Report',
+  'report.card.subtitle': 'ISO week · Mon 00:00 anchored',
+  'report.card.weekPicker': 'Week',
+  'report.card.exportImage': 'Export image',
+  'report.card.proLock.title': 'Unlock the full report with Pro',
+  'report.card.proLock.body': 'Pro Founding License unlocks: full weekly paragraphs + week history + image export + recommended actions.',
+  'report.card.proLock.cta': 'Upgrade to Pro',
+  'report.card.proLock.bullet1': 'Full text paragraphs (burn, focus, momentum)',
+  'report.card.proLock.bullet2': 'Last 8 weeks of history',
+  'report.card.proLock.bullet3': 'One-click shareable image export',
+  'report.card.recommendations': 'Recommended actions',
+  'report.card.empty': 'No data to analyse this week.',
+  'report.card.weekLabel': '{iso} · {start} – {end}',
+
+  // Headline (one-liner)
+  'report.headline.quietWeek': 'Quiet week — no sessions captured.',
+  'report.headline.untaggedMajority': '{total} sessions, all untagged. Tag a few so next week\'s report has signal.',
+  'report.headline.strongRoi': '{usd} spent → {shipped} shipped sessions. Strong ROI on AI tokens.',
+  'report.headline.cleanExecution': 'You shipped {shipped} of {tagged} tagged sessions this week — clean execution.',
+  'report.headline.lowShipRate': '{total} sessions, {shipped} shipped. Worth asking what\'s eating the other {others}.',
+  'report.headline.noShipped': 'No shipped output this week. Either exploring hard, or something\'s stuck.',
+  'report.headline.steady': '{total} sessions this week · {shipped} shipped.',
+  'report.headline.steadyAccelerating': '{total} sessions this week · {shipped} shipped, pace picking up.',
+  'report.headline.steadyCooling': '{total} sessions this week · {shipped} shipped, pace cooling.',
+
+  // Burn paragraph
+  'report.burn.totalOnly': '{usd} spent across {projects} projects this week.',
+  'report.burn.dominant': '{usd} spent across {projects} projects. {topProject} took the lion\'s share at {topUsd} ({topSessions} sessions, {topShipped} shipped).',
+  'report.burn.spread': '{usd} spent across {projects} projects; the biggest single line was {topProject} at {topUsd}.',
+
+  // Focus paragraph
+  'report.focus.focused': 'Focus {score}/100 — your time stayed concentrated on a few projects.',
+  'report.focus.balanced': 'Focus {score}/100 — work split evenly across {projects} projects.',
+  'report.focus.scattered': 'Focus {score}/100 — attention spread thin across {projects} projects.',
+  'report.focus.zeroOne': '{project} ran {sessions} sessions with nothing shipped.',
+  'report.focus.zeroMany': '{project} ({sessions} sessions), {other}, and {count} projects total shipped nothing this week.',
+
+  // Momentum paragraph
+  'report.momentum.accelerating': '{sessions} sessions this week — {ratio}% of your trailing 3-week average. Pace is up.',
+  'report.momentum.steady': '{sessions} sessions this week — {ratio}% of your trailing 3-week average. Holding steady.',
+  'report.momentum.cooling': '{sessions} sessions this week — {ratio}% of your trailing 3-week average. Pace is slipping.',
+
+  // Recommendations
+  'report.rec.pauseZeroDeploy': 'Pause {project} — {sessions} sessions this week, 0 shipped.',
+  'report.rec.tagUntagged': 'Tag the {count} untagged sessions to sharpen next week\'s report.',
+  'report.rec.leanIntoBest': 'Keep leaning into {project} — {shipped} shipped this week at the best token efficiency.',
+  'report.rec.coolingNudge': 'Momentum at {ratio}% of the 3-week baseline — pick one task you can finish before next Friday.',
+  'report.rec.acceleratingNudge': 'Momentum at {ratio}% of the 3-week baseline — leave some buffer instead of packing more in.',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter Admin',
@@ -1192,7 +1298,7 @@ const en: Messages = {
   'float.statWeekly': 'weekly',
   'float.noToday': 'No sessions today',
   'float.latest': 'latest',
-  'float.paceExhaust': 'exhausts in ~{n}m',
+  'float.paceExhaust': 'exhausts in ~{n}',
   'float.paceStable': 'pace: stable',
   'float.paceFlat': 'pace: idle',
   'float.actionPause': 'Mute 30m',

@@ -10,7 +10,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, unlinkSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync, statSync, copyFileSync, readdirSync, lstatSync, readlinkSync, unlinkSync, renameSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve as resolvePath } from 'node:path';
@@ -261,11 +261,28 @@ function ensureFloatAppIcon() {
 function compileFloatBinary() {
   const arch = currentMacBinaryArch();
   const target = `${arch}-apple-macos11.0`;
-  const result = spawnSync('/usr/bin/swiftc', ['-target', target, FLOAT_SWIFT, '-o', APP_BINARY], {
+  // Stage the binary at a sibling path and atomically rename over APP_BINARY.
+  // macOS returns ETXTBSY when you try to truncate-and-rewrite a mach-o that's
+  // currently running, but rename(2) just swings the directory entry — the
+  // running process keeps its inode and we land a fresh build at the same path.
+  const stagedBinary = `${APP_BINARY}.new`;
+  try { rmSync(stagedBinary, { force: true }); } catch { /* ignore */ }
+  const result = spawnSync('/usr/bin/swiftc', ['-target', target, FLOAT_SWIFT, '-o', stagedBinary], {
     stdio: 'inherit',
     env: process.env,
   });
-  if (result.status === 0 && hasCurrentMacArchitecture()) return true;
+  if (result.status !== 0) {
+    try { rmSync(stagedBinary, { force: true }); } catch { /* ignore */ }
+    return false;
+  }
+  try {
+    renameSync(stagedBinary, APP_BINARY);
+  } catch (e) {
+    console.error(`Vibemeter: failed to move swiftc output into place at ${APP_BINARY}: ${e.message}`);
+    try { rmSync(stagedBinary, { force: true }); } catch { /* ignore */ }
+    return false;
+  }
+  if (hasCurrentMacArchitecture()) return true;
 
   const got = floatBinaryArchitectures().join(', ') || 'unknown';
   console.error(`Vibemeter: swiftc did not produce a native ${arch} floating app (built: ${got}).`);
@@ -334,7 +351,9 @@ function installApp(args) {
       console.error(`Pass --force to replace it, or use --name "Vibemeter Float.app" to install under a different name.`);
       process.exit(1);
     }
-    rmSync(dest, { recursive: true, force: true });
+    // copyBundle stages alongside dest and rename-swaps, so we don't pre-rm —
+    // a pre-rmSync of a running bundle is fine on macOS, but skipping it keeps
+    // the install atomic if ditto fails partway.
   }
 
   if (!copyBundle(APP_BUNDLE, dest)) {
@@ -349,12 +368,54 @@ function installApp(args) {
 // Use macOS's `ditto` for .app copies — it preserves bundle metadata and
 // extended attributes that a recursive `cp` can drop, which Launch Services
 // occasionally cares about.
+//
+// Stage the new bundle alongside `dest` and atomically swap. If a process is
+// running from inside `dest`, writing files in place can hit ETXTBSY on the
+// mach-o — rename(2) sidesteps that because the running process keeps its
+// inode and we just re-point the directory entries.
 function copyBundle(src, dest) {
   mkdirSync(dirname(dest), { recursive: true });
-  const result = spawnSync('/usr/bin/ditto', [src, dest], { stdio: 'inherit' });
-  if (result.status === 0) return true;
-  console.error(`Failed to copy ${src} → ${dest} (ditto exit ${result.status}).`);
-  return false;
+  const staging = `${dest}.installing`;
+  const previous = `${dest}.replacing`;
+  try { rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
+  try { rmSync(previous, { recursive: true, force: true }); } catch { /* ignore */ }
+
+  const copy = spawnSync('/usr/bin/ditto', [src, staging], { stdio: 'inherit' });
+  if (copy.status !== 0) {
+    try { rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
+    console.error(`Failed to copy ${src} → ${staging} (ditto exit ${copy.status}).`);
+    return false;
+  }
+
+  let movedOldAside = false;
+  if (existsSync(dest) || isBrokenSymlink(dest)) {
+    try {
+      renameSync(dest, previous);
+      movedOldAside = true;
+    } catch (e) {
+      try { rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
+      console.error(`Failed to move existing ${dest} aside: ${e.message}`);
+      return false;
+    }
+  }
+
+  try {
+    renameSync(staging, dest);
+  } catch (e) {
+    if (movedOldAside) {
+      try { renameSync(previous, dest); } catch { /* worst case: caller sees missing dest */ }
+    }
+    try { rmSync(staging, { recursive: true, force: true }); } catch { /* ignore */ }
+    console.error(`Failed to install ${dest}: ${e.message}`);
+    return false;
+  }
+
+  if (movedOldAside) {
+    // Best-effort cleanup. unlink works on running mach-o files on macOS, so
+    // this usually succeeds even when the previous bundle is still launching.
+    try { rmSync(previous, { recursive: true, force: true }); } catch { /* ignore */ }
+  }
+  return true;
 }
 
 // Refresh /Applications/Vibemeter.app after a swiftc rebuild so users
@@ -363,7 +424,6 @@ function syncInstalledCopy() {
   if (platform() !== 'darwin') return;
   const dest = INSTALLED_APP_DEFAULT;
   if (!isOurInstalledApp(dest)) return;
-  rmSync(dest, { recursive: true, force: true });
   if (copyBundle(APP_BUNDLE, dest)) {
     refreshLaunchServices(dest);
   }

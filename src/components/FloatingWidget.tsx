@@ -38,6 +38,13 @@ function formatResetShort(ms: number | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+function formatMinutesHM(min: number): string {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h}h ${m}m`;
+}
+
 function toolLabel(tool: string) {
   if (tool === 'claude-code') return 'Claude';
   if (tool === 'codex') return 'Codex';
@@ -290,7 +297,7 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
             </p>
           )}
           {primary?.pace5hExhaustMin != null && (
-            <p className="text-amber-300">{t('float.paceExhaust', { n: primary.pace5hExhaustMin })}</p>
+            <p className="text-amber-300">{t('float.paceExhaust', { n: formatMinutesHM(primary.pace5hExhaustMin) })}</p>
           )}
           {primary && primary.pace5hExhaustMin == null && primary.pace5hPctPerMin != null && primary.pace5hPctPerMin <= 0 && (
             <p className="text-zinc-600">{t('float.paceFlat')}</p>
@@ -429,6 +436,11 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
                 <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statWeekly')}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-100">{formatRemainingPercent(primary?.remainingWeekly)}</p>
+                {primary?.resetAtWeekly != null && (
+                  <p className="mt-1 text-[10px] text-zinc-600">
+                    {t('card.runway.resetIn', { rel: formatResetShort(primary.resetAtWeekly) })}
+                  </p>
+                )}
               </div>
             </div>
 

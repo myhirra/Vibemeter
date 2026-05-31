@@ -75,6 +75,13 @@ function formatUsd(value: number): string {
   return value < 1 ? `$${value.toFixed(3)}` : `$${value.toFixed(2)}`;
 }
 
+function formatMinutesHM(min: number): string {
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${h}h ${m}m`;
+}
+
 export function NowRunwayCard({ guard, contextPct, weeklyRemaining, window5h, apiMode }: Props) {
   const t = useT();
 
@@ -128,7 +135,7 @@ export function NowRunwayCard({ guard, contextPct, weeklyRemaining, window5h, ap
 
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
             {showPace && (
-              <span className="text-amber-300">{t('card.runway.paceExhaust', { n: guard.pace5hExhaustMin! })}</span>
+              <span className="text-amber-300">{t('card.runway.paceExhaust', { n: formatMinutesHM(guard.pace5hExhaustMin!) })}</span>
             )}
             {showWeekly && (
               <span className="text-rose-300">{t('card.runway.weeklyHigh')}</span>
