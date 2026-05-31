@@ -186,14 +186,15 @@ export function claudeApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTE
  * matches that pattern.
  *
  * Mix assumes ~95% cached input, ~4% fresh input, ~1% output, applied to
- * gpt-5-codex pricing (cached $0.125/M · input $1.25/M · output $10/M):
- *   0.95 * 0.125 + 0.04 * 1.25 + 0.01 * 10 = 0.269 USD/M ≈ $0.27/M
+ * gpt-5-codex pricing (cached $0.175/M · input $1.75/M · output $14/M, per
+ * developers.openai.com/api/docs/pricing as of 2026-05-31):
+ *   0.95 * 0.175 + 0.04 * 1.75 + 0.01 * 14 = 0.376 USD/M ≈ $0.38/M
  *
  * Tune this constant if the price sheet shifts or the cache-hit assumption
  * looks off. Keep it conservative: better to under-claim "value" on shared
  * cards than to over-claim with a number we can't defend.
  */
-const CODEX_BLENDED_USD_PER_MILLION = 0.27;
+const CODEX_BLENDED_USD_PER_MILLION = 0.38;
 
 export function codexApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): number {
   // Fall back to the input+cache+output sum when `tokens_used` is null — keeps
