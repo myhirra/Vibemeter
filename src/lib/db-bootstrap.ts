@@ -52,6 +52,12 @@ export function bootstrap(db: Database.Database): void {
   addCol('sessions', 'peak_context_tokens', 'INTEGER');
   addCol('sessions', 'last_context_tokens', 'INTEGER');
   addCol('sessions', 'last_turn_at', 'INTEGER');
+  // Phase 1 — session outcome tagging. `outcome` is the canonical label,
+  // `outcome_source` distinguishes auto-classified rows from user-set rows
+  // (so the classifier can re-run safely without clobbering human input).
+  addCol('sessions', 'outcome', 'TEXT');
+  addCol('sessions', 'outcome_source', 'TEXT');
+  addCol('sessions', 'outcome_set_at', 'INTEGER');
   addCol('usage_snapshots', 'account_id', 'TEXT');
 
   db.exec(`

@@ -9,6 +9,16 @@ export type Tool = z.infer<typeof ToolSchema>;
 export const ChangeTypeSchema = z.enum(['modified', 'created', 'deleted']);
 export type ChangeType = z.infer<typeof ChangeTypeSchema>;
 
+// ── outcomes (Phase 1 session outcome tagging) ───────────────────────────────
+// The label the user (or auto-classifier) attaches to a session to describe how
+// the work landed. `'failed'` is reserved for the user — the classifier never
+// auto-sets it, because we have no reliable signal for "the user gave up".
+export const OUTCOME_VALUES = ['shipped', 'failed', 'discarded', 'refactor', 'explore', 'bugfix'] as const;
+export type Outcome = (typeof OUTCOME_VALUES)[number];
+export const OutcomeSchema = z.enum(OUTCOME_VALUES).nullable();
+export const OutcomeSourceSchema = z.enum(['user', 'auto']).nullable();
+export type OutcomeSource = z.infer<typeof OutcomeSourceSchema>;
+
 // ── sessions ──────────────────────────────────────────────────────────────────
 
 export const SessionRowSchema = z.object({
@@ -23,6 +33,9 @@ export const SessionRowSchema = z.object({
   ai_title: z.string().nullable(),
   tags: z.string().nullable(), // JSON array string e.g. '["blocked","poc"]'
   codex_category: z.string().nullable(),
+  outcome: OutcomeSchema,
+  outcome_source: OutcomeSourceSchema,
+  outcome_set_at: z.number().int().nullable(),
   confidence: ConfidenceSchema,
 });
 export type SessionRow = z.infer<typeof SessionRowSchema>;

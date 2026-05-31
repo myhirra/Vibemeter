@@ -18,6 +18,7 @@ import { importCursorSessions } from './cursor-importer';
 import { getCurrentCodexAccount } from '../codex-auth';
 import { scanGitCommits } from '../git/scan';
 import { getLatestUsageSnapshot, insertUsageSnapshot } from '../usage-snapshots';
+import { autoClassifyOutcomes } from '../outcome/auto-classify';
 
 const CLAUDE_DIR = path.join(os.homedir(), '.claude');
 const PROJECTS_DIR = path.join(CLAUDE_DIR, 'projects');
@@ -195,6 +196,12 @@ export function importSessions(): ImportResult {
 
   // Best-effort git linkage; never fail the import if git isn't available.
   try { scanGitCommits(db); } catch { /* skip */ }
+
+  // Best-effort outcome auto-classification — runs after scanGitCommits so we
+  // can use the freshly-linked commits. Never overwrites human-set outcomes
+  // (the helper guards on `outcome IS NULL`). Failures are silent — the
+  // dashboard still works without auto-labels.
+  try { autoClassifyOutcomes(db); } catch { /* skip */ }
 
   return { scanned: jsonlPaths.length, inserted, skipped };
 }
