@@ -1,0 +1,50 @@
+name: Bug report / 问题反馈
+description: Something isn't working / 哪里坏了
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please run `vibemeter doctor` and paste its output below — it captures version, platform, and what data sources are detected, which resolves most issues fast.
+        感谢反馈！请先跑 `vibemeter doctor` 并把输出贴到下面——它包含版本、平台和已识别的数据源，能最快定位问题。
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened / 发生了什么
+      description: What did you expect, and what happened instead? / 你期望什么、实际发生了什么？
+      placeholder: e.g. The float widget shows "no data" for Codex even though I have sessions.
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`vibemeter doctor` output / 输出"
+      description: Paste the full output. / 粘贴完整输出。
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Vibemeter version / 版本
+      description: From the `doctor` output, or `npm ls -g @hirra/vibemeter`.
+      placeholder: "0.2.30"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS / 操作系统
+      options:
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / 相关日志
+      description: From `~/.vibemeter/vibemeter.log` if relevant. / 如相关，附 `~/.vibemeter/vibemeter.log`。
+      render: shell
+    validations:
+      required: false

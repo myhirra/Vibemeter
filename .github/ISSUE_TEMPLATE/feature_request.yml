@@ -1,0 +1,19 @@
+name: Feature request / 功能建议
+description: Suggest an idea / 提个想法
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem / 想解决什么问题
+      description: What are you trying to do that Vibemeter doesn't help with yet? / 你想做什么、目前 Vibemeter 还帮不上？
+      placeholder: e.g. I use Gemini CLI too and want its quota on the float widget.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Proposed solution / 设想的方案
+      description: Optional — how you imagine it working. / 选填——你设想它怎么用。
+    validations:
+      required: false

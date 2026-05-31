@@ -3,9 +3,17 @@
 # Distributed via vibemeter.siney.top (not the npm registry).
 set -euo pipefail
 
+# Pick a language for error/status messages from the shell locale. `t EN ZH`
+# prints the Chinese string under a zh* locale, English otherwise.
+case "${LC_ALL:-${LANG:-}}" in
+  zh*|*zh_*) VM_LANG=zh ;;
+  *) VM_LANG=en ;;
+esac
+t() { if [ "${VM_LANG}" = "zh" ]; then printf '%s\n' "$2"; else printf '%s\n' "$1"; fi; }
+
 if ! command -v npm >/dev/null 2>&1; then
-  echo "Vibemeter needs Node.js 20+ (so npm is available)." >&2
-  echo "Install from: https://nodejs.org/" >&2
+  t "Vibemeter needs Node.js 20+ (so npm is available)." "Vibemeter 需要 Node.js 20+（这样才有 npm）。" >&2
+  t "Install from: https://nodejs.org/" "请从这里安装：https://nodejs.org/" >&2
   exit 1
 fi
 
@@ -31,10 +39,10 @@ echo "  $VIBEMETER_TARBALL_URL"
 # --retry 3 because vibemeter.siney.top can be flaky behind certain proxies.
 if ! curl -fL --progress-bar --retry 3 --connect-timeout 20 "$VIBEMETER_TARBALL_URL" -o "$tarball"; then
   echo
-  echo "✗ Download failed. Common causes:" >&2
-  echo "  • Corporate proxy blocking vibemeter.siney.top — try a personal network." >&2
-  echo "  • DNS not resolving — try: curl -v https://vibemeter.siney.top/" >&2
-  echo "  • Slow link — re-run, the script resumes from a fresh attempt." >&2
+  t "✗ Download failed. Common causes:" "✗ 下载失败。常见原因：" >&2
+  t "  • Corporate proxy blocking vibemeter.siney.top — try a personal network." "  • 公司代理拦截了 vibemeter.siney.top——换个人网络试试。" >&2
+  t "  • DNS not resolving — try: curl -v https://vibemeter.siney.top/" "  • DNS 解析不了——试试：curl -v https://vibemeter.siney.top/" >&2
+  t "  • Slow link — re-run, the script resumes from a fresh attempt." "  • 网络慢——重跑一次脚本会重新尝试。" >&2
   exit 1
 fi
 size=$(wc -c < "$tarball" | tr -d ' ')
@@ -50,9 +58,9 @@ if [ -z "$vibemeter_bin" ]; then
   vibemeter_bin="$prefix/bin/vibemeter"
 fi
 if [ ! -x "$vibemeter_bin" ]; then
-  echo "✗ vibemeter command not found after install (expected at $vibemeter_bin)." >&2
-  echo "  npm prefix -g returns: $(npm prefix -g)" >&2
-  echo "  Make sure that directory's bin is on PATH." >&2
+  t "✗ vibemeter command not found after install (expected at $vibemeter_bin)." "✗ 安装后找不到 vibemeter 命令（预期在 $vibemeter_bin）。" >&2
+  t "  npm prefix -g returns: $(npm prefix -g)" "  npm prefix -g 返回：$(npm prefix -g)" >&2
+  t "  Make sure that directory's bin is on PATH." "  请确认该目录的 bin 已加入 PATH。" >&2
   exit 1
 fi
 
@@ -91,9 +99,9 @@ done
 echo
 
 if [ "$ready" != "1" ]; then
-  echo "✗ Dashboard didn't come up within 60s." >&2
-  echo "  Check: $vibemeter_bin status" >&2
-  echo "  Logs:  $data_dir/vibemeter.log" >&2
+  t "✗ Dashboard didn't come up within 60s." "✗ 仪表盘 60 秒内没起来。" >&2
+  t "  Check: $vibemeter_bin status" "  检查：$vibemeter_bin status" >&2
+  t "  Logs:  $data_dir/vibemeter.log" "  日志：$data_dir/vibemeter.log" >&2
   exit 1
 fi
 
