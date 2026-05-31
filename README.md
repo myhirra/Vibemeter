@@ -4,6 +4,8 @@
 
 > 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and shows quota runway, sessions, and completion alerts from them. That's it.
 
+![vibemeter guard — will my next task finish before quota or context runs out?](docs/guard-demo.gif)
+
 ![Vibemeter dashboard](docs/demo1.png)
 
 <p align="center">
