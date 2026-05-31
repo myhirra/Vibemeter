@@ -52,9 +52,12 @@ export function bootstrap(db: Database.Database): void {
   addCol('sessions', 'peak_context_tokens', 'INTEGER');
   addCol('sessions', 'last_context_tokens', 'INTEGER');
   addCol('sessions', 'last_turn_at', 'INTEGER');
-  // Phase 1 — session outcome tagging. `outcome` is the canonical label,
+  // Phase 1 — session outcome tagging. `outcome` is the canonical label
+  // (shipped | bugfix | failed | discarded | refactor | explore | NULL),
   // `outcome_source` distinguishes auto-classified rows from user-set rows
-  // (so the classifier can re-run safely without clobbering human input).
+  // so the classifier can re-run safely without clobbering human input.
+  // Phase 3 ROI metrics (Ship Rate, Output-per-$) read this column; untagged
+  // sessions are excluded from rate denominators.
   addCol('sessions', 'outcome', 'TEXT');
   addCol('sessions', 'outcome_source', 'TEXT');
   addCol('sessions', 'outcome_set_at', 'INTEGER');

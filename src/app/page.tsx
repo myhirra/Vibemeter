@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { getDb } from '@/lib/db';
 import { Dashboard } from '@/components/Dashboard';
 import Link from 'next/link';
-import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight, costByProject } from '@/lib/stats';
+import { activityStreak, burndownPoints, fileHotspots, spendingStats, dayTimeline, achievements, sessionInsight, costByProject, projectRoi, type ProjectRoi } from '@/lib/stats';
 import { commitCountsBySession } from '@/lib/git/scan';
 import type { SessionRow } from '@/lib/schema';
 import { getCodexAccounts } from '@/lib/codex-auth';
@@ -272,11 +272,54 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const projectCosts = costByProject();
   const recapSettings = readRecapSettings();
   const recapCards = buildRecapCardsByScope(recapSettings);
+
+  // ── Phase 3 ROI metrics ────────────────────────────────────────────────
+  // Precompute the ROI card payload server-side so the user's project /
+  // window toggles are a free client switch. Numbers stay free (not gated by
+  // entitlement) — Pro gates Phase 2's narrative, not the underlying metrics.
+  // Server component, no render-purity concern; this path runs once per SSR.
+  // eslint-disable-next-line react-hooks/purity
+  const roiNow = Date.now();
+  const now7dStart = roiNow - 7 * 86_400_000;
+  const now30dStart = roiNow - 30 * 86_400_000;
+  // Pick the top ~10 projects by recent activity for the picker. We use the
+  // session table's distinct cwds with their 30d session count so the picker
+  // covers anything the user might want to drill into.
+  const roiProjectRows = db.prepare(`
+    SELECT cwd, COUNT(*) AS n
+    FROM sessions
+    WHERE cwd IS NOT NULL AND started_at >= ?
+    GROUP BY cwd
+    ORDER BY n DESC
+    LIMIT 10
+  `).all(now30dStart) as { cwd: string; n: number }[];
+  const roiOptionsByCwd = roiProjectRows.map((r) => ({
+    cwd: r.cwd,
+    label: r.cwd.split('/').filter(Boolean).pop() ?? r.cwd,
+  }));
+  const projectRoiPayload = {
+    optionsByCwd: roiOptionsByCwd,
+    all: {
+      '7d': projectRoi(now7dStart, roiNow, undefined, roiNow),
+      '30d': projectRoi(now30dStart, roiNow, undefined, roiNow),
+    },
+    byCwd: Object.fromEntries(
+      roiOptionsByCwd.map((opt) => [
+        opt.cwd,
+        {
+          '7d': projectRoi(now7dStart, roiNow, opt.cwd, roiNow),
+          '30d': projectRoi(now30dStart, roiNow, opt.cwd, roiNow),
+        },
+      ]),
+    ) as Record<string, { '7d': ProjectRoi; '30d': ProjectRoi }>,
+  };
+
   let redactedTimeline = timeline;
   let redactedHotspots = hotspotsList;
   let redactedInsight = insight;
   let redactedProjectCosts = projectCosts;
   let redactedRecapCards = recapCards;
+  let redactedProjectRoi = projectRoiPayload;
   if (redact) {
     redactedTimeline = {
       dateLabel: timeline.dateLabel,
@@ -320,6 +363,15 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       project: p.project === '—' ? p.project : redactProject(p.project, redactSalt),
     }));
     redactedRecapCards = redactRecapCardsByScope(recapCards, redactSalt);
+    // ROI metrics themselves are aggregate numbers — safe to ship. The picker
+    // labels are the only PII; mask them the same way as ProjectCostCard.
+    redactedProjectRoi = {
+      ...projectRoiPayload,
+      optionsByCwd: projectRoiPayload.optionsByCwd.map((opt) => ({
+        cwd: opt.cwd,
+        label: redactProject(opt.label, redactSalt),
+      })),
+    };
   }
 
   return (
@@ -362,6 +414,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           achievements={achievements()}
           insight={redactedInsight}
           projectCosts={redactedProjectCosts}
+          projectRoi={redactedProjectRoi}
           recapCards={redactedRecapCards}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}

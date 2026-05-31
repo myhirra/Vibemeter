@@ -14,8 +14,9 @@ import { AchievementsCard } from './AchievementsCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
 import type { SessionEntry } from './SessionsTable';
-import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight, ProjectCost } from '@/lib/stats';
+import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight, ProjectCost, ProjectRoi } from '@/lib/stats';
 import { ProjectCostCard } from './ProjectCostCard';
+import { ProjectRoiCard } from './ProjectRoiCard';
 import type { GuardDecision } from '@/lib/quota-guard';
 import type { RecapCardsByScope, RecapToolFilter } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
@@ -51,6 +52,19 @@ interface Props {
   achievements: Achievement[];
   insight: SessionInsight;
   projectCosts: ProjectCost[];
+  /**
+   * Pre-computed ROI metrics for the dashboard's "All projects" scope across
+   * both 7d and 30d windows + a per-project map keyed by `cwd`. Server-rendered
+   * so the user toggle between windows / projects is a free client switch.
+   */
+  projectRoi: {
+    /** ProjectName label for the "All" scope option in the picker. */
+    optionsByCwd: { cwd: string; label: string }[];
+    /** ROI rolled up across all projects, indexed by window key. */
+    all: { '7d': ProjectRoi; '30d': ProjectRoi };
+    /** ROI per cwd in `optionsByCwd`, indexed by window key. */
+    byCwd: Record<string, { '7d': ProjectRoi; '30d': ProjectRoi }>;
+  };
   recapCards: RecapCardsByScope;
   runway: {
     guard: GuardDecision;
@@ -154,6 +168,7 @@ export function Dashboard({
   achievements,
   insight,
   projectCosts,
+  projectRoi,
   recapCards,
   runway,
   initialProjectFilter,
@@ -170,6 +185,11 @@ export function Dashboard({
   const [datePreset, setDatePreset] = useState<DatePreset>('all');
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
+  // ROI card local state. The card defaults to the "All projects" view; the
+  // dropdown scopes to a specific cwd from `projectRoi.optionsByCwd`. The
+  // window toggle drives which precomputed payload (7d / 30d) the card reads.
+  const [roiProjectCwd, setRoiProjectCwd] = useState<string | '__all__'>('__all__');
+  const [roiWindow, setRoiWindow] = useState<'7d' | '30d'>('7d');
   const runwayRef = useRef<HTMLDivElement | null>(null);
 
   // Honor `?focus=current` from the floater deep-link: scroll the conclusion
@@ -514,6 +534,49 @@ export function Dashboard({
           time-based leaderboard above can't answer. */}
       <div className="mb-4">
         <ProjectCostCard projects={projectCosts} />
+      </div>
+
+      {/* Project ROI — ship rate / rework / momentum / focus / output-per-$.
+          Numbers stay free; Pro tier gates the narrative (Phase 2), not the
+          metrics themselves. Defaults to "All projects"; user can scope down
+          via the dropdown. */}
+      <div className="mb-4">
+        {(() => {
+          const scope = roiProjectCwd === '__all__'
+            ? projectRoi.all
+            : (projectRoi.byCwd[roiProjectCwd] ?? projectRoi.all);
+          const label = roiProjectCwd === '__all__'
+            ? t('card.roi.allProjects')
+            : projectRoi.optionsByCwd.find((o) => o.cwd === roiProjectCwd)?.label ?? t('card.roi.allProjects');
+          return (
+            <>
+              {projectRoi.optionsByCwd.length > 0 && (
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <label htmlFor="roi-project" className="text-[10px] uppercase tracking-wider text-zinc-500">
+                    {t('card.roi.title')}
+                  </label>
+                  <select
+                    id="roi-project"
+                    value={roiProjectCwd}
+                    onChange={(event) => setRoiProjectCwd(event.target.value)}
+                    className="max-w-72 rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-xs text-zinc-100 outline-none transition-colors hover:border-zinc-500 focus:border-violet-500"
+                  >
+                    <option value="__all__">{t('card.roi.allProjects')}</option>
+                    {projectRoi.optionsByCwd.map((opt) => (
+                      <option key={opt.cwd} value={opt.cwd}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+              <ProjectRoiCard
+                roi={scope[roiWindow]}
+                projectLabel={label}
+                window={roiWindow}
+                onWindowChange={setRoiWindow}
+              />
+            </>
+          );
+        })()}
       </div>
 
       {/* Lower-priority: achievements + heatmap come after the runway, ROI,

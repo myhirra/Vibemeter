@@ -1,6 +1,19 @@
 import { getDb } from './db';
 import { groupCostByProject, type ProjectCost, type ProjectCostContribution } from './cost-attribution';
 import type { RecapToolFilter } from './recap-card';
+import {
+  computeShipRate,
+  computeMomentum,
+  computeFocus,
+  computeOutputPerDollar,
+} from './roi';
+import type { Outcome, MomentumLabel } from './roi';
+
+export {
+  MOMENTUM_THRESHOLD_ACCELERATING,
+  MOMENTUM_THRESHOLD_COOLING,
+} from './roi';
+export type { Outcome, MomentumLabel } from './roi';
 
 export interface ToolSplit {
   tool: string;
@@ -399,19 +412,29 @@ function transcriptPathFor(tool: string, cwd: string | null, id: string): string
 }
 
 /**
- * "Retry rate" = sessions that started within 30 min of the previous session's
+ * "Rework rate" = sessions that started within 30 min of the previous session's
  * end in the same cwd. Heuristic for "didn't get what I wanted the first time".
+ *
+ * The window is [startMs, endMs); `cwd` optionally narrows to a single project
+ * (basename match — we already store the full path so the equality is exact).
+ * Untyped numeric inputs land back as 0% when the window is empty, matching the
+ * legacy `retryRate7d` behaviour the old SessionInsight surface depended on.
  */
-export function sessionInsight(): SessionInsight {
+export function reworkRate(startMs: number, endMs: number, cwd?: string): RetryRate {
   const db = getDb();
-  const since = Date.now() - 7 * 86_400_000;
-
+  const params: (string | number)[] = [startMs, endMs];
+  let cwdFilter = '';
+  if (cwd) {
+    cwdFilter = ' AND cwd = ?';
+    params.push(cwd);
+  }
   const rows = db.prepare(`
     SELECT id, tool, cwd, started_at, ended_at
     FROM sessions
-    WHERE started_at > ? AND cwd IS NOT NULL
+    WHERE started_at >= ? AND started_at < ? AND cwd IS NOT NULL
+      ${cwdFilter}
     ORDER BY cwd, started_at ASC
-  `).all(since) as { id: string; tool: string; cwd: string; started_at: number; ended_at: number | null }[];
+  `).all(...params) as { id: string; tool: string; cwd: string; started_at: number; ended_at: number | null }[];
 
   let total = 0;
   let retried = 0;
@@ -424,6 +447,21 @@ export function sessionInsight(): SessionInsight {
     prev = { cwd: r.cwd, endedAt: r.ended_at ?? r.started_at };
   }
   const pct = total === 0 ? 0 : Math.round((retried / total) * 100);
+  return { totalSessions: total, retriedSessions: retried, pct };
+}
+
+/**
+ * Legacy 7-day rework heuristic used by `sessionInsight()`. Kept as a thin
+ * delegate so existing call sites don't break in this commit; new code should
+ * call `reworkRate(startMs, endMs)` directly.
+ */
+export function retryRate7d(): RetryRate {
+  return reworkRate(Date.now() - 7 * 86_400_000, Date.now());
+}
+
+export function sessionInsight(): SessionInsight {
+  const db = getDb();
+  const rework = retryRate7d();
 
   const expensiveRows = db.prepare(`
     SELECT s.id, s.tool, s.cwd, s.ai_title, s.started_at, s.ended_at,
@@ -465,7 +503,7 @@ export function sessionInsight(): SessionInsight {
   }));
 
   return {
-    retryRate7d: { totalSessions: total, retriedSessions: retried, pct },
+    retryRate7d: rework,
     topExpensive,
     value: { monthToDateUsd, plans },
   };
@@ -788,4 +826,256 @@ export function achievements(): Achievement[] {
     { id: 'early-bird',    title: '晨型人',       description: 'Pre-7am sessions 5+',          unlocked: earlyBird >= 5,         progress: prog(earlyBird, 5) },
     { id: 'multi-tool',    title: '多面手',       description: 'Used 3 different tools',       unlocked: toolCount >= 3,         progress: prog(toolCount, 3) },
   ];
+}
+
+// ── Phase 3: Project ROI metrics ────────────────────────────────────────────
+//
+// Five metrics surfaced on a per-project card. The pure math lives in roi.ts;
+// this section owns the SQL that feeds it.
+
+export interface OutcomeBreakdown {
+  shipped: number;
+  bugfix: number;
+  failed: number;
+  discarded: number;
+  refactor: number;
+  explore: number;
+  untagged: number;
+}
+
+/**
+ * Count sessions by outcome over [startMs, endMs); optional `cwd` narrows to a
+ * single project. NULL outcomes land in `untagged` so callers can decide
+ * whether to surface "% untagged" alongside the ratio.
+ */
+export function outcomeBreakdown(
+  startMs: number,
+  endMs: number,
+  cwd?: string,
+): OutcomeBreakdown {
+  const db = getDb();
+  const params: (string | number)[] = [startMs, endMs];
+  let cwdFilter = '';
+  if (cwd) { cwdFilter = ' AND cwd = ?'; params.push(cwd); }
+  const rows = db.prepare(`
+    SELECT outcome, COUNT(*) AS n
+    FROM sessions
+    WHERE started_at >= ? AND started_at < ?
+      ${cwdFilter}
+    GROUP BY outcome
+  `).all(...params) as { outcome: string | null; n: number }[];
+  const out: OutcomeBreakdown = {
+    shipped: 0, bugfix: 0, failed: 0, discarded: 0, refactor: 0, explore: 0, untagged: 0,
+  };
+  for (const r of rows) {
+    if (r.outcome == null) { out.untagged += r.n; continue; }
+    if (r.outcome === 'shipped') out.shipped += r.n;
+    else if (r.outcome === 'bugfix') out.bugfix += r.n;
+    else if (r.outcome === 'failed') out.failed += r.n;
+    else if (r.outcome === 'discarded') out.discarded += r.n;
+    else if (r.outcome === 'refactor') out.refactor += r.n;
+    else if (r.outcome === 'explore') out.explore += r.n;
+    // Unknown future-outcome strings are ignored on purpose — better than
+    // crashing or rolling them into "untagged" and corrupting the ratio.
+  }
+  return out;
+}
+
+/**
+ * Fetch raw outcome values for [startMs, endMs) so `computeShipRate` can
+ * compute on already-rowified data. We return `outcome | null` per row so the
+ * pure function owns the "exclude untagged" decision.
+ */
+export function outcomeRowsForWindow(
+  startMs: number,
+  endMs: number,
+  cwd?: string,
+): { outcome: Outcome | null }[] {
+  const db = getDb();
+  const params: (string | number)[] = [startMs, endMs];
+  let cwdFilter = '';
+  if (cwd) { cwdFilter = ' AND cwd = ?'; params.push(cwd); }
+  const rows = db.prepare(`
+    SELECT outcome
+    FROM sessions
+    WHERE started_at >= ? AND started_at < ?
+      ${cwdFilter}
+  `).all(...params) as { outcome: string | null }[];
+  return rows.map((r) => ({ outcome: (r.outcome ?? null) as Outcome | null }));
+}
+
+/**
+ * Per-project session counts over [startMs, endMs). Projects with zero
+ * sessions in the window are omitted (they'd dilute the entropy denominator).
+ * The `cwd` here is the full path; `computeFocus` only cares about the count
+ * distribution, not the labels.
+ */
+export function projectSessionCountsForWindow(
+  startMs: number,
+  endMs: number,
+): Map<string, number> {
+  const rows = getDb().prepare(`
+    SELECT cwd, COUNT(*) AS n
+    FROM sessions
+    WHERE started_at >= ? AND started_at < ?
+      AND cwd IS NOT NULL
+    GROUP BY cwd
+    HAVING COUNT(*) > 0
+  `).all(startMs, endMs) as { cwd: string; n: number }[];
+  return new Map(rows.map((r) => [r.cwd, r.n]));
+}
+
+/**
+ * Returns weekly session counts in chronological order: index 0 is the oldest
+ * week, index `weeksBack` is the current (in-progress) week. Length is
+ * `weeksBack + 1`. Weeks are aligned to local midnight on the start day; the
+ * "current week" anchor is `now` so the freshest data lands in the last slot.
+ *
+ * Caller for Momentum: pass `weeksBack = 3` → `[w-3, w-2, w-1, current]`. The
+ * first three feed `prior3WeeksCounts`, the last is `currentWeekCount`.
+ */
+export function weeklySessionCounts(
+  cwd: string | undefined,
+  weeksBack: number,
+  nowMs: number = Date.now(),
+): number[] {
+  const db = getDb();
+  const weekMs = 7 * 86_400_000;
+  // Anchor "current week" as the trailing 7d ending at `nowMs`; we don't try
+  // to snap to ISO Monday because the metric is "rolling momentum" not
+  // "calendar week" and a snap would flip labels at midnight on Sunday.
+  const counts: number[] = [];
+  // Each slot is [windowStart, windowEnd). Run one query per slot — small N
+  // (typically 4) and cleaner than building a CASE-based bucket query.
+  for (let i = weeksBack; i >= 0; i--) {
+    const end = nowMs - i * weekMs;
+    const start = end - weekMs;
+    const cwdFilter = cwd ? ' AND cwd = ?' : '';
+    const args: (string | number)[] = cwd ? [start, end, cwd] : [start, end];
+    const row = db.prepare(`
+      SELECT COUNT(*) AS n
+      FROM sessions
+      WHERE started_at >= ? AND started_at < ?
+        ${cwdFilter}
+    `).get(...args) as { n: number };
+    counts.push(row.n);
+  }
+  return counts;
+}
+
+/**
+ * Total `session_commits` rows whose `committed_at` lands in [startMs, endMs),
+ * scoped to a project by joining through the session's `cwd`. Used for
+ * Output-per-Dollar.
+ */
+export function commitsInWindow(
+  startMs: number,
+  endMs: number,
+  cwd?: string,
+): number {
+  const db = getDb();
+  if (cwd) {
+    return (db.prepare(`
+      SELECT COUNT(*) AS n
+      FROM session_commits sc
+      JOIN sessions s ON s.id = sc.session_id
+      WHERE sc.committed_at >= ? AND sc.committed_at < ?
+        AND s.cwd = ?
+    `).get(startMs, endMs, cwd) as { n: number }).n;
+  }
+  return (db.prepare(`
+    SELECT COUNT(*) AS n
+    FROM session_commits
+    WHERE committed_at >= ? AND committed_at < ?
+  `).get(startMs, endMs) as { n: number }).n;
+}
+
+/**
+ * Total API-equivalent USD over [startMs, endMs). Reuses the project-cost
+ * fold so we have one source of truth for "total cost" instead of a parallel
+ * SQL pass. When `cwd` is provided we filter the contributions to that
+ * basename (`projectBasename` is how costByProject labels rows).
+ */
+export function costUsdInWindow(
+  startMs: number,
+  endMs: number,
+  cwd?: string,
+): number {
+  const projects = costByProject(startMs, endMs);
+  if (cwd) {
+    const base = projectBasename(cwd);
+    const hit = projects.find((p) => p.project === base);
+    return hit ? hit.totalUsd : 0;
+  }
+  return projects.reduce((s, p) => s + p.totalUsd, 0);
+}
+
+export interface ProjectRoi {
+  /** When undefined the metrics span all projects. */
+  cwd: string | undefined;
+  windowStartMs: number;
+  windowEndMs: number;
+  shipRate: { rate: number | null; denominator: number; untagged: number };
+  reworkRate: RetryRate;
+  momentum: { ratio: number | null; label: MomentumLabel | null };
+  focus: number | null;
+  outputPerDollar: { commitsPerDollar: number | null; shippedSessionsPerDollar: number | null };
+  totalCostUsd: number;
+  totalCommits: number;
+}
+
+/**
+ * Roll up all five Phase 3 metrics for a window/project pair. The card calls
+ * this once per (project, window) and pipes the result into the per-tile UI.
+ *
+ * Focus is intentionally *not* scoped by cwd — it's a property of "what was
+ * the user doing this week", not "what was project X doing this week". The
+ * card label makes the global scope explicit so the value doesn't look
+ * inconsistent across project selections.
+ */
+export function projectRoi(
+  startMs: number,
+  endMs: number,
+  cwd?: string,
+  nowMs: number = Date.now(),
+): ProjectRoi {
+  const outcomes = outcomeRowsForWindow(startMs, endMs, cwd);
+  const breakdown = outcomeBreakdown(startMs, endMs, cwd);
+  const shipRate = computeShipRate(outcomes);
+  const rework = reworkRate(startMs, endMs, cwd);
+  const weekly = weeklySessionCounts(cwd, 3, nowMs);
+  // weekly is length 4: [w-3, w-2, w-1, current]
+  const momentum = computeMomentum(weekly[3] ?? 0, [
+    weekly[0] ?? 0,
+    weekly[1] ?? 0,
+    weekly[2] ?? 0,
+  ]);
+  // Focus uses the global per-project distribution — it's a "what was the
+  // window like overall" metric, not a per-project one.
+  const distribution = [...projectSessionCountsForWindow(startMs, endMs).values()];
+  const focus = computeFocus(distribution);
+  const totalCommits = commitsInWindow(startMs, endMs, cwd);
+  const totalCostUsd = costUsdInWindow(startMs, endMs, cwd);
+  const shippedSessions = breakdown.shipped + breakdown.bugfix;
+  const outputPerDollar = computeOutputPerDollar({
+    commits: totalCommits,
+    shippedSessions,
+    costUsd: totalCostUsd,
+  });
+  return {
+    cwd,
+    windowStartMs: startMs,
+    windowEndMs: endMs,
+    shipRate: {
+      rate: shipRate.rate,
+      denominator: shipRate.denominator,
+      untagged: breakdown.untagged,
+    },
+    reworkRate: rework,
+    momentum,
+    focus,
+    outputPerDollar,
+    totalCostUsd,
+    totalCommits,
+  };
 }
