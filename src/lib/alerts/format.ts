@@ -165,6 +165,35 @@ export function formatResetReminder(
   return { title, body };
 }
 
+export function formatVendorEvent(
+  rule: Extract<AlertRule, { kind: 'vendor_event' }>,
+  pctBefore: number,
+  newResetAt: number,
+  locale: PushLocale = 'zh',
+): { title: string; body: string } {
+  const label = RESET_LABELS[locale][rule.metric];
+  const nextResetLocal = new Date(newResetAt).toLocaleString(locale === 'en' ? 'en-US' : 'zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+  const title = locale === 'en'
+    ? `🎁 ${label} was reset by vendor · was ${pct(pctBefore)}`
+    : `🎁 ${label} 被官方提前重置 · 重置前 ${pct(pctBefore)}`;
+  const body = locale === 'en'
+    ? [
+        `**${label}** just dropped to 0% before its scheduled reset — looks like a vendor-initiated bulk reset.`,
+        `Last reading before the drop: ${pct(pctBefore)} used.`,
+        '',
+        `New reset window ends: ${nextResetLocal}`,
+      ].join('\n')
+    : [
+        `**${label}** 在原定重置时间之前突然归零 —— 看起来是官方批量重置了配额。`,
+        `归零前最后读数：已用 ${pct(pctBefore)}。`,
+        '',
+        `新窗口截止：${nextResetLocal}`,
+      ].join('\n');
+  return { title, body };
+}
+
 export function formatTestMessage(locale: PushLocale = 'zh'): { title: string; body: string } {
   return locale === 'en'
     ? {

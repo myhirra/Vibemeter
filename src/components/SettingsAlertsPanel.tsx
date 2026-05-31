@@ -1,7 +1,13 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useT } from '@/lib/i18n/client';
+import {
+  DEFAULT_ANNOUNCEMENT_PREFS,
+  readAnnouncementPrefs,
+  writeAnnouncementPrefs,
+  type AnnouncementPrefs,
+} from '@/lib/announcements';
 
 // Mirror server types loosely so the panel can import without dragging in
 // node-only modules. Webhooks come back masked from GET and are sent back
@@ -23,7 +29,8 @@ interface Channel {
 type Rule =
   | { id: string; kind: 'threshold'; label?: string; metric: AlertMetric; below: number; channelIds: string[]; enabled: boolean }
   | { id: string; kind: 'daily'; label?: string; hour: number; minute: number; channelIds: string[]; enabled: boolean }
-  | { id: string; kind: 'reset_reminder'; label?: string; metric: ResetMetric; minutesBefore: number; remainingPctAbove: number; channelIds: string[]; enabled: boolean };
+  | { id: string; kind: 'reset_reminder'; label?: string; metric: ResetMetric; minutesBefore: number; remainingPctAbove: number; channelIds: string[]; enabled: boolean }
+  | { id: string; kind: 'vendor_event'; label?: string; metric: ResetMetric; minUsedPctBefore: number; maxUsedPctAfter: number; channelIds: string[]; enabled: boolean };
 
 type PushLocale = 'zh' | 'en';
 interface Config { channels: Channel[]; rules: Rule[]; pushLocale?: PushLocale }
@@ -53,6 +60,9 @@ function newRule(kind: Rule['kind'], firstChannelId: string | null): Rule {
   }
   if (kind === 'daily') {
     return { id: newId(), kind, hour: 9, minute: 0, channelIds, enabled: true };
+  }
+  if (kind === 'vendor_event') {
+    return { id: newId(), kind, metric: 'claude_weekly', minUsedPctBefore: 5, maxUsedPctAfter: 1, channelIds, enabled: true };
   }
   return { id: newId(), kind: 'reset_reminder', metric: 'claude_5h', minutesBefore: 60, remainingPctAbove: 50, channelIds, enabled: true };
 }
@@ -295,6 +305,9 @@ export function SettingsAlertsPanel({ initialConfig, initialConfigPath }: Props)
             <button type="button" onClick={() => addRule('reset_reminder')} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500">
               {t('alerts.addRuleReset')}
             </button>
+            <button type="button" onClick={() => addRule('vendor_event')} className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500">
+              {t('alerts.addRuleVendor')}
+            </button>
           </div>
         </div>
         {config.rules.length === 0 ? (
@@ -314,6 +327,9 @@ export function SettingsAlertsPanel({ initialConfig, initialConfigPath }: Props)
           </div>
         )}
       </div>
+
+      {/* Announcement fan-out preferences */}
+      <AnnouncementPrefsSection hasAnyChannel={config.channels.length > 0} />
 
       {/* Push language */}
       <div className="mb-4 flex items-center gap-3 text-xs">
@@ -367,7 +383,13 @@ function RuleRow({
   onDelete: () => void;
   t: (k: string, v?: Record<string, string | number>) => string;
 }) {
-  const kindLabel = rule.kind === 'threshold' ? t('alerts.kindThreshold') : rule.kind === 'daily' ? t('alerts.kindDaily') : t('alerts.kindReset');
+  const kindLabel = rule.kind === 'threshold'
+    ? t('alerts.kindThreshold')
+    : rule.kind === 'daily'
+      ? t('alerts.kindDaily')
+      : rule.kind === 'vendor_event'
+        ? t('alerts.kindVendor')
+        : t('alerts.kindReset');
 
   return (
     <div className="rounded border border-zinc-800 bg-zinc-950/40 p-3">
@@ -430,6 +452,41 @@ function RuleRow({
             className="w-16 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
           />
           <span className="text-zinc-600 text-[10px] ml-2">{t('alerts.pushTimeHint')}</span>
+        </div>
+      )}
+
+      {rule.kind === 'vendor_event' && (
+        <div className="grid sm:grid-cols-3 gap-2 text-xs">
+          <label className="flex items-center gap-2">
+            <span className="text-zinc-500 w-16 shrink-0">{t('alerts.window')}</span>
+            <select
+              value={rule.metric}
+              onChange={(e) => onChange({ metric: e.target.value as ResetMetric })}
+              className="flex-1 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
+            >
+              {RESET_METRIC_KEYS.map((v) => (
+                <option key={v} value={v}>{t(`alerts.resetMetric.${v}`)}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-zinc-500 w-20 shrink-0">{t('alerts.vendorMinBefore')}</span>
+            <input
+              type="number" min={0} max={100} value={rule.minUsedPctBefore}
+              onChange={(e) => onChange({ minUsedPctBefore: Number(e.target.value) })}
+              className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
+            />
+            <span className="text-zinc-500">%</span>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-zinc-500 w-20 shrink-0">{t('alerts.vendorMaxAfter')}</span>
+            <input
+              type="number" min={0} max={100} value={rule.maxUsedPctAfter}
+              onChange={(e) => onChange({ maxUsedPctAfter: Number(e.target.value) })}
+              className="w-20 rounded border border-zinc-800 bg-zinc-950 px-2 py-1 text-zinc-100 outline-none focus:border-violet-500"
+            />
+            <span className="text-zinc-500">%</span>
+          </label>
         </div>
       )}
 
@@ -498,5 +555,147 @@ function RuleRow({
         )}
       </div>
     </div>
+  );
+}
+
+// ── Announcement fan-out preferences ────────────────────────────────────────
+// Routes curated upstream items (Claude outage, Codex reset, etc.) to system
+// notifications + webhook channels. The toggles below decide *what* fires; the
+// channels themselves come from the same Channels list above (so this section
+// "just works" once the user has wired up at least one channel).
+
+type NotificationPermissionState = 'unsupported' | 'default' | 'granted' | 'denied';
+
+function readNotificationPermission(): NotificationPermissionState {
+  if (typeof window === 'undefined') return 'unsupported';
+  if (!('Notification' in window)) return 'unsupported';
+  return window.Notification.permission as NotificationPermissionState;
+}
+
+function AnnouncementPrefsSection({ hasAnyChannel }: { hasAnyChannel: boolean }) {
+  const t = useT();
+  const [prefs, setPrefs] = useState<AnnouncementPrefs>(DEFAULT_ANNOUNCEMENT_PREFS);
+  const [permission, setPermission] = useState<NotificationPermissionState>('unsupported');
+  // Hydrate once on mount — both localStorage and Notification.permission are
+  // browser-only, so the SSR pass renders with defaults and we sync up here.
+  useEffect(() => {
+    // Hydration sync — both reads are browser-only (localStorage, Notification).
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setPrefs(readAnnouncementPrefs());
+    setPermission(readNotificationPermission());
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  const update = (patch: Partial<AnnouncementPrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    writeAnnouncementPrefs(next);
+  };
+
+  const requestPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    try {
+      const result = await window.Notification.requestPermission();
+      setPermission(result as NotificationPermissionState);
+    } catch {
+      // Browser denied programmatic prompt — leave the badge alone.
+    }
+  };
+
+  return (
+    <div className="mb-6 mt-2 rounded border border-zinc-800 bg-zinc-950/40 p-4">
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-medium text-zinc-100">{t('ann.prefs.title')}</h3>
+      </div>
+      <p className="mb-3 text-[11px] text-zinc-500">{t('ann.prefs.subtitle')}</p>
+
+      <div className="space-y-2 text-xs text-zinc-300">
+        <PrefRow
+          label={t('ann.prefs.urgentSystem')}
+          hint={t('ann.prefs.urgentLocked')}
+          checked
+          locked
+          onChange={() => { /* locked */ }}
+        />
+        <PrefRow
+          label={t('ann.prefs.urgentWebhook')}
+          checked={prefs.urgentWebhook}
+          onChange={(v) => update({ urgentWebhook: v })}
+        />
+        <PrefRow
+          label={t('ann.prefs.warnSystem')}
+          checked={prefs.warnSystem}
+          onChange={(v) => update({ warnSystem: v })}
+        />
+        <PrefRow
+          label={t('ann.prefs.warnWebhook')}
+          checked={prefs.warnWebhook}
+          onChange={(v) => update({ warnWebhook: v })}
+        />
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-zinc-800/70 pt-3 text-[11px] text-zinc-500">
+        <span>
+          {t('ann.prefs.permissionLabel')}:{' '}
+          {permission === 'granted' && (
+            <span className="text-emerald-400">{t('ann.prefs.permissionGranted')}</span>
+          )}
+          {permission === 'denied' && (
+            <span className="text-amber-300">{t('ann.prefs.permissionDenied')}</span>
+          )}
+          {permission === 'default' && (
+            <span className="text-zinc-400">{t('ann.prefs.permissionDefault')}</span>
+          )}
+          {permission === 'unsupported' && (
+            <span className="text-zinc-600">{t('ann.prefs.permissionUnsupported')}</span>
+          )}
+        </span>
+        {permission === 'default' && (
+          <button
+            type="button"
+            onClick={requestPermission}
+            className="rounded border border-violet-500/50 bg-violet-500/10 px-2 py-1 text-[11px] text-violet-100 transition-colors hover:border-violet-400 hover:bg-violet-500/20"
+          >
+            {t('ann.prefs.enableSystem')}
+          </button>
+        )}
+      </div>
+
+      {!hasAnyChannel && (
+        <p className="mt-2 text-[11px] text-amber-300/90">
+          {t('ann.prefs.noChannelHint')}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PrefRow({
+  label,
+  hint,
+  checked,
+  onChange,
+  locked,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  locked?: boolean;
+}) {
+  return (
+    <label className={`flex items-start gap-2 ${locked ? 'opacity-70' : 'cursor-pointer'}`}>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={locked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-0.5 h-3.5 w-3.5 accent-violet-500"
+      />
+      <span className="flex-1">
+        {label}
+        {hint && <span className="ml-2 text-[10px] text-zinc-600">{hint}</span>}
+      </span>
+    </label>
   );
 }

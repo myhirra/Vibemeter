@@ -7,8 +7,10 @@
 
 import { getFloatStats, type FloatQuota, type FloatStats } from '@/lib/float-stats';
 import { importUsageSnapshots } from '@/lib/collectors/session-importer';
+import { getDb } from '@/lib/db';
+import { getRecentUsageSnapshots, type UsageSnapshotRecord, type UsageSource } from '@/lib/usage-snapshots';
 import { dispatch } from './dispatch';
-import { formatDailySummary, formatResetReminder, formatThresholdAlert } from './format';
+import { formatDailySummary, formatResetReminder, formatThresholdAlert, formatVendorEvent } from './format';
 import { readAlertConfig, readAlertState, writeAlertState } from './storage';
 import { evaluateRecapNudge } from '@/lib/recap-nudge';
 import type {
@@ -120,6 +122,69 @@ function evaluateDaily(
   };
 }
 
+function snapshotResetAt(record: UsageSnapshotRecord, metric: ResetMetric): number | null {
+  return metric.endsWith('_weekly') ? record.reset_at_weekly : record.reset_at_5h;
+}
+
+function snapshotUsedPct(record: UsageSnapshotRecord, metric: ResetMetric): number | null {
+  return metric.endsWith('_weekly') ? record.window_weekly_used_pct : record.window_5h_used_pct;
+}
+
+export interface VendorEventDeps {
+  db: ReturnType<typeof getDb>;
+  codexAccountId: string | null;
+}
+
+// Exported for direct unit testing (see tests/vendor-event.test.ts).
+export function evaluateVendorEvent(
+  rule: Extract<AlertRule, { kind: 'vendor_event' }>,
+  prev: RuleState | undefined,
+  deps: VendorEventDeps,
+  locale: PushLocale,
+): PendingFire | null {
+  const isCodex = rule.metric.startsWith('codex_');
+  const source: UsageSource = isCodex ? 'codex' : 'statusline';
+  const accountId = isCodex ? deps.codexAccountId : null;
+
+  const recent = getRecentUsageSnapshots(deps.db, source, accountId, 5);
+  if (recent.length < 2) return null;
+
+  const newest = recent.find((r) => snapshotUsedPct(r, rule.metric) != null && snapshotResetAt(r, rule.metric) != null);
+  if (!newest) return null;
+
+  const older = recent.find((r) =>
+    r.id !== newest.id
+    && r.captured_at < newest.captured_at
+    && snapshotUsedPct(r, rule.metric) != null
+    && snapshotResetAt(r, rule.metric) != null,
+  );
+  if (!older) return null;
+
+  const newPct = snapshotUsedPct(newest, rule.metric) as number;
+  const oldPct = snapshotUsedPct(older, rule.metric) as number;
+  const newReset = snapshotResetAt(newest, rule.metric) as number;
+  const oldReset = snapshotResetAt(older, rule.metric) as number;
+
+  if (oldPct < rule.minUsedPctBefore) return null;
+  if (newPct > rule.maxUsedPctAfter) return null;
+  if (newReset <= oldReset) return null;
+  // KEY: the new observation happened BEFORE the previously scheduled reset.
+  // Otherwise the rollover is the natural window expiring, not a vendor push.
+  if (newest.captured_at >= oldReset) return null;
+
+  const prevReset = prev?.kind === 'vendor_event' ? prev.lastFiredForResetAt : null;
+  if (prevReset === newReset) return null;
+
+  const { title, body } = formatVendorEvent(rule, oldPct, newReset, locale);
+  return {
+    rule,
+    channels: [],
+    title,
+    body,
+    nextState: { kind: 'vendor_event', lastFiredForResetAt: newReset },
+  };
+}
+
 function evaluateResetReminder(
   rule: Extract<AlertRule, { kind: 'reset_reminder' }>,
   prev: RuleState | undefined,
@@ -163,6 +228,10 @@ export async function runAlertsOnce(now: Date = new Date()): Promise<RunReport> 
   if (!config.rules.length) return { fired: [], evaluated: 0 };
 
   const pushLocale: PushLocale = config.pushLocale === 'en' ? 'en' : 'zh';
+  const vendorDeps: VendorEventDeps = {
+    db: getDb(),
+    codexAccountId: stats.codexAccounts.find((a) => a.isCurrent)?.accountId ?? null,
+  };
 
   const pending: PendingFire[] = [];
   const stateUpdates: Record<string, RuleState> = {};
@@ -190,6 +259,13 @@ export async function runAlertsOnce(now: Date = new Date()): Promise<RunReport> 
       stateUpdates[rule.id] = r.nextState;
     } else if (rule.kind === 'reset_reminder') {
       const r = evaluateResetReminder(rule, prev, stats, pushLocale, now.getTime());
+      if (!r) continue;
+      const channels = channelsByIds(config, rule.channelIds);
+      if (!channels.length) continue;
+      pending.push({ ...r, channels });
+      stateUpdates[rule.id] = r.nextState;
+    } else if (rule.kind === 'vendor_event') {
+      const r = evaluateVendorEvent(rule, prev, vendorDeps, pushLocale);
       if (!r) continue;
       const channels = channelsByIds(config, rule.channelIds);
       if (!channels.length) continue;

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.hirra.vibemeter-vendor-watch</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/local/bin/node</string>
+        <string>/Users/hanlu/codes/vibemeter/scripts/vendor-watch.mjs</string>
+    </array>
+    <key>RunAtLoad</key><true/>
+    <key>StartInterval</key><integer>600</integer>
+    <key>StandardOutPath</key><string>/Users/hanlu/.vibemeter/vendor-watch.log</string>
+    <key>StandardErrorPath</key><string>/Users/hanlu/.vibemeter/vendor-watch.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key><string>/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin</string>
+        <key>VIBEMETER_DATA_DIR</key><string>/Users/hanlu/.vibemeter</string>
+    </dict>
+</dict>
+</plist>

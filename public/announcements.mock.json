@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "codex-reset-2026-06-01",
+      "kind": "quota_reset",
+      "provider": "codex",
+      "severity": "notice",
+      "title": {
+        "zh": "Codex 明早重置额度",
+        "en": "Codex weekly quota resets tomorrow"
+      },
+      "body": {
+        "zh": "Tibo 在 X 上确认 Codex 团队明早 UTC 04:00 会刷新 7 天预算，准备好新一轮 task。",
+        "en": "Tibo confirmed on X that Codex's 7-day budget rolls over tomorrow at 04:00 UTC. Queue up the next batch."
+      },
+      "occurs_at": "2026-06-01T04:00:00Z",
+      "expires_at": "2026-06-01T06:00:00Z",
+      "source": {
+        "label": "@tibo_maker on X",
+        "url": "https://x.com/tibo_maker"
+      },
+      "affects": { "providers": ["codex"], "min_version": "0.2.20" }
+    },
+    {
+      "id": "claude-outage-2026-05-31",
+      "kind": "outage",
+      "provider": "claude",
+      "severity": "warn",
+      "title": {
+        "zh": "Claude API 间歇性 5xx（北美）",
+        "en": "Claude API intermittent 5xx (NA region)"
+      },
+      "body": {
+        "zh": "Anthropic 状态页报北美 us-east 间歇 5xx，已确认在调查。出现 retry 风暴时建议先暂停长 prompt。",
+        "en": "Anthropic status page reports intermittent 5xx in us-east. Hold long prompts if you hit a retry storm."
+      },
+      "source": {
+        "label": "status.anthropic.com",
+        "url": "https://status.anthropic.com/"
+      },
+      "affects": { "providers": ["claude"] }
+    },
+    {
+      "id": "cursor-pricing-2026-05-28",
+      "kind": "pricing",
+      "provider": "cursor",
+      "severity": "info",
+      "title": {
+        "zh": "Cursor 月费方案微调",
+        "en": "Cursor monthly plans tweaked"
+      },
+      "body": {
+        "zh": "Cursor 把 Pro 月费里的 fast-prompt 额度从 500 改成 600。已订阅的当月生效，不影响付款。",
+        "en": "Cursor bumped Pro plan fast-prompts from 500 to 600 per month. Active for current cycle; no billing change."
+      },
+      "source": {
+        "label": "cursor.com/changelog",
+        "url": "https://www.cursor.com/changelog"
+      },
+      "affects": { "providers": ["cursor"] }
+    }
+  ]
+}

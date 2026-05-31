@@ -5,6 +5,8 @@ import type { FloatQuota, FloatStats } from '@/lib/float-stats';
 import { decideQuotaGuard, type GuardDecision, type GuardStatus } from '@/lib/quota-guard';
 import { useT } from '@/lib/i18n/client';
 import { DEMO_TITLES, deterministicBucket, redactProject } from '@/lib/redact';
+import { type AnnouncementSeverity } from '@/lib/announcements';
+import { useAnnouncements } from '@/lib/announcements-client';
 
 const REDACT_COOKIE = 'vibemeter:redact';
 
@@ -134,6 +136,31 @@ function dashboardDeepLink(stats: FloatStats): string {
   return `/?${params.toString()}`;
 }
 
+/**
+ * Highest severity in a list. Used to pick the corner indicator shape/color
+ * on the floater header — nothing flashy, just a one-glance signal that
+ * there's a curated announcement waiting in the dashboard banner.
+ */
+function maxSeverity(items: { severity: AnnouncementSeverity }[]): AnnouncementSeverity | null {
+  let best: AnnouncementSeverity | null = null;
+  const rank: Record<AnnouncementSeverity, number> = { info: 0, notice: 1, warn: 2, urgent: 3 };
+  for (const item of items) {
+    if (best == null || rank[item.severity] > rank[best]) best = item.severity;
+  }
+  return best;
+}
+
+function formatCountdownShort(diffMs: number): string {
+  if (diffMs <= 0) return '0m';
+  const h = Math.floor(diffMs / 3_600_000);
+  const m = Math.floor((diffMs % 3_600_000) / 60_000);
+  if (h >= 24) {
+    const d = Math.floor(h / 24);
+    return `${d}d`;
+  }
+  return h > 0 ? `${h}h` : `${m}m`;
+}
+
 export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
   const t = useT();
   const [stats, setStats] = useState(initialStats);
@@ -148,6 +175,27 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setRedact(readRedactCookie());
   }, []);
+
+  // Announcements indicator — the floater never *renders* the items, it
+  // only shows a corner dot/triangle when there's something unread and (if
+  // applicable) a tiny countdown next to the headline number for an
+  // upcoming time-sensitive event in the next 24h. The dashboard banner is
+  // the real surface; this is the at-a-glance nudge that one exists.
+  const providersForAnn = useMemo(() => {
+    const set = new Set<string>();
+    for (const q of stats.quotas) {
+      if (q.agent === 'claude-code') set.add('claude');
+      else if (q.agent === 'codex') set.add('codex');
+    }
+    if (stats.lastSession?.tool === 'cursor') set.add('cursor');
+    return set.size > 0 ? set : null;
+  }, [stats]);
+  const { items: annItems, seen: annSeen } = useAnnouncements({ userProviders: providersForAnn });
+  const unreadAnnItems = useMemo(
+    () => annItems.filter((item) => !annSeen[item.id]),
+    [annItems, annSeen],
+  );
+  const unreadSeverity = useMemo(() => maxSeverity(unreadAnnItems), [unreadAnnItems]);
 
   const primary = stats.primary;
   const remaining = primary?.remaining5h ?? primary?.remainingWeekly ?? null;
@@ -194,6 +242,22 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
     const timer = window.setInterval(loadStats, 60_000);
     return () => window.clearInterval(timer);
   }, [expanded]);
+
+  // Earliest upcoming `occurs_at` within the next 24h (across all relevant
+  // items, not just unread). Drives the tiny ⏱ chip near the headline.
+  const upcomingAnn = useMemo(() => {
+    if (now <= 0) return null;
+    const horizon = now + 24 * 3_600_000;
+    let best: { diff: number; severity: AnnouncementSeverity } | null = null;
+    for (const item of annItems) {
+      if (!item.occurs_at) continue;
+      const ts = Date.parse(item.occurs_at);
+      if (Number.isNaN(ts) || ts <= now || ts > horizon) continue;
+      const diff = ts - now;
+      if (best == null || diff < best.diff) best = { diff, severity: item.severity };
+    }
+    return best;
+  }, [annItems, now]);
 
   const paused = stats.pausedUntil != null && now > 0 && stats.pausedUntil > now;
   const pausedMinLeft = paused ? Math.max(0, Math.round((stats.pausedUntil! - now) / 60_000)) : 0;
@@ -244,15 +308,37 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
             </span>
             <span aria-hidden className="text-xs text-zinc-500 transition-colors group-hover:text-violet-300">↗</span>
           </a>
-          <button
-            type="button"
-            aria-label={t('float.collapse')}
-            title={t('float.collapse')}
-            onClick={() => setExpanded((value) => !value)}
-            className="rounded-full border border-zinc-800 px-2 py-0.5 text-xs text-zinc-500 outline-none transition-colors hover:border-zinc-600 hover:text-zinc-200"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-1.5">
+            {unreadSeverity && (
+              <a
+                href={dashboardHref}
+                target="_blank"
+                rel="noreferrer"
+                title={`${unreadAnnItems.length}`}
+                aria-label={`announcements: ${unreadAnnItems.length}`}
+                className="inline-flex items-center"
+              >
+                {unreadSeverity === 'urgent' ? (
+                  <span aria-hidden className="text-[11px] leading-none text-rose-400">▲</span>
+                ) : unreadSeverity === 'warn' ? (
+                  <span aria-hidden className="text-[11px] leading-none text-amber-300">▲</span>
+                ) : unreadSeverity === 'notice' ? (
+                  <span aria-hidden className="inline-block size-1.5 rounded-full bg-violet-400" />
+                ) : (
+                  <span aria-hidden className="inline-block size-1.5 rounded-full bg-zinc-400" />
+                )}
+              </a>
+            )}
+            <button
+              type="button"
+              aria-label={t('float.collapse')}
+              title={t('float.collapse')}
+              onClick={() => setExpanded((value) => !value)}
+              className="rounded-full border border-zinc-800 px-2 py-0.5 text-xs text-zinc-500 outline-none transition-colors hover:border-zinc-600 hover:text-zinc-200"
+            >
+              ×
+            </button>
+          </div>
         </header>
 
         {/* Conclusion line — answers "can I keep coding?" in two glances. */}
@@ -282,6 +368,22 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
               <span className="mt-0.5 block text-[10px] text-zinc-500">
                 {primary ? t('float.fiveHRemain') : t('float.noQuota')}
               </span>
+              {upcomingAnn && (
+                <span
+                  aria-hidden
+                  className={`mt-1 inline-block rounded-full px-1.5 py-px text-[9px] leading-tight tabular-nums ${
+                    upcomingAnn.severity === 'urgent'
+                      ? 'bg-rose-500/15 text-rose-200'
+                      : upcomingAnn.severity === 'warn'
+                        ? 'bg-amber-500/15 text-amber-200'
+                        : upcomingAnn.severity === 'notice'
+                          ? 'bg-violet-500/15 text-violet-200'
+                          : 'bg-zinc-700/40 text-zinc-300'
+                  }`}
+                >
+                  ⏱{formatCountdownShort(upcomingAnn.diff)}
+                </span>
+              )}
             </span>
           </span>
         </button>

@@ -9,7 +9,7 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-# Version pinning: set VIBEMETER_VERSION=0.2.10 to install a specific release.
+# Version pinning: set VIBEMETER_VERSION=0.2.27 to install a specific release.
 if [ -n "${VIBEMETER_VERSION:-}" ]; then
   VIBEMETER_TARBALL_URL="https://vibemeter.siney.top/vibemeter-${VIBEMETER_VERSION#v}.tgz"
 else
@@ -56,12 +56,31 @@ if [ ! -x "$vibemeter_bin" ]; then
   exit 1
 fi
 
+os="$(uname -s)"
+
 step "Registering Vibemeter as a background service"
 "$vibemeter_bin" install
 
+# On Linux `vibemeter install` just prints systemd unit instructions — it
+# does NOT start a daemon, so polling for the dashboard would just time
+# out. We exit early with a clear next-step pointer instead of pretending
+# the install completed.
+if [ "$os" = "Linux" ]; then
+  echo
+  echo "✓ Vibemeter installed. To finish setup:"
+  echo "  • Save the systemd unit above to ~/.config/systemd/user/vibemeter.service"
+  echo "  • Then: systemctl --user daemon-reload && systemctl --user enable --now vibemeter"
+  echo "  • Dashboard will come up at http://localhost:9527"
+  echo
+  echo "Or run \`vibemeter\` in a terminal to try it without auto-start."
+  echo "Note: the native floating widget is macOS-only for now; Linux"
+  echo "      installs only get the dashboard."
+  exit 0
+fi
+
 step "Waiting for dashboard at http://localhost:9527"
 ready=0
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+for i in $(seq 1 60); do
   if curl -fsS http://localhost:9527 >/dev/null 2>&1; then
     ready=1
     break
@@ -72,13 +91,13 @@ done
 echo
 
 if [ "$ready" != "1" ]; then
-  echo "✗ Dashboard didn't come up within 30s." >&2
+  echo "✗ Dashboard didn't come up within 60s." >&2
   echo "  Check: $vibemeter_bin status" >&2
   echo "  Logs:  $data_dir/vibemeter.log" >&2
   exit 1
 fi
 
-if [ "$(uname -s)" = "Darwin" ]; then
+if [ "$os" = "Darwin" ]; then
   # Refresh the .app bundles BEFORE (re)launching the float widget so the user
   # always lands on the just-installed binary. The CLI now stages + rename-swaps
   # internally, so this works even if an older widget is currently running.

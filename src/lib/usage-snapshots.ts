@@ -49,6 +49,28 @@ export function insertUsageSnapshot(db: Database.Database, input: UsageSnapshotI
   });
 }
 
+// Returns the N most recent snapshots for a (source, account) ordered newest-first.
+// Used by vendor_event detection to compare adjacent readings.
+export function getRecentUsageSnapshots(
+  db: Database.Database,
+  source: UsageSource,
+  accountId: string | null,
+  limit: number,
+): UsageSnapshotRecord[] {
+  const sql = `
+    SELECT id, captured_at, source, account_id, window_5h_used_pct, window_weekly_used_pct,
+           reset_at_5h, reset_at_weekly, raw_output, confidence
+    FROM usage_snapshots
+    WHERE source = ? AND ${accountId == null ? 'account_id IS NULL' : 'account_id = ?'}
+    ORDER BY captured_at DESC
+    LIMIT ?
+  `;
+  const rows = accountId == null
+    ? db.prepare(sql).all(source, limit)
+    : db.prepare(sql).all(source, accountId, limit);
+  return rows as UsageSnapshotRecord[];
+}
+
 export function getLatestUsageSnapshot(
   db: Database.Database,
   source: UsageSource,

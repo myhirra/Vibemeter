@@ -13,6 +13,7 @@ import { ProjectLeaderboard } from './ProjectLeaderboard';
 import { AchievementsCard } from './AchievementsCard';
 import { SetupDoctorCard } from './SetupDoctorCard';
 import { NowRunwayCard } from './NowRunwayCard';
+import { AnnouncementsBanner } from './AnnouncementsBanner';
 import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight, ProjectCost, ProjectRoi } from '@/lib/stats';
 import { ProjectCostCard } from './ProjectCostCard';
@@ -321,8 +322,26 @@ export function Dashboard({
     replaceQuery('codex', nextAccountId);
   }
 
+  // Derive the set of providers the user has any data for, so the
+  // announcements banner can scope items to "things that actually affect
+  // me". We translate Vibemeter tool ids → announcement provider ids
+  // (claude/codex/cursor) and keep the set stable across renders.
+  const announcementProviders = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of sessions) {
+      if (s.tool === 'claude-code') set.add('claude');
+      else if (s.tool === 'codex') set.add('codex');
+      else if (s.tool === 'cursor') set.add('cursor');
+    }
+    return set;
+  }, [sessions]);
+
   return (
     <>
+      {/* Announcements — curated heads-up strip (quota resets, outages,
+          pricing). Renders nothing when there are no relevant items. */}
+      <AnnouncementsBanner userProviders={announcementProviders} />
+
       {/* Now / Runway — conclusion-first decision card at the very top so the
           user lands on "can I keep coding?" before any chart. */}
       <div ref={runwayRef}>

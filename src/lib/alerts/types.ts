@@ -48,6 +48,21 @@ export type AlertRule =
       remainingPctAbove: number; // "use it or lose it" — only nudge when there's still quota worth saving
       channelIds: string[];
       enabled: boolean;
+    }
+  | {
+      // Detects vendor-initiated bulk resets (e.g. Anthropic's 2026-05-15
+      // "we reset everyone's counters" event). Fires when the latest snapshot
+      // shows used_pct collapsed to ~0 but the previously recorded reset_at
+      // hasn't been reached — someone else zeroed our counter, not the
+      // scheduled rollover.
+      id: string;
+      kind: 'vendor_event';
+      label?: string;
+      metric: ResetMetric;
+      minUsedPctBefore: number; // require this much real usage before, so we don't fire on a quiet account
+      maxUsedPctAfter: number; // collapse threshold (e.g. 1 — effectively zero)
+      channelIds: string[];
+      enabled: boolean;
     };
 
 export type PushLocale = 'zh' | 'en';
@@ -71,6 +86,12 @@ export type RuleState =
   | {
       kind: 'reset_reminder';
       lastFiredForResetAt: number | null; // resetAt value at the moment of last fire
+    }
+  | {
+      kind: 'vendor_event';
+      // resetAt observed at the moment of the last fire — dedupe so a vendor
+      // event isn't reported twice while the same post-reset window persists.
+      lastFiredForResetAt: number | null;
     };
 
 export interface AlertState {
