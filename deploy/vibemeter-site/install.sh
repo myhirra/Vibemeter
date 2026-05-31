@@ -79,13 +79,9 @@ if [ "$ready" != "1" ]; then
 fi
 
 if [ "$(uname -s)" = "Darwin" ]; then
-  step "Opening floating widget"
-  "$vibemeter_bin" float || true
-
-  # Symlink ~/.vibemeter/Vibemeter.app → /Applications so Spotlight / Finder
-  # surface "Vibemeter" the way users expect a macOS app. Idempotent: the CLI
-  # skips when the symlink already points at the bundle, refuses with a clear
-  # message on a foreign collision (e.g. another tool also named Vibemeter).
+  # Refresh the .app bundles BEFORE (re)launching the float widget so the user
+  # always lands on the just-installed binary. The CLI now stages + rename-swaps
+  # internally, so this works even if an older widget is currently running.
   step "Registering Vibemeter in /Applications"
   if "$vibemeter_bin" install-app >/dev/null 2>&1; then
     echo "  ✓ /Applications/Vibemeter.app linked."
@@ -93,6 +89,27 @@ if [ "$(uname -s)" = "Darwin" ]; then
     echo "  · Skipped (an existing /Applications/Vibemeter.app blocks the symlink)."
     echo "    Run \`vibemeter install-app --name \"Vibemeter Float.app\"\` to install under a different name."
   fi
+
+  # Replace any running widget so the user sees the new build immediately —
+  # otherwise the old process keeps the previous binary mapped in memory.
+  float_binary="$HOME/.vibemeter/Vibemeter.app/Contents/MacOS/Vibemeter"
+  if pgrep -f "$float_binary" >/dev/null 2>&1; then
+    step "Restarting floating widget"
+    pkill -f "$float_binary" >/dev/null 2>&1 || true
+    # Give launchd / NSRunningApplication a beat to release the bundle id
+    # before we relaunch — otherwise `open -b` may focus the dying process.
+    sleep 1
+  else
+    step "Opening floating widget"
+  fi
+  # WKWebView caches /float's HTML+JS to ~/Library/Caches/<bundle> on disk.
+  # Server-side no-store headers aren't enough — after an upgrade the relaunched
+  # window still serves the previous bundle from cache, so users see the old
+  # build until they nuke it manually. Wipe just the HTTP cache (leave
+  # HTTPStorages/* alone so localStorage / cookies survive) so the next launch
+  # refetches from the just-restarted Next.js server.
+  rm -rf "$HOME/Library/Caches/com.hirra.vibemeter" >/dev/null 2>&1 || true
+  "$vibemeter_bin" float || true
 fi
 
 echo
