@@ -15,6 +15,9 @@ import { parseStatuslineJson } from '../parsers/statusline-json';
 import { parseCodexRateLimit } from '../parsers/codex-ratelimit';
 import { importCodexSessions } from './codex-importer';
 import { importCursorSessions } from './cursor-importer';
+import { importGeminiSessions } from './gemini-importer';
+import { importOpenCodeSessions } from './opencode-importer';
+import { importQoderSessions } from './qoder-importer';
 import { getCurrentCodexAccount } from '../codex-auth';
 import { scanGitCommits } from '../git/scan';
 import { getLatestUsageSnapshot, insertUsageSnapshot } from '../usage-snapshots';
@@ -195,6 +198,11 @@ export function importSessions(): ImportResult {
   importAll();
   importCodexSessions();
   importCursorSessions();
+  // Additional CLI/IDE agents — session activity only (no quota model). Each
+  // importer is a self-guarding no-op when its tool isn't installed.
+  try { importGeminiSessions(); } catch { /* skip */ }
+  try { importOpenCodeSessions(); } catch { /* skip */ }
+  try { importQoderSessions(); } catch { /* skip */ }
 
   importUsageSnapshots();
 

@@ -12,6 +12,9 @@ const TOOL_COLOR: Record<string, string> = {
   'claude-code': 'bg-violet-500',
   codex: 'bg-emerald-500',
   cursor: 'bg-sky-500',
+  gemini: 'bg-blue-500',
+  opencode: 'bg-amber-500',
+  qoder: 'bg-rose-500',
   other: 'bg-zinc-500',
 };
 

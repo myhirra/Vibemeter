@@ -75,6 +75,9 @@ const TOOL_BG: Record<string, string> = {
   'claude-code': 'bg-violet-500/80 border-violet-400 text-violet-50',
   codex: 'bg-emerald-600/80 border-emerald-400 text-emerald-50',
   cursor: 'bg-sky-600/80 border-sky-400 text-sky-50',
+  gemini: 'bg-blue-600/80 border-blue-400 text-blue-50',
+  opencode: 'bg-amber-600/80 border-amber-400 text-amber-50',
+  qoder: 'bg-rose-600/80 border-rose-400 text-rose-50',
 };
 
 interface Props {
