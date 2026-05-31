@@ -80,6 +80,8 @@ export interface RecapCardData {
   roiMultiplier: number | null;
   heroKind: RecapHeroKind;
   totalSessions: number;
+  /** Count of user prompts/turns observed in local tool logs. Prompt text is never stored here. */
+  promptCount: number;
   totalTokens: RecapTokenTotals;
   cacheHitRatePct: number;
   cacheSessionsAnalyzed: number;
@@ -253,6 +255,18 @@ function tokenTotals(startMs: number, endMs: number, tool: RecapToolFilter): { s
   return { sessions: row.sessions ?? 0, tokens };
 }
 
+function promptCount(startMs: number, endMs: number, tool: RecapToolFilter): number {
+  const filter = toolWhere(tool);
+  const row = getDb().prepare(`
+    SELECT COALESCE(SUM(COALESCE(prompt_count, 0)), 0) AS prompts
+    FROM sessions
+    WHERE started_at >= ?
+      AND started_at < ?
+      ${filter.sql}
+  `).get(startMs, endMs, ...filter.params) as { prompts: number };
+  return row.prompts ?? 0;
+}
+
 function topProjects(startMs: number, endMs: number, tool: RecapToolFilter, limit = 3): RecapProject[] {
   const filter = toolWhere(tool);
   const rows = getDb().prepare(`
@@ -315,6 +329,7 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     : codexApiEquivalentUsd(period.startMs, period.endMs);
   const valueAtApiRatesUsd = claudeValue + codexValue;
   const { sessions, tokens } = tokenTotals(period.startMs, period.endMs, tool);
+  const prompts = promptCount(period.startMs, period.endMs, tool);
   const cache = cacheStatsForRange(period.startMs, period.endMs, tool);
   const minimum = minimumData(sessions, tokens.total, valueAtApiRatesUsd);
 
@@ -363,6 +378,7 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     roiMultiplier,
     heroKind,
     totalSessions: sessions,
+    promptCount: prompts,
     totalTokens: tokens,
     cacheHitRatePct: cache.hitRatePct,
     cacheSessionsAnalyzed: cache.sessionsAnalyzed,

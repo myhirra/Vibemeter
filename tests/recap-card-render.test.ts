@@ -31,6 +31,7 @@ function card(overrides: Partial<RecapCardData> = {}): RecapCardData {
     roiMultiplier: null,
     heroKind: 'value',
     totalSessions: 7,
+    promptCount: 18,
     totalTokens: {
       input: 2_000,
       cacheCreation: 3_000,
@@ -96,6 +97,7 @@ test('recap renderer supports roi, value, cache, and not-enough-data hero branch
     heroKind: 'not_enough_data',
     valueAtApiRatesUsd: 0,
     totalSessions: 0,
+    promptCount: 0,
     cacheSessionsAnalyzed: 0,
     topProjects: [],
     cacheSummary: {

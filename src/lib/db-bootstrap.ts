@@ -49,6 +49,7 @@ export function bootstrap(db: Database.Database): void {
   addCol('sessions', 'cache_creation_tokens', 'INTEGER');
   addCol('sessions', 'cache_read_tokens', 'INTEGER');
   addCol('sessions', 'output_tokens', 'INTEGER');
+  addCol('sessions', 'prompt_count', 'INTEGER');
   addCol('sessions', 'peak_context_tokens', 'INTEGER');
   addCol('sessions', 'last_context_tokens', 'INTEGER');
   addCol('sessions', 'last_turn_at', 'INTEGER');

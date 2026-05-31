@@ -15,6 +15,7 @@ interface ThreadRow {
   cwd: string | null;
   title: string | null;
   first_user_message: string | null;
+  has_user_event: number | null;
   tokens_used: number | null;
   git_branch: string | null;
   model: string | null;
@@ -31,21 +32,22 @@ function importFromStateDb(): boolean {
 
     const threads = codexDb.prepare(`
       SELECT id, created_at_ms, updated_at_ms, cwd, title, first_user_message,
-             tokens_used, git_branch, model, archived
+             has_user_event, tokens_used, git_branch, model, archived
       FROM threads
       ORDER BY created_at_ms ASC
     `).all() as ThreadRow[];
 
     const db = getDb();
     const upsert = db.prepare(`
-      INSERT INTO sessions (id, tool, started_at, ended_at, cwd, ai_title, tokens_used, confidence)
-      VALUES (@id, 'codex', @started_at, @ended_at, @cwd, @ai_title, @tokens_used, 'high')
+      INSERT INTO sessions (id, tool, started_at, ended_at, cwd, ai_title, tokens_used, prompt_count, confidence)
+      VALUES (@id, 'codex', @started_at, @ended_at, @cwd, @ai_title, @tokens_used, @prompt_count, 'high')
       ON CONFLICT(id) DO UPDATE SET
-        ended_at    = excluded.ended_at,
-        cwd         = COALESCE(sessions.cwd, excluded.cwd),
-        ai_title    = COALESCE(sessions.ai_title, excluded.ai_title),
-        tokens_used = excluded.tokens_used,
-        confidence  = 'high'
+        ended_at     = excluded.ended_at,
+        cwd          = COALESCE(sessions.cwd, excluded.cwd),
+        ai_title     = COALESCE(sessions.ai_title, excluded.ai_title),
+        tokens_used  = excluded.tokens_used,
+        prompt_count = COALESCE(NULLIF(sessions.prompt_count, 0), excluded.prompt_count),
+        confidence   = 'high'
     `);
 
     const importAll = db.transaction(() => {
@@ -57,6 +59,7 @@ function importFromStateDb(): boolean {
           cwd: t.cwd,
           ai_title: t.title ?? t.first_user_message?.slice(0, 120) ?? null,
           tokens_used: t.tokens_used,
+          prompt_count: (t.first_user_message?.trim() || t.has_user_event) ? 1 : null,
         });
       }
     });
@@ -156,36 +159,44 @@ function importTokenBreakdownFromLogs(): void {
 
 function importFromHistoryJsonl(): void {
   if (!fs.existsSync(HISTORY_PATH)) return;
-  interface Entry { session_id: string; ts: number; }
-  const bySession = new Map<string, { minTs: number; maxTs: number }>();
+  interface Entry { session_id: string; ts: number; text?: string; }
+  const bySession = new Map<string, { minTs: number; maxTs: number; promptCount: number }>();
   try {
     for (const line of fs.readFileSync(HISTORY_PATH, 'utf8').split('\n').filter(Boolean)) {
       try {
         const e = JSON.parse(line) as Entry;
         if (!e.session_id || !e.ts) continue;
+        const prompt = typeof e.text === 'string' && e.text.trim().length > 0 ? 1 : 0;
         const cur = bySession.get(e.session_id);
-        if (!cur) { bySession.set(e.session_id, { minTs: e.ts, maxTs: e.ts }); }
-        else { if (e.ts < cur.minTs) cur.minTs = e.ts; if (e.ts > cur.maxTs) cur.maxTs = e.ts; }
+        if (!cur) {
+          bySession.set(e.session_id, { minTs: e.ts, maxTs: e.ts, promptCount: prompt });
+        } else {
+          if (e.ts < cur.minTs) cur.minTs = e.ts;
+          if (e.ts > cur.maxTs) cur.maxTs = e.ts;
+          cur.promptCount += prompt;
+        }
       } catch { /* skip */ }
     }
   } catch { return; }
 
   const db = getDb();
   const upsert = db.prepare(`
-    INSERT INTO sessions (id, tool, started_at, ended_at, confidence)
-    VALUES (@id, 'codex', @started_at, @ended_at, 'medium')
-    ON CONFLICT(id) DO NOTHING
+    INSERT INTO sessions (id, tool, started_at, ended_at, prompt_count, confidence)
+    VALUES (@id, 'codex', @started_at, @ended_at, @prompt_count, 'medium')
+    ON CONFLICT(id) DO UPDATE SET
+      prompt_count = excluded.prompt_count
+    WHERE sessions.tool = 'codex'
   `);
   const importAll = db.transaction(() => {
-    for (const [id, { minTs, maxTs }] of bySession) {
-      upsert.run({ id, started_at: minTs * 1000, ended_at: maxTs * 1000 });
+    for (const [id, { minTs, maxTs, promptCount }] of bySession) {
+      upsert.run({ id, started_at: minTs * 1000, ended_at: maxTs * 1000, prompt_count: promptCount || null });
     }
   });
   importAll();
 }
 
 export function importCodexSessions(): void {
-  const usedStateDb = importFromStateDb();
-  if (!usedStateDb) importFromHistoryJsonl(); // fallback
+  importFromStateDb();
+  importFromHistoryJsonl(); // prompt counts + fallback rows when state DB is unavailable
   importTokenBreakdownFromLogs();
 }

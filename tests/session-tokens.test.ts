@@ -17,6 +17,24 @@ test('parseSessionLog aggregates token totals across assistant turns', () => {
   const file = writeJsonl(dir, '11111111-1111-1111-1111-111111111111', [
     { type: 'meta', timestamp: '2026-01-01T00:00:00Z', cwd: '/work' },
     {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:10Z',
+      isSidechain: false,
+      message: { role: 'user', content: 'build the thing' },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:20Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:30Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+    },
+    {
       type: 'assistant',
       timestamp: '2026-01-01T00:01:00Z',
       message: { usage: { input_tokens: 100, cache_creation_input_tokens: 200, cache_read_input_tokens: 800, output_tokens: 50 } },
@@ -38,6 +56,7 @@ test('parseSessionLog aggregates token totals across assistant turns', () => {
   assert.equal(meta!.peakContextTokens, 1190);
   assert.equal(meta!.lastContextTokens, 1190);
   assert.equal(meta!.cwd, '/work');
+  assert.equal(meta!.promptCount, 2);
 });
 
 test('readLiveContext returns the last assistant turn even from a tail read', () => {

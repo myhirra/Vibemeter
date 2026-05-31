@@ -28,8 +28,10 @@ test('database bootstrap adds usage account_id before creating account-scoped in
   const db = new Database(dbPath);
   bootstrap(db);
   const columns = db.prepare(`PRAGMA table_info(usage_snapshots)`).all() as { name: string }[];
+  const sessionColumns = db.prepare(`PRAGMA table_info(sessions)`).all() as { name: string }[];
   const indexes = db.prepare(`PRAGMA index_list(usage_snapshots)`).all() as { name: string }[];
 
   assert.equal(columns.some((column) => column.name === 'account_id'), true);
+  assert.equal(sessionColumns.some((column) => column.name === 'prompt_count'), true);
   assert.equal(indexes.some((index) => index.name === 'idx_usage_source_account_captured'), true);
 });

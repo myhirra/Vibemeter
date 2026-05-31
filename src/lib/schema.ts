@@ -33,6 +33,7 @@ export const SessionRowSchema = z.object({
   ai_title: z.string().nullable(),
   tags: z.string().nullable(), // JSON array string e.g. '["blocked","poc"]'
   codex_category: z.string().nullable(),
+  prompt_count: z.number().int().nullable(),
   outcome: OutcomeSchema,
   outcome_source: OutcomeSourceSchema,
   outcome_set_at: z.number().int().nullable(),
@@ -76,6 +77,7 @@ export const NewSessionSchema = SessionRowSchema.omit({ id: true }).partial({
   cwd: true,
   cli_args: true,
   summary: true,
+  prompt_count: true,
 }).extend({
   id: z.string().uuid(),
 });

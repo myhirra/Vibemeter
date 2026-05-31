@@ -91,6 +91,8 @@ export function UsageTotalCard({
   const card = recapCards[toolFilter]?.[period] ?? recapCards.all[period];
   const cache = emptyCacheSummary(card);
   const tokenTotals = card.totalTokens;
+  const promptCount = card.promptCount;
+  const tokensPerPrompt = promptCount > 0 ? Math.round(tokenTotals.total / promptCount) : 0;
   const claudeTokens = tokenTotals.input + tokenTotals.cacheCreation + tokenTotals.cacheRead + tokenTotals.output;
   const codexTokens = tokenTotals.codex;
   const splitTotal = Math.max(claudeTokens + codexTokens, 1);
@@ -132,11 +134,18 @@ export function UsageTotalCard({
         />
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-3 md:grid-cols-4">
         <div className="rounded-md border border-zinc-800 bg-zinc-950 p-4">
           <p className="text-[10px] uppercase tracking-wider text-zinc-500">{t('card.total.tokens')}</p>
           <p className="mt-2 text-3xl font-bold tabular-nums text-zinc-100">{fmtTokens(tokenTotals.total, locale)}</p>
           <p className="mt-1 text-[11px] text-zinc-600">{t('card.total.tokensHint')}</p>
+        </div>
+        <div className="rounded-md border border-sky-800/50 bg-sky-950/20 p-4">
+          <p className="text-[10px] uppercase tracking-wider text-sky-300/70">{t('card.total.prompts')}</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums text-sky-200">{fmtTokens(promptCount, locale)}</p>
+          <p className="mt-1 text-[11px] text-sky-200/50">
+            {t('card.total.promptsHint', { n: promptCount > 0 ? fmtTokens(tokensPerPrompt, locale) : '--' })}
+          </p>
         </div>
         <div className="rounded-md border border-violet-800/50 bg-violet-950/20 p-4">
           <p className="text-[10px] uppercase tracking-wider text-violet-300/70">{t('card.total.value')}</p>

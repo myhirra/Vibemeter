@@ -104,6 +104,12 @@ function fmtTokens(n: number): string {
   return String(n);
 }
 
+function fmtCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
 function formatRemainingPercent(value: number | null | undefined) {
   if (value == null) return '--';
   const clamped = Math.max(0, Math.min(100, value));
@@ -290,6 +296,7 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
   // strong enough to act on, so the popover stays scannable.
   const weeklyHigh = primary?.remainingWeekly != null && primary.remainingWeekly < 30;
   const contextHigh = stats.activeContext?.pct != null && stats.activeContext.pct >= 80;
+  const todayMetric = stats.periodMetrics.find((metric) => metric.period === 'today') ?? null;
 
   return (
     <main className="min-h-screen overflow-hidden bg-zinc-950 text-zinc-100">
@@ -526,10 +533,14 @@ export function FloatingWidget({ initialStats }: { initialStats: FloatStats }) {
               </div>
             </div>
 
-            <div className="mt-3 grid grid-cols-3 gap-2">
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
                 <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statToday')}</p>
                 <p className="mt-1 text-lg font-semibold text-zinc-100">{stats.todaySessions}</p>
+              </div>
+              <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statPrompts')}</p>
+                <p className="mt-1 text-lg font-semibold text-sky-200">{fmtCount(todayMetric?.promptCount ?? 0)}</p>
               </div>
               <div className="rounded-md border border-zinc-800 bg-zinc-950 px-2 py-2">
                 <p className="text-[10px] uppercase tracking-wider text-zinc-600">{t('float.statTotal')}</p>

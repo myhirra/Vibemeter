@@ -47,6 +47,8 @@ export interface SessionLogMeta {
   lastContextTokens: number | null;
   /** Wall-clock ms at the latest assistant turn (to age out stale context readings). */
   lastTurnAt: number | null;
+  /** Count of top-level user prompts. Prompt text is never returned. */
+  promptCount: number;
 }
 
 export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
@@ -77,6 +79,7 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
   let peakContextTokens: number | null = null;
   let lastContextTokens: number | null = null;
   let lastTurnAt: number | null = null;
+  let promptCount = 0;
 
   for (const line of lines) {
     let parsed: Record<string, unknown>;
@@ -108,6 +111,10 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
     if (data.type === 'ai-title') {
       const titleParsed = AiTitleLine.safeParse(parsed);
       if (titleParsed.success) aiTitle = titleParsed.data.aiTitle;
+    }
+
+    if (isUserPrompt(parsed)) {
+      promptCount += 1;
     }
 
     if (data.type === 'assistant') {
@@ -146,11 +153,33 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
     peakContextTokens,
     lastContextTokens,
     lastTurnAt,
+    promptCount,
   };
 }
 
 function numberOrZero(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function isUserPrompt(parsed: Record<string, unknown>): boolean {
+  if (parsed.type !== 'user' || parsed.isSidechain === true) return false;
+  const message = parsed.message as Record<string, unknown> | undefined;
+  if (!message || message.role !== 'user') return false;
+  const content = message.content;
+  if (typeof content === 'string') return content.trim().length > 0;
+  if (!Array.isArray(content)) return false;
+
+  let hasText = false;
+  let hasToolResult = false;
+  for (const part of content as unknown[]) {
+    if (!part || typeof part !== 'object') continue;
+    const item = part as Record<string, unknown>;
+    if (item.type === 'tool_result') hasToolResult = true;
+    if (item.type === 'text' && typeof item.text === 'string' && item.text.trim()) {
+      hasText = true;
+    }
+  }
+  return hasText && !hasToolResult;
 }
 
 export interface LiveContext {

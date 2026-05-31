@@ -134,11 +134,13 @@ export function importSessions(): ImportResult {
     INSERT INTO sessions (
       id, tool, started_at, ended_at, exit_code, cwd, cli_args, summary, ai_title, confidence,
       input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens,
+      prompt_count,
       peak_context_tokens, last_context_tokens, last_turn_at
     )
     VALUES (
       @id, @tool, @started_at, @ended_at, @exit_code, @cwd, @cli_args, @summary, @ai_title, @confidence,
       @input_tokens, @cache_creation_tokens, @cache_read_tokens, @output_tokens,
+      @prompt_count,
       @peak_context_tokens, @last_context_tokens, @last_turn_at
     )
     ON CONFLICT(id) DO UPDATE SET
@@ -150,6 +152,7 @@ export function importSessions(): ImportResult {
       cache_creation_tokens = excluded.cache_creation_tokens,
       cache_read_tokens     = excluded.cache_read_tokens,
       output_tokens         = excluded.output_tokens,
+      prompt_count          = excluded.prompt_count,
       peak_context_tokens   = excluded.peak_context_tokens,
       last_context_tokens   = excluded.last_context_tokens,
       last_turn_at          = excluded.last_turn_at
@@ -180,6 +183,7 @@ export function importSessions(): ImportResult {
         cache_creation_tokens: meta.cacheCreationTokens || null,
         cache_read_tokens: meta.cacheReadTokens || null,
         output_tokens: meta.outputTokens || null,
+        prompt_count: meta.promptCount || null,
         peak_context_tokens: meta.peakContextTokens,
         last_context_tokens: meta.lastContextTokens,
         last_turn_at: meta.lastTurnAt,

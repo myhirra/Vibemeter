@@ -101,6 +101,15 @@ struct ActiveContext: Decodable {
     let warning: Bool
 }
 
+struct PeriodMetric: Decodable {
+    let period: String        // "today" | "7d" | "30d"
+    let tool: String?         // "all" | "claude-code" | "codex" (nil on older payloads)
+    let tokens: Double
+    let promptCount: Int?
+    let valueUsd: Double
+    let cacheHitPct: Double
+}
+
 struct FloatStats: Decodable {
     let generatedAt: Double
     let primary: FloatQuota?
@@ -116,6 +125,7 @@ struct FloatStats: Decodable {
     let activeContext: ActiveContext?
     let pausedUntil: Double?
     let codexAccounts: [CodexAccountRef]?
+    let periodMetrics: [PeriodMetric]?
 }
 
 private func menuBarRemainingPercentText(_ remaining: Double) -> String {
@@ -154,14 +164,16 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "tooltip.left": "剩余",
         "window.noSnapshot": "暂无快照",
         "window.fiveHRemaining": "5h 剩余",
+        "window.fiveHShort": "5h",
         "window.weeklyRemaining": "本周剩余",
+        "window.weeklyShort": "7d",
         "window.noQuota": "暂无 quota",
         "action.muted": "已静音 · {n}m",
         "action.mute": "静音 30m",
         "action.dashboard": "仪表盘",
-        "action.openLast": "打开上次",
+        "action.openLast": "打开上次会话",
         "action.openLastMissing": "已删除",
-        "action.switchCodex": "切 Codex",
+        "action.switchCodex": "切账号",
         "menu.collapse": "收起",
         "menu.expand": "展开",
         "menu.refresh": "刷新",
@@ -176,9 +188,13 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "menu.both": "两者",
         "menu.showFloat": "显示浮窗",
         "menu.quit": "退出",
-        "metric.today": "今天",
-        "metric.total": "累计",
-        "metric.weekly": "本周",
+        "metric.tokens": "Token",
+        "metric.prompts": "Prompt",
+        "metric.value": "价值",
+        "metric.cacheHit": "命中率",
+        "period.today": "今天",
+        "period.7d": "7天",
+        "period.30d": "30天",
         "session.active": "活跃",
         "session.done": "完成",
         "session.latest": "最近",
@@ -190,6 +206,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.expired": "快照已过期",
         "reset.in": "{time} 后重置",
         "pace.exhausts": "约 {n} 后耗尽",
+        "pace.exhaustsInline": "约 {n} 耗尽",
     ],
     .en: [
         "status.loading": "loading",
@@ -202,14 +219,16 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "tooltip.left": "left",
         "window.noSnapshot": "no snapshot",
         "window.fiveHRemaining": "5h remaining",
+        "window.fiveHShort": "5h",
         "window.weeklyRemaining": "weekly remaining",
+        "window.weeklyShort": "7d",
         "window.noQuota": "no quota",
         "action.muted": "Muted · {n}m",
         "action.mute": "Mute 30m",
         "action.dashboard": "Dashboard",
-        "action.openLast": "Open last",
+        "action.openLast": "Open last session",
         "action.openLastMissing": "Gone",
-        "action.switchCodex": "Switch Codex",
+        "action.switchCodex": "Switch acct",
         "menu.collapse": "Collapse",
         "menu.expand": "Expand",
         "menu.refresh": "Refresh",
@@ -224,9 +243,13 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "menu.both": "Both",
         "menu.showFloat": "Show Float",
         "menu.quit": "Quit",
-        "metric.today": "today",
-        "metric.total": "total",
-        "metric.weekly": "weekly",
+        "metric.tokens": "Tokens",
+        "metric.prompts": "Prompts",
+        "metric.value": "Value",
+        "metric.cacheHit": "Cache",
+        "period.today": "Today",
+        "period.7d": "7d",
+        "period.30d": "30d",
         "session.active": "active",
         "session.done": "done",
         "session.latest": "latest",
@@ -238,6 +261,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.expired": "snapshot expired",
         "reset.in": "resets in {time}",
         "pace.exhausts": "exhausts in ~{n}",
+        "pace.exhaustsInline": "~{n} to 0",
     ],
 ]
 
@@ -248,7 +272,7 @@ final class FloatingPanel: NSPanel {
 
 final class FloatView: NSView {
     struct HitRects {
-        var ring: NSRect = .zero
+        var ring: [NSRect] = []
         var title: NSRect = .zero
         var refresh: [NSRect] = []
         var close: NSRect = .zero
@@ -258,11 +282,13 @@ final class FloatView: NSView {
         var pause: NSRect = .zero
         var openTranscript: NSRect = .zero
         var switchCodex: NSRect = .zero
+        var periodTabs: [(rect: NSRect, value: String)] = []
     }
 
     static let displayStyleKey = "VMFloatDisplayStyle"
     static let agentDisplayKey = "VMFloatAgentDisplay"
     static let localeKey = "VMFloatLocale"
+    static let metricPeriodKey = "VMFloatMetricPeriod"
 
     var stats: FloatStats?
     var statusTextKey = "status.loading"
@@ -277,6 +303,7 @@ final class FloatView: NSView {
     var isExpanded = false
     var displayStyle = "ball"
     var agentDisplay = "claude-code"
+    var metricPeriod = "30d"
     var onRefresh: (() -> Void)?
     var onOpenDashboard: (() -> Void)?
     var onHide: (() -> Void)?
@@ -301,7 +328,33 @@ final class FloatView: NSView {
            agent == "claude-code" || agent == "codex" || agent == "both" {
             agentDisplay = agent
         }
+        if let period = defaults.string(forKey: Self.metricPeriodKey),
+           period == "today" || period == "7d" || period == "30d" {
+            metricPeriod = period
+        }
         _ = loadLocale(defaultLanguage: defaultLanguage)
+    }
+
+    func setMetricPeriod(_ value: String) {
+        guard metricPeriod != value else { return }
+        metricPeriod = value
+        UserDefaults.standard.set(value, forKey: Self.metricPeriodKey)
+        needsDisplay = true
+    }
+
+    private func metric(for period: String) -> PeriodMetric? {
+        guard let metrics = stats?.periodMetrics else { return nil }
+        // Headline numbers follow the agent toggle: "both" → combined ("all"),
+        // single-agent → that agent's own totals. Fall back to the matching
+        // period (or "all") when the server didn't tag rows with a tool.
+        let wantTool = agentDisplay == "both" ? "all" : agentDisplay
+        if let m = metrics.first(where: { $0.period == period && $0.tool == wantTool }) {
+            return m
+        }
+        if let m = metrics.first(where: { $0.period == period && ($0.tool == "all" || $0.tool == nil) }) {
+            return m
+        }
+        return metrics.first(where: { $0.period == period })
     }
 
     @discardableResult
@@ -415,22 +468,6 @@ final class FloatView: NSView {
         stats?.liveByAgent.first(where: { $0.agent == agent })
     }
 
-    private func sessionStats(for agent: String) -> (today: Int, total: Int) {
-        if agent == "both" {
-            let claude = sessionStats(for: "claude-code")
-            let codex = sessionStats(for: "codex")
-            return (claude.today + codex.today, claude.total + codex.total)
-        }
-
-        if let byAgent = stats?.sessionStatsByAgent,
-           let row = byAgent.first(where: { $0.agent == agent }) {
-            return (row.todaySessions, row.totalSessions)
-        }
-
-        let today = stats?.todayByTool.first(where: { $0.tool == agent })?.count ?? 0
-        return (today, stats?.totalSessions ?? 0)
-    }
-
     private var focusAgent: String {
         if agentDisplay == "both" { return "claude-code" }
         return agentDisplay
@@ -438,10 +475,18 @@ final class FloatView: NSView {
 
     func preferredSize() -> NSSize {
         if isExpanded {
-            // 296 fits header + ring block + stats tiles + action row with a
-            // comfortable bottom margin. 552 → 390 in dual mode mirrors the
-            // same trim plus the +94 ring offset.
-            return NSSize(width: 360, height: agentDisplay == "both" ? 390 : 296)
+            // Header + ring block + period switcher + metric tiles. Mute &
+            // dashboard moved into the header, so the action row is usually
+            // empty — only the optional "open last transcript" button adds a
+            // row. Size to content so there's no dead space at the bottom.
+            // The +94 in dual mode mirrors the second ring's offset.
+            let dual = agentDisplay == "both"
+            let hasTranscript = !((stats?.lastSession?.transcriptPath ?? "").isEmpty)
+            // Relative to the inset rect's minY: metric tiles end at 236; the
+            // transcript button (when shown) extends the content to ~268.
+            let contentBottom: CGFloat = hasTranscript ? 268 : 236
+            let height = contentBottom + 24 /* bottom margin */ + 16 /* 8px inset ×2 */ + (dual ? 94 : 0)
+            return NSSize(width: 420, height: height)
         }
         switch (displayStyle, agentDisplay) {
         case ("pill", "both"):
@@ -488,37 +533,38 @@ final class FloatView: NSView {
     private func drawActions(in rect: NSRect) {
         let dual = agentDisplay == "both"
         let offset: CGFloat = dual ? 94 : 0
-        let y = rect.minY + 224 + offset
-        var x = rect.minX + 20
+        let y = rect.minY + 246 + offset
 
-        let paused = (stats?.pausedUntil ?? 0) > Date().timeIntervalSince1970 * 1000
-        let pauseLabel: String
-        if paused {
-            let leftMs = (stats!.pausedUntil!) - Date().timeIntervalSince1970 * 1000
-            let leftMin = max(0, Int((leftMs / 60_000).rounded()))
-            pauseLabel = tr("action.muted", ["n": "\(leftMin)"])
-        } else {
-            pauseLabel = tr("action.mute")
-        }
-        let pauseRect = drawActionButton(label: pauseLabel, x: x, y: y, accent: paused)
-        hitRects.pause = pauseRect
-        x = pauseRect.maxX + 6
+        // Mute + dashboard now live in the header; switch-Codex lives on the
+        // Codex ring. The action row is left with just the optional "open last
+        // transcript" button. Clear its hit target so a stale rect can't catch
+        // clicks, and bail early when there's nothing to show.
+        hitRects.openTranscript = .zero
 
-        let dashboardRect = drawActionButton(label: tr("action.dashboard"), x: x, y: y, accent: false)
-        hitRects.openDashboard = dashboardRect
-        x = dashboardRect.maxX + 6
-
+        var buttons: [(label: String, accent: Bool, assign: (NSRect) -> Void)] = []
         if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
             let openLabel = tr(openLastFlashKey ?? "action.openLast")
-            let openRect = drawActionButton(label: openLabel, x: x, y: y, accent: false)
-            hitRects.openTranscript = openRect
-            x = openRect.maxX + 6
+            buttons.append((openLabel, false, { self.hitRects.openTranscript = $0 }))
         }
-        let showCodex = agentDisplay == "codex" || agentDisplay == "both"
-        if showCodex, let accounts = stats?.codexAccounts, accounts.count >= 2 {
-            let switchRect = drawActionButton(label: tr("action.switchCodex"), x: x, y: y, accent: false)
-            hitRects.switchCodex = switchRect
+        if buttons.isEmpty { return }
+
+        let totalButtons = buttons.reduce(0) { $0 + actionButtonWidth($1.label) }
+        let avail = rect.width - 40
+        // Even gaps, capped so a sparse row (2 buttons) doesn't drift absurdly
+        // far apart; whatever's left over is split as outer margin to center it.
+        let rawGap = buttons.count > 1 ? (avail - totalButtons) / CGFloat(buttons.count - 1) : 0
+        let gap = min(max(rawGap, 6), 28)
+        let usedWidth = totalButtons + gap * CGFloat(max(0, buttons.count - 1))
+        var x = rect.minX + 20 + max(0, (avail - usedWidth) / 2)
+        for btn in buttons {
+            let r = drawActionButton(label: btn.label, x: x, y: y, accent: btn.accent)
+            btn.assign(r)
+            x = r.maxX + gap
         }
+    }
+
+    private func actionButtonWidth(_ label: String) -> CGFloat {
+        textPixelWidth(label, size: 10, weight: .medium) + 16
     }
 
     private func drawActionButton(label: String, x: CGFloat, y: CGFloat, accent: Bool) -> NSRect {
@@ -538,7 +584,7 @@ final class FloatView: NSView {
         (accent ? NSColor.systemYellow.withAlphaComponent(0.6) : NSColor.white.withAlphaComponent(0.10)).setStroke()
         NSBezierPath(roundedRect: rect, xRadius: 11, yRadius: 11).stroke()
         let textColor = accent ? NSColor.systemYellow : NSColor.white.withAlphaComponent(0.82)
-        drawText(label, rect: NSRect(x: rect.minX, y: rect.minY + 5, width: rect.width, height: 14), size: 10, weight: .medium, color: textColor, alignment: .center)
+        drawCenteredText(label, rect: rect, size: 10, weight: .medium, color: textColor, alignment: .center)
         return rect
     }
 
@@ -601,6 +647,10 @@ final class FloatView: NSView {
                 onCycleCodex?()
                 return
             }
+            if let tab = hitRects.periodTabs.first(where: { $0.rect.contains(point) }) {
+                setMetricPeriod(tab.value)
+                return
+            }
             if hitRects.claudeToggle != .zero && hitRects.claudeToggle.contains(point) {
                 setAgentDisplay("claude-code")
                 return
@@ -609,7 +659,7 @@ final class FloatView: NSView {
                 setAgentDisplay("codex")
                 return
             }
-            if hitRects.ring != .zero && hitRects.ring.contains(point) {
+            if hitRects.ring.contains(where: { $0.contains(point) }) {
                 isExpanded = false
                 applyWindowSize()
                 toolTip = tooltipText()
@@ -725,24 +775,44 @@ final class FloatView: NSView {
     }
 
     private func drawHeader(in rect: NSRect) {
-        let title = NSRect(x: rect.minX + 20, y: rect.minY + 18, width: 94, height: 18)
-        drawText("Vibemeter", rect: title, size: 13, weight: .semibold, color: NSColor.white.withAlphaComponent(0.94))
-        hitRects.title = title
+        // Title doubles as the dashboard link: brand-violet text + a trailing
+        // ↗ so it reads as a clickable link that opens the dashboard. The whole
+        // "Vibemeter ↗" block is one hit target.
+        let linkColor = NSColor(calibratedRed: 0.66, green: 0.55, blue: 0.98, alpha: 1)
+        let titleWidth = textPixelWidth("Vibemeter", size: 13, weight: .semibold)
+        let title = NSRect(x: rect.minX + 20, y: rect.minY + 18, width: titleWidth + 2, height: 18)
+        drawText("Vibemeter", rect: title, size: 13, weight: .semibold, color: linkColor)
+        let arrow = NSRect(x: title.maxX + 3, y: rect.minY + 18, width: 12, height: 18)
+        drawText("↗", rect: arrow, size: 12, weight: .semibold, color: linkColor.withAlphaComponent(0.9))
+        hitRects.title = NSRect(x: title.minX, y: rect.minY + 12, width: arrow.maxX - title.minX, height: 26)
+        hitRects.openDashboard = .zero
 
-        if agentDisplay != "both" {
-            let switchRect = NSRect(x: rect.maxX - 180, y: rect.minY + 10, width: 114, height: 27)
-            drawAgentSwitch(in: switchRect)
-            hitRects.claudeToggle = NSRect(x: switchRect.minX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
-            hitRects.codexToggle = NSRect(x: switchRect.midX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
-        }
+        // Right cluster (right → left): close ×, refresh ↻, mute.
+        let closeGlyph = NSRect(x: rect.maxX - 22, y: rect.minY + 14, width: 14, height: 16)
+        drawText("×", rect: closeGlyph, size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
+        hitRects.close = closeGlyph.insetBy(dx: -8, dy: -6)
 
         let refreshRect = NSRect(x: rect.maxX - 59, y: rect.minY + 10, width: 27, height: 27)
         drawIconButton("↻", rect: refreshRect, active: true)
         hitRects.refresh.append(refreshRect)
 
-        let closeGlyph = NSRect(x: rect.maxX - 22, y: rect.minY + 14, width: 14, height: 16)
-        drawText("×", rect: closeGlyph, size: 14, weight: .medium, color: NSColor.white.withAlphaComponent(0.54), alignment: .center)
-        hitRects.close = closeGlyph.insetBy(dx: -8, dy: -6)
+        // Mute (pause alerts) — moved up here from the action row. Yellow when
+        // muted; the glyph flips to ▶ to read as "resume".
+        let paused = (stats?.pausedUntil ?? 0) > Date().timeIntervalSince1970 * 1000
+        let muteRect = NSRect(x: refreshRect.minX - 6 - 27, y: rect.minY + 10, width: 27, height: 27)
+        drawIconButton(paused ? "▶" : "⏸", rect: muteRect, active: false, tint: paused ? NSColor.systemYellow : nil)
+        hitRects.pause = muteRect
+
+        // Agent switch (single-agent mode only) sits just left of the mute icon.
+        if agentDisplay != "both" {
+            let switchRect = NSRect(x: muteRect.minX - 8 - 114, y: rect.minY + 10, width: 114, height: 27)
+            drawAgentSwitch(in: switchRect)
+            hitRects.claudeToggle = NSRect(x: switchRect.minX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
+            hitRects.codexToggle = NSRect(x: switchRect.midX, y: switchRect.minY, width: switchRect.width / 2, height: switchRect.height)
+        } else {
+            hitRects.claudeToggle = .zero
+            hitRects.codexToggle = .zero
+        }
     }
 
     private func drawAgentSwitch(in rect: NSRect) {
@@ -786,7 +856,7 @@ final class FloatView: NSView {
 
         let value = remainingPercentText(remaining)
         drawText(value, rect: NSRect(x: rect.minX + 12, y: center.y - 15, width: rect.width - 24, height: 30), size: 24, weight: .bold, color: .white, alignment: .center)
-        hitRects.ring = rect
+        hitRects.ring = [rect]
     }
 
     private func drawElapsedRing(context: CGContext, center: CGPoint, radius: CGFloat, window: (remaining: Double?, resetAt: Double?, label: String), lineWidth: CGFloat) {
@@ -816,7 +886,7 @@ final class FloatView: NSView {
         let bottomRect = NSRect(x: rect.minX, y: rect.minY + half, width: rect.width, height: half)
         drawSmallBall(context: context, in: topRect, agent: "claude-code")
         drawSmallBall(context: context, in: bottomRect, agent: "codex")
-        hitRects.ring = rect
+        hitRects.ring = [rect]
     }
 
     private func drawSmallBall(context: CGContext, in rect: NSRect, agent: String) {
@@ -858,7 +928,7 @@ final class FloatView: NSView {
             let pillRect = NSRect(x: rect.minX + 8, y: y, width: rect.width - 16, height: pillHeight)
             drawAgentPill(context: context, in: pillRect, agent: agent)
         }
-        hitRects.ring = rect
+        hitRects.ring = [rect]
     }
 
     private func drawAgentPill(context: CGContext, in rect: NSRect, agent: String) {
@@ -958,65 +1028,134 @@ final class FloatView: NSView {
 
         let value = remainingPercentText(remaining)
         let valueSize: CGFloat = dual ? 17 : 23
-        drawText(value, rect: NSRect(x: center.x - 36, y: center.y - 13, width: 72, height: 26), size: valueSize, weight: .bold, color: .white, alignment: .center)
+        // Vertically center on the ring's center by measuring the glyph line
+        // height — a fixed y offset top-aligns the text and leaves it sitting
+        // high, more noticeably so for the smaller dual-mode font.
+        let valueLineHeight = (value as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: valueSize, weight: .bold)]).height
+        drawText(value, rect: NSRect(x: center.x - 36, y: center.y - valueLineHeight / 2, width: 72, height: valueLineHeight), size: valueSize, weight: .bold, color: .white, alignment: .center)
 
         let x = rect.minX + 134
         let textWidth = max(120, rect.maxX - x - 18)
-        let hasPace = (q?.pace5hExhaustMin ?? 0) > 0
+        // Codex with 2+ accounts gets an extra "account name · 切账号" row under
+        // the 7d line, so it needs a taller block (and shows even in dual mode).
+        let codexAccounts = stats?.codexAccounts ?? []
+        let multiAccount = agent == "codex" && codexAccounts.count >= 2
         let hasAccount = q?.accountLabel?.isEmpty == false && !dual
-        let textBlockHeight: CGFloat = hasPace
-            ? (dual ? 65 : 78)
-            : (hasAccount ? 81 : (dual ? 51 : 62))
+        let textBlockHeight: CGFloat = multiAccount ? (dual ? 68 : 92) : (hasAccount ? 81 : (dual ? 51 : 62))
         let baseY = center.y - textBlockHeight / 2
         drawText(q?.label ?? toolName(agent), rect: NSRect(x: x, y: baseY, width: textWidth, height: 22), size: dual ? 14 : 18, weight: .semibold, color: .white)
-        drawText(q == nil ? tr(statusTextKey) : window.label, rect: NSRect(x: x, y: baseY + (dual ? 18 : 25), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
-        drawText(resetText(window.resetAt), rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
+
+        // 5h info on its own line ("5h 95% · 2h 43m 后重置"), 7d (weekly) info
+        // on its own line ("7d 86% · 3d 后重置") — same "<window> <pct> · reset"
+        // shape so the two read as a pair. The 5h pace warning rides inline at
+        // the end of the 5h line (in its alert color) instead of taking a row.
+        // Falls back so the primary row is never blank when a window is missing.
+        let fiveHLine: String? = {
+            guard let five = q?.remaining5h else { return nil }
+            return "\(tr("window.fiveHShort")) \(remainingPercentText(five)) · \(resetText(q?.resetAt5h))"
+        }()
+        let weeklyLine: String? = {
+            guard let weekly = q?.remainingWeekly else { return nil }
+            let pct = remainingPercentText(weekly)
+            if let rel = weeklyResetText(q?.resetAtWeekly) {
+                return "\(tr("window.weeklyShort")) \(pct) · \(tr("reset.in", ["time": rel]))"
+            }
+            return "\(tr("window.weeklyShort")) \(pct)"
+        }()
+        let primaryLine = q == nil ? tr(statusTextKey) : (fiveHLine ?? weeklyLine ?? window.label)
+        let secondaryLine = fiveHLine != nil ? weeklyLine : nil
+        let primaryY = baseY + (dual ? 18 : 25)
+        drawText(primaryLine, rect: NSRect(x: x, y: primaryY, width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.64))
         if let exhaust = q?.pace5hExhaustMin, exhaust > 0 {
             let paceColor = exhaust < 30 ? NSColor.systemPink : NSColor.systemYellow
-            drawText(tr("pace.exhausts", ["n": paceText(exhaust)]), rect: NSRect(x: x, y: baseY + (dual ? 51 : 64), width: textWidth, height: 14), size: 10, weight: .medium, color: paceColor)
+            let pace = tr("pace.exhaustsInline", ["n": paceText(exhaust)])
+            let paceX = x + textPixelWidth(primaryLine, size: 11, weight: .regular) + 8
+            drawText(pace, rect: NSRect(x: paceX, y: primaryY, width: max(20, rect.maxX - paceX - 14), height: 16), size: 10, weight: .medium, color: paceColor)
+        }
+        if let secondaryLine {
+            drawText(secondaryLine, rect: NSRect(x: x, y: baseY + (dual ? 35 : 46), width: textWidth, height: 16), size: 11, weight: .regular, color: NSColor.white.withAlphaComponent(0.46))
+        }
+        if multiAccount {
+            // Account name + "切账号" read as one compact row aligned with
+            // the quota text above it.
+            let weeklyY = baseY + (dual ? 35 : 46)
+            let rowY = weeklyY + 18
+            let current = codexAccounts.first(where: { $0.isCurrent })?.label
+                ?? q?.accountLabel ?? ""
+            let switchLabel = tr("action.switchCodex")
+            let btnW = actionButtonWidth(switchLabel)
+            let nameMaxW = max(20, textWidth - btnW - 8)
+            let nameW = min(textPixelWidth(current, size: 10, weight: .regular), nameMaxW)
+            let gap: CGFloat = current.isEmpty ? 0 : 8
+            let rowX = x
+            if !current.isEmpty {
+                drawCenteredText(current, rect: NSRect(x: rowX, y: rowY, width: nameW, height: 22), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.5))
+            }
+            let btnX = rowX + (current.isEmpty ? 0 : nameW + gap)
+            let switchRect = drawActionButton(label: switchLabel, x: btnX, y: rowY, accent: false)
+            hitRects.switchCodex = switchRect
         } else if let account = q?.accountLabel, !account.isEmpty, !dual {
             drawText(account, rect: NSRect(x: x, y: baseY + 67, width: textWidth, height: 14), size: 10, weight: .regular, color: NSColor.white.withAlphaComponent(0.32))
         }
 
-        if yOffset <= 0 {
-            hitRects.ring = NSRect(x: center.x - radius - 8, y: center.y - radius - 8, width: radius * 2 + 16, height: radius * 2 + 16)
-        }
+        // Every ring (both agents in dual mode) collapses the panel when clicked,
+        // not just the first one.
+        hitRects.ring.append(NSRect(x: center.x - radius - 8, y: center.y - radius - 8, width: radius * 2 + 16, height: radius * 2 + 16))
     }
 
+    /// Usage block: a today/7d/30d switcher over four metric tiles
+    /// (tokens · prompts · value · cache hit), mirroring the dashboard's headline
+    /// numbers. Data is combined across Claude + Codex and arrives in
+    /// `stats.periodMetrics`; the period itself is a client-side toggle.
     private func drawStats(in rect: NSRect) {
         let dual = agentDisplay == "both"
         let offset: CGFloat = dual ? 94 : 0
-        let top = rect.minY + 164 + offset
+
+        let tabsRect = NSRect(x: rect.minX + 20, y: rect.minY + 160 + offset, width: rect.width - 40, height: 20)
+        drawPeriodTabs(in: tabsRect)
+
+        let top = rect.minY + 186 + offset
         let gap: CGFloat = 10
-        let width = (rect.width - 40 - gap * 2) / 3
-        let counts = sessionStats(for: dual ? "both" : focusAgent)
-        drawMetric(title: tr("metric.today"), value: "\(counts.today)", rect: NSRect(x: rect.minX + 20, y: top, width: width, height: 50))
-        drawMetric(title: tr("metric.total"), value: "\(counts.total)", rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
-        let weeklyRect = NSRect(x: rect.minX + 20 + (width + gap) * 2, y: top, width: width, height: 50)
-        if dual {
-            drawDualWeekly(rect: weeklyRect)
-        } else {
-            let q = quota(for: focusAgent)
-            // Reset countdown lives under the % so the user can answer "when
-            // does this week refresh" without opening the dashboard. Falls back
-            // to the title-only layout when there's no snapshot.
-            let sub = q.flatMap { weeklyResetText($0.resetAtWeekly) }
-            drawMetric(title: tr("metric.weekly"), value: remainingPercentText(q?.remainingWeekly), subtitle: sub, rect: weeklyRect)
+        let width = (rect.width - 40 - gap * 3) / 4
+        let m = metric(for: metricPeriod)
+        let tokensText = m.map { formatTokens(Int($0.tokens)) } ?? "--"
+        let promptsText = m.map { formatCount($0.promptCount ?? 0) } ?? "--"
+        let valueText = m.map { formatUsd($0.valueUsd) } ?? "--"
+        let cacheText = m.map { "\(Int($0.cacheHitPct))%" } ?? "--"
+        drawMetric(title: tr("metric.tokens"), value: tokensText, rect: NSRect(x: rect.minX + 20, y: top, width: width, height: 50))
+        drawMetric(title: tr("metric.prompts"), value: promptsText, rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
+        drawMetric(title: tr("metric.value"), value: valueText, rect: NSRect(x: rect.minX + 20 + (width + gap) * 2, y: top, width: width, height: 50))
+        drawMetric(title: tr("metric.cacheHit"), value: cacheText, rect: NSRect(x: rect.minX + 20 + (width + gap) * 3, y: top, width: width, height: 50))
+    }
+
+    private func drawPeriodTabs(in rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.22).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).fill()
+        NSColor.white.withAlphaComponent(0.06).setStroke()
+        NSBezierPath(roundedRect: rect, xRadius: 10, yRadius: 10).stroke()
+
+        let periods: [(String, String)] = [
+            ("today", tr("period.today")),
+            ("7d", tr("period.7d")),
+            ("30d", tr("period.30d")),
+        ]
+        let segW = rect.width / CGFloat(periods.count)
+        for (i, item) in periods.enumerated() {
+            let segRect = NSRect(x: rect.minX + CGFloat(i) * segW, y: rect.minY, width: segW, height: rect.height)
+            let isActive = item.0 == metricPeriod
+            if isActive {
+                NSColor(calibratedRed: 0.40, green: 0.28, blue: 0.74, alpha: 0.65).setFill()
+                NSBezierPath(roundedRect: segRect.insetBy(dx: 2, dy: 2), xRadius: 8, yRadius: 8).fill()
+            }
+            drawText(item.1, rect: NSRect(x: segRect.minX, y: segRect.minY + 4, width: segRect.width, height: 13), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(isActive ? 0.92 : 0.5), alignment: .center)
+            hitRects.periodTabs.append((segRect, item.0))
         }
     }
 
-    private func drawDualWeekly(rect: NSRect) {
-        NSColor.black.withAlphaComponent(0.20).setFill()
-        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).fill()
-        NSColor.white.withAlphaComponent(0.06).setStroke()
-        NSBezierPath(roundedRect: rect, xRadius: 14, yRadius: 14).stroke()
-        drawText(tr("metric.weekly"), rect: NSRect(x: rect.minX, y: rect.minY + 6, width: rect.width, height: 12), size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.38), alignment: .center)
-        let c = quota(for: "claude-code")?.remainingWeekly
-        let x = quota(for: "codex")?.remainingWeekly
-        let cText = "Claude \(remainingPercentText(c))"
-        let xText = "Codex \(remainingPercentText(x))"
-        drawText(cText, rect: NSRect(x: rect.minX, y: rect.minY + 22, width: rect.width, height: 13), size: 10, weight: .semibold, color: .white, alignment: .center)
-        drawText(xText, rect: NSRect(x: rect.minX, y: rect.minY + 36, width: rect.width, height: 13), size: 10, weight: .semibold, color: NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1), alignment: .center)
+    private func formatUsd(_ n: Double) -> String {
+        if n >= 100 { return String(format: "$%.0f", n) }
+        if n >= 10 { return String(format: "$%.1f", n) }
+        return String(format: "$%.2f", n)
     }
 
     private func drawFooter(in rect: NSRect) {
@@ -1053,8 +1192,15 @@ final class FloatView: NSView {
     }
 
     private func formatTokens(_ n: Int) -> String {
+        if n >= 1_000_000_000 { return String(format: "%.1fB", Double(n) / 1_000_000_000) }
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
         if n >= 1_000 { return "\(n / 1_000)k" }
+        return String(n)
+    }
+
+    private func formatCount(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
         return String(n)
     }
 
@@ -1121,13 +1267,29 @@ final class FloatView: NSView {
         }
     }
 
-    private func drawIconButton(_ text: String, rect: NSRect, active: Bool) {
-        (active ? NSColor(calibratedRed: 0.31, green: 0.19, blue: 0.62, alpha: 0.55) : NSColor.white.withAlphaComponent(0.07)).setFill()
+    private func drawIconButton(_ text: String, rect: NSRect, active: Bool, tint: NSColor? = nil, glyphSize: CGFloat = 12) {
+        let fill: NSColor
+        let stroke: NSColor
+        let glyph: NSColor
+        if let tint {
+            fill = tint.withAlphaComponent(0.16)
+            stroke = tint.withAlphaComponent(0.5)
+            glyph = tint
+        } else if active {
+            fill = NSColor(calibratedRed: 0.31, green: 0.19, blue: 0.62, alpha: 0.55)
+            stroke = NSColor.white.withAlphaComponent(0.12)
+            glyph = NSColor.white.withAlphaComponent(0.82)
+        } else {
+            fill = NSColor.white.withAlphaComponent(0.07)
+            stroke = NSColor.white.withAlphaComponent(0.08)
+            glyph = NSColor.white.withAlphaComponent(0.82)
+        }
+        fill.setFill()
         NSBezierPath(ovalIn: rect).fill()
-        NSColor.white.withAlphaComponent(active ? 0.12 : 0.08).setStroke()
+        stroke.setStroke()
         NSBezierPath(ovalIn: rect).stroke()
-        let textY = rect.minY + (rect.height - 14) / 2
-        drawText(text, rect: NSRect(x: rect.minX, y: textY, width: rect.width, height: 14), size: 12, weight: .semibold, color: NSColor.white.withAlphaComponent(0.82), alignment: .center)
+        let textY = rect.minY + (rect.height - glyphSize - 2) / 2
+        drawText(text, rect: NSRect(x: rect.minX, y: textY, width: rect.width, height: glyphSize + 2), size: glyphSize, weight: .semibold, color: glyph, alignment: .center)
     }
 
     private func resizeWindowKeepingTopRight(_ size: NSSize) {
@@ -1153,6 +1315,24 @@ final class FloatView: NSView {
             .paragraphStyle: paragraph,
         ]
         (text as NSString).draw(in: rect, withAttributes: attrs)
+    }
+
+    private func drawCenteredText(_ text: String, rect: NSRect, size: CGFloat, weight: NSFont.Weight, color: NSColor, alignment: NSTextAlignment = .left) {
+        let height = textPixelHeight(text, size: size, weight: weight)
+        let y = rect.minY + (rect.height - height) / 2
+        drawText(text, rect: NSRect(x: rect.minX, y: y, width: rect.width, height: height), size: size, weight: weight, color: color, alignment: alignment)
+    }
+
+    /// Rendered width of a single-line string, used to place inline trailing
+    /// text (the pace warning) right after the 5h row.
+    private func textPixelWidth(_ text: String, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight)]
+        return ceil((text as NSString).size(withAttributes: attrs).width)
+    }
+
+    private func textPixelHeight(_ text: String, size: CGFloat, weight: NSFont.Weight) -> CGFloat {
+        let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight)]
+        return ceil((text as NSString).size(withAttributes: attrs).height)
     }
 
     private func accentColor(remaining: Double?) -> NSColor {
@@ -1275,7 +1455,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         view.autoresizingMask = [.width, .height]
         view.wantsLayer = true
         view.layer?.backgroundColor = NSColor.clear.cgColor
-        view.onRefresh = { [weak self] in self?.refreshNow() }
+        view.onRefresh = { [weak self] in self?.refreshNow(importSessions: true) }
         view.onSettingsChanged = { [weak self] in
             self?.refreshNow()
             self?.rebuildStatusMenu()
@@ -1510,10 +1690,25 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         }.resume()
     }
 
-    private func refreshNow() {
+    private func refreshNow(importSessions: Bool = false) {
         syncLocaleFromDefaults()
         if refreshInFlight { return }
         refreshInFlight = true
+
+        if importSessions {
+            var importRequest = URLRequest(url: importURL)
+            importRequest.httpMethod = "POST"
+            importRequest.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            URLSession.shared.dataTask(with: importRequest) { [weak self] _, _, _ in
+                self?.fetchStats()
+            }.resume()
+            return
+        }
+
+        fetchStats()
+    }
+
+    private func fetchStats() {
 
         var components = URLComponents(url: apiURL, resolvingAgainstBaseURL: false)!
         components.queryItems = [

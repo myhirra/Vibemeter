@@ -7,6 +7,11 @@ import { getDb } from './db';
 import { readLiveContext } from './parsers/session-log';
 import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
 import { normalizeQuotaWindow } from './quota-window';
+import { buildRecapCard, type RecapPeriod } from './recap-card';
+import { readRecapSettings } from './recap-settings';
+
+/** Periods offered by the floater's metric switcher, in display order. */
+const FLOAT_METRIC_PERIODS: RecapPeriod[] = ['today', '7d', '30d'];
 
 /**
  * Claude conversation context window (tokens). Claude Sonnet 4.x / Opus 4.x
@@ -69,6 +74,31 @@ export interface FloatStats {
   activeContext: FloatContext | null;
   pausedUntil: number | null;
   codexAccounts: { accountId: string; label: string; isCurrent: boolean }[];
+  /**
+   * Token / value / cache-hit aggregates per period (today, 7d, 30d) so the
+   * floater can show the same headline numbers the dashboard does, with a
+   * client-side period switcher. Combined across Claude + Codex (tool 'all')
+   * via the dashboard's `buildRecapCard`, so the numbers line up exactly.
+   */
+  periodMetrics: FloatPeriodMetric[];
+}
+
+export interface FloatPeriodMetric {
+  period: RecapPeriod;
+  /**
+   * Which agent this row covers: 'all' (combined), 'claude-code', or 'codex'.
+   * The floater picks the row matching the agent toggle so the headline
+   * numbers follow the Claude/Codex/both selection.
+   */
+  tool: 'all' | 'claude-code' | 'codex';
+  /** Total tokens across metered tools in the window. */
+  tokens: number;
+  /** Count of observed user prompts in the window. */
+  promptCount: number;
+  /** Claude + Codex API-equivalent USD ("value") in the window. */
+  valueUsd: number;
+  /** cache_read / (input + cache_creation + cache_read), 0–100 integer. */
+  cacheHitPct: number;
 }
 
 export interface FloatSessionStats {
@@ -503,6 +533,24 @@ export async function getFloatStats(): Promise<FloatStats> {
     LIMIT 1
   `).get() as { id: string; tool: string; cwd: string | null; ai_title: string | null; summary: string | null; started_at: number } | undefined;
 
+  const recapSettings = readRecapSettings();
+  // Emit one row per (period × agent scope) so the floater can show numbers
+  // for whichever agent the toggle is on ('all' when showing both).
+  const metricTools: FloatPeriodMetric['tool'][] = ['all', 'claude-code', 'codex'];
+  const periodMetrics: FloatPeriodMetric[] = FLOAT_METRIC_PERIODS.flatMap((period) =>
+    metricTools.map((tool) => {
+      const card = buildRecapCard({ period, tool, settings: recapSettings });
+      return {
+        period,
+        tool,
+        tokens: card.totalTokens.total,
+        promptCount: card.promptCount,
+        valueUsd: Math.round(card.valueAtApiRatesUsd * 100) / 100,
+        cacheHitPct: card.cacheHitRatePct,
+      };
+    }),
+  );
+
   const pausedUntilPath = path.join(dataDir(), 'pause-until');
   let pausedUntil: number | null = null;
   try {
@@ -539,5 +587,6 @@ export async function getFloatStats(): Promise<FloatStats> {
     pausedUntil,
     activeContext: getActiveContext(),
     codexAccounts: codexAccounts.map((a) => ({ accountId: a.accountId, label: a.label, isCurrent: a.isCurrent })),
+    periodMetrics,
   };
 }
