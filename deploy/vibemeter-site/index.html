@@ -273,6 +273,21 @@
         font-size: 12px;
       }
 
+      .demo {
+        margin-top: 44px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--panel);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      }
+
+      .demo img {
+        display: block;
+        width: 100%;
+        height: auto;
+      }
+
       .details {
         margin-top: 44px;
         display: grid;
@@ -391,9 +406,6 @@
       <header>
         <div class="brand"><span>Vibe</span>meter</div>
         <nav class="nav" aria-label="Guides">
-          <a href="/claude-code-quota/">Claude Code quota</a>
-          <a href="/codex-rate-limit/">Codex limits</a>
-          <a href="/ai-coding-usage-tracker/">Usage tracker</a>
           <a href="/pricing/">Pricing</a>
         </nav>
       </header>
@@ -404,11 +416,6 @@
           <p class="lead">
             Local macOS console for Claude Code and Codex. No cloud, no account.
           </p>
-          <ul class="bullets">
-            <li><strong>Before:</strong> <code>vibemeter guard</code> tells you if the next task is safe to start.</li>
-            <li><strong>During:</strong> floating quota, context, burn-rate, and reset runway.</li>
-            <li><strong>After:</strong> every commit linked to the session that produced it.</li>
-          </ul>
           <div class="install">
             <code>curl -fsSL 'https://vibemeter.siney.top/install.sh?src=site-copy' | bash</code>
             <button class="button" type="button" onclick="navigator.clipboard.writeText(&quot;curl -fsSL 'https://vibemeter.siney.top/install.sh?src=site-copy' | bash&quot;)">
@@ -425,6 +432,10 @@
             <img src="/float-collapsed.png" alt="Vibemeter collapsed progress bar" width="520" height="134" />
           </div>
         </div>
+      </section>
+
+      <section class="demo" aria-label="Vibemeter dashboard and floating widget demo">
+        <img src="/dashboard-widget-demo.gif" alt="Vibemeter dashboard with floating widget popover — live runway, redact mode on, Claude 9% with exhausts-in-30m alert" width="1280" height="800" />
       </section>
 
       <section class="details" aria-label="Vibemeter features">
