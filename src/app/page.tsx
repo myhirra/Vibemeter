@@ -21,6 +21,7 @@ import { getRedactSalt, isRedactEnabled } from '@/lib/redact-server';
 import { buildRecapCard, type RecapCardData, type RecapCardsByScope, type RecapDateFilter, type RecapToolFilter } from '@/lib/recap-card';
 import { readRecapSettings } from '@/lib/recap-settings';
 import { evaluateRecapNudge } from '@/lib/recap-nudge';
+import { buildWeeklyReport } from '@/lib/report/weekly';
 
 /**
  * Demo path masking — used when `?demo=1` is on so the marketing screenshot
@@ -314,6 +315,16 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ) as Record<string, { '7d': ProjectRoi; '30d': ProjectRoi }>,
   };
 
+  // Phase 2 weekly report — built server-side so the headline lands on first
+  // paint. Pro tier can swap weeks via the picker (hits /api/report/weekly).
+  // No LLM call here: the narrative is a deterministic templater so the
+  // local-first claim stays intact.
+  const weeklyReport = buildWeeklyReport({
+    now: new Date(),
+    weekOffset: 0,
+    locale,
+  });
+
   let redactedTimeline = timeline;
   let redactedHotspots = hotspotsList;
   let redactedInsight = insight;
@@ -415,6 +426,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
           insight={redactedInsight}
           projectCosts={redactedProjectCosts}
           projectRoi={redactedProjectRoi}
+          weeklyReport={weeklyReport}
           recapCards={redactedRecapCards}
           claudeUsage={toUsageInfo(claudeUsageRow)}
           codexUsage={toUsageInfo(codexUsageRow)}

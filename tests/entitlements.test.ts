@@ -68,6 +68,7 @@ test('FEATURES table contains every Feature key declared in the union', () => {
     'dashboard.shareReport',
     'dashboard.advancedExport',
     'dashboard.multiAccount',
+    'dashboard.weeklyReportFull',
     'alerts.webhookPush',
     'alerts.scheduledRules',
     'team.sharedDashboard',

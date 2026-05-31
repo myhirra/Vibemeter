@@ -38,6 +38,7 @@ const FREE_AVAILABLE: Feature[] = [
 const PRO_ONLY: Feature[] = [
   'dashboard.advancedExport',
   'dashboard.multiAccount',
+  'dashboard.weeklyReportFull',
   'alerts.scheduledRules',
 ];
 

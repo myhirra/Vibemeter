@@ -49,6 +49,7 @@ export type Feature =
   // ── Pro-tier additions (no UI yet, declared for forward-compat) ────────
   | 'dashboard.advancedExport' // CSV / JSON export with filters
   | 'dashboard.multiAccount'   // unified view across many Codex accounts
+  | 'dashboard.weeklyReportFull' // Phase 2 weekly report: full paragraphs + week picker + image export
   | 'alerts.webhookPush'       // webhook push alerts (existing local feature kept free)
   | 'alerts.scheduledRules'    // multi-rule scheduling
   // ── Team-tier additions ────────────────────────────────────────────────
@@ -79,6 +80,7 @@ const PRO: Feature[] = [
   ...FREE,
   'dashboard.advancedExport',
   'dashboard.multiAccount',
+  'dashboard.weeklyReportFull',
   'alerts.scheduledRules',
 ];
 

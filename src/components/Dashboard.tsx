@@ -17,6 +17,8 @@ import type { SessionEntry } from './SessionsTable';
 import type { StreakInfo, BurndownPoint, FileHotspot, TimelineSession, Achievement, SessionInsight, ProjectCost, ProjectRoi } from '@/lib/stats';
 import { ProjectCostCard } from './ProjectCostCard';
 import { ProjectRoiCard } from './ProjectRoiCard';
+import { WeeklyReportCard } from './WeeklyReportCard';
+import type { WeeklyReport } from '@/lib/report/weekly';
 import type { GuardDecision } from '@/lib/quota-guard';
 import type { RecapCardsByScope, RecapToolFilter } from '@/lib/recap-card';
 import { useT } from '@/lib/i18n/client';
@@ -65,6 +67,12 @@ interface Props {
     /** ROI per cwd in `optionsByCwd`, indexed by window key. */
     byCwd: Record<string, { '7d': ProjectRoi; '30d': ProjectRoi }>;
   };
+  /**
+   * Server-rendered current-week report. Headline lands immediately on free
+   * tier; Pro tier can swap weeks via the picker, which hits
+   * `/api/report/weekly`.
+   */
+  weeklyReport: WeeklyReport;
   recapCards: RecapCardsByScope;
   runway: {
     guard: GuardDecision;
@@ -169,6 +177,7 @@ export function Dashboard({
   insight,
   projectCosts,
   projectRoi,
+  weeklyReport,
   recapCards,
   runway,
   initialProjectFilter,
@@ -512,6 +521,15 @@ export function Dashboard({
           toolFilter={toolFilter}
           redact={redact}
         />
+      </div>
+
+      {/* Weekly Report — Phase 2 narrative card. Full-width above the
+          sessions table because it's the Monday-morning headline the rest of
+          the dashboard supports. Headline visible to Free; paragraphs +
+          recommendations + week picker + image export are Pro-gated inside
+          the card itself. */}
+      <div className="mb-4">
+        <WeeklyReportCard initial={weeklyReport} />
       </div>
 
       {/* Sessions table — clarifying span hint sits above so users know the
