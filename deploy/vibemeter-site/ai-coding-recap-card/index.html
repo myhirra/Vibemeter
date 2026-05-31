@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI coding recap card generator | Vibemeter</title>
+    <meta
+      name="description"
+      content="Generate screenshot-safe AI coding recap cards from local Claude Code, Codex, and Cursor sessions. Share value, tokens, cache hit-rate, and sessions without uploading project data."
+    />
+    <link rel="canonical" href="https://vibemeter.siney.top/ai-coding-recap-card/" />
+    <meta name="theme-color" content="#9b7cff" />
+    <meta property="og:type" content="article" />
+    <meta property="og:url" content="https://vibemeter.siney.top/ai-coding-recap-card/" />
+    <meta property="og:title" content="AI coding recap cards from local agent sessions" />
+    <meta
+      property="og:description"
+      content="Turn Claude Code, Codex, and Cursor activity into a local, screenshot-safe recap card for demos, V2EX, GitHub, or team updates."
+    />
+    <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="AI coding recap card generator | Vibemeter" />
+    <meta
+      name="twitter:description"
+      content="Share a 2x2 AI coding recap card without sending prompts, transcripts, or project names to a cloud service."
+    />
+    <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Vibemeter AI coding recap card",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "macOS, Linux, Windows (CLI)",
+        "description": "Generate shareable AI coding recap cards from local Claude Code, Codex, and Cursor sessions.",
+        "url": "https://vibemeter.siney.top/ai-coding-recap-card/",
+        "downloadUrl": "https://vibemeter.siney.top/install.sh",
+        "softwareVersion": "0.2.23",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "hirra" }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does Vibemeter upload the data behind recap cards?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Recap cards are generated from local dashboard data. Vibemeter does not require an account, cloud database, telemetry endpoint, or prompt upload."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Can I hide project names before sharing?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. Vibemeter has a redact mode designed for screenshots, demos, and public recap cards."
+            }
+          }
+        ]
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #07070a;
+        --panel: #141419;
+        --panel-2: #101014;
+        --line: rgba(255, 255, 255, 0.1);
+        --muted: rgba(244, 244, 245, 0.6);
+        --text: #f4f4f5;
+        --purple: #9b7cff;
+        --green: #2ee66b;
+        --pink: #ff7ac3;
+        --gold: #f5c542;
+        --blue: #61a5ff;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      }
+
+      main {
+        width: min(1040px, calc(100vw - 40px));
+        margin: 0 auto;
+        padding: 44px 0 52px;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 54px;
+      }
+
+      a { color: inherit; text-decoration: none; }
+      .brand { font-size: 20px; font-weight: 800; }
+      .brand span, .accent { color: var(--purple); }
+
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      nav a:hover, .text-link:hover { color: var(--text); }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 0.92fr) minmax(360px, 1.08fr);
+        gap: 34px;
+        align-items: center;
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 760px;
+        font-size: clamp(34px, 7vw, 66px);
+        line-height: 1.04;
+        letter-spacing: 0;
+      }
+
+      .lead {
+        margin: 22px 0 0;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.7;
+      }
+
+      .install {
+        margin-top: 32px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+      }
+
+      code {
+        display: block;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        white-space: pre-wrap;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #101014;
+        padding: 14px 16px;
+        color: #ffffff;
+        font-size: 13.5px;
+        line-height: 1.5;
+      }
+
+      .button {
+        border: 0;
+        border-radius: 8px;
+        background: var(--purple);
+        color: #09090b;
+        padding: 14px 18px;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .demo-card {
+        border: 1px solid rgba(155, 124, 255, 0.34);
+        border-radius: 8px;
+        background:
+          radial-gradient(circle at 85% 92%, rgba(46, 230, 107, 0.13), transparent 34%),
+          linear-gradient(145deg, #111118, #08080c);
+        padding: 28px;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+      }
+
+      .demo-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+
+      .demo-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+      }
+
+      .diamond {
+        width: 10px;
+        height: 10px;
+        transform: rotate(45deg);
+        background: var(--purple);
+      }
+
+      .demo-period {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .demo-title {
+        margin: 0 0 24px;
+        font-size: 26px;
+        line-height: 1.2;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        min-height: 142px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.035);
+        padding: 18px;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .metric::after {
+        content: "";
+        position: absolute;
+        right: 14px;
+        top: 24px;
+        width: 92px;
+        height: 36px;
+        border-bottom: 2px solid currentColor;
+        border-radius: 50%;
+        opacity: 0.8;
+        transform: rotate(-8deg);
+      }
+
+      .metric-top {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .bubble {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        place-items: center;
+        border-radius: 50%;
+        color: #07070a;
+        font-weight: 900;
+        letter-spacing: 0;
+      }
+
+      .metric-value {
+        margin-top: 22px;
+        font-size: clamp(32px, 4vw, 52px);
+        line-height: 1;
+        font-weight: 900;
+      }
+
+      .metric.value { color: var(--gold); }
+      .metric.tokens { color: var(--pink); }
+      .metric.cache { color: var(--blue); }
+      .metric.sessions { color: #ff9d45; }
+
+      .grid {
+        margin-top: 42px;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        padding: 18px;
+      }
+
+      .panel h2, .panel h3 { margin: 0; font-size: 14px; }
+      .panel p, .panel li {
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .panel p { margin: 10px 0 0; }
+      .panel ul { margin: 12px 0 0; padding-left: 18px; }
+
+      .wide {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 1fr 0.72fr;
+        gap: 12px;
+      }
+
+      .text-link { color: rgba(244, 244, 245, 0.74); }
+
+      footer {
+        margin-top: 52px;
+        color: rgba(244, 244, 245, 0.42);
+        font-size: 13px;
+      }
+
+      @media (max-width: 900px) {
+        main {
+          width: calc(100vw - 28px);
+          padding-top: 34px;
+        }
+
+        header {
+          align-items: flex-start;
+          flex-direction: column;
+          margin-bottom: 36px;
+        }
+
+        nav { justify-content: flex-start; }
+        .hero, .grid, .wide { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 560px) {
+        .install { grid-template-columns: 1fr; }
+        .button { width: 100%; }
+        .demo-card { padding: 16px; }
+        .metric-grid { gap: 8px; }
+        .metric { min-height: 116px; padding: 14px; }
+        .metric-value { font-size: 30px; }
+        .metric::after { width: 62px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/"><span>Vibe</span>meter</a>
+        <nav aria-label="Site">
+          <a href="/claude-code-quota/">Claude Code quota</a>
+          <a href="/codex-rate-limit/">Codex limits</a>
+          <a href="/ai-coding-usage-tracker/">Usage tracker</a>
+          <a href="/pricing/">Pricing</a>
+          <a href="https://github.com/myhirra/Vibemeter">GitHub</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">AI coding recap card</p>
+          <h1>Turn agent work into a card people want to share.</h1>
+          <p class="lead">
+            Vibemeter turns local Claude Code, Codex, and Cursor activity into a
+            screenshot-safe 2x2 recap card: value, tokens, cache hit-rate, and
+            sessions. Keep prompts and project names local.
+          </p>
+          <div class="install">
+            <code>curl -fsSL 'https://vibemeter.siney.top/install.sh?src=ai-coding-recap-card' | bash</code>
+            <button class="button" type="button" onclick="navigator.clipboard.writeText(&quot;curl -fsSL 'https://vibemeter.siney.top/install.sh?src=ai-coding-recap-card' | bash&quot;)">
+              Copy
+            </button>
+          </div>
+        </div>
+
+        <div class="demo-card" aria-label="Example AI coding recap card">
+          <div class="demo-head">
+            <div class="demo-brand"><span class="diamond"></span> VIBEMETER</div>
+            <div class="demo-period">LAST 7 DAYS</div>
+          </div>
+          <h2 class="demo-title">AI Coding Recap</h2>
+          <div class="metric-grid">
+            <div class="metric value">
+              <div class="metric-top"><span class="bubble" style="background: var(--gold);">$</span> Value</div>
+              <div class="metric-value">$1,660</div>
+            </div>
+            <div class="metric tokens">
+              <div class="metric-top"><span class="bubble" style="background: var(--pink);">T</span> Tokens</div>
+              <div class="metric-value">2.3B</div>
+            </div>
+            <div class="metric cache">
+              <div class="metric-top"><span class="bubble" style="background: var(--blue);">%</span> Cache</div>
+              <div class="metric-value">97%</div>
+            </div>
+            <div class="metric sessions">
+              <div class="metric-top"><span class="bubble" style="background: #ff9d45;">S</span> Sessions</div>
+              <div class="metric-value">140</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid" aria-label="Recap card benefits">
+        <div class="panel">
+          <h2>Built for screenshots</h2>
+          <p>The default layout is a dense 2x2 card that reads well on X, V2EX, GitHub issues, Discord, and team chat.</p>
+        </div>
+        <div class="panel">
+          <h2>Redact before sharing</h2>
+          <p>Use dashboard redact mode so project names, paths, transcript titles, and sensitive local detail stay out of public images.</p>
+        </div>
+        <div class="panel">
+          <h2>No upload step</h2>
+          <p>The card is rendered from local dashboard data. Vibemeter does not upload prompts, transcripts, project names, or usage history.</p>
+        </div>
+      </section>
+
+      <section class="wide" aria-label="How to generate a recap card">
+        <div class="panel">
+          <h2>How to generate one</h2>
+          <ul>
+            <li>Install Vibemeter and let it read existing local Claude Code, Codex, or Cursor sessions.</li>
+            <li>Open the dashboard at <code>http://localhost:9527</code>.</li>
+            <li>Choose period and tool, then export the recap card from the usage panel.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h2>Useful when</h2>
+          <ul>
+            <li>You want a public proof-of-work card without leaking project data.</li>
+            <li>You are sharing an AI coding workflow, cost story, or cache-hit-rate insight.</li>
+            <li>You need a small visual hook for a launch post or internal update.</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer>
+        More local tracking pages:
+        <a class="text-link" href="/claude-code-quota/">Claude Code quota tracker</a>
+        ·
+        <a class="text-link" href="/codex-rate-limit/">Codex rate limit tracker</a>
+        ·
+        <a class="text-link" href="/ai-coding-usage-tracker/">AI coding usage tracker</a>
+      </footer>
+    </main>
+  </body>
+</html>

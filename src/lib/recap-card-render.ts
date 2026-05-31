@@ -447,7 +447,7 @@ function gridCellsFor(card: RecapCardData, locale: Locale): GridCell[] {
   const valueStr = money(card.valueAtApiRatesUsd);
   const tokensStr = compactTokens(card.totalTokens.total);
   const cacheStr = card.cacheSessionsAnalyzed > 0 ? `${card.cacheHitRatePct}%` : '—';
-  const sessionsStr = card.totalSessions > 0 ? String(card.totalSessions) : '—';
+  const promptsStr = card.promptCount > 0 ? compact(card.promptCount) : '—';
   // Mark the VALUE label when Codex (a blended estimate) contributes — the
   // hero subline already discloses this, but the grid layout has no subline
   // per cell, so the label is the only spot to flag it.
@@ -487,13 +487,13 @@ function gridCellsFor(card: RecapCardData, locale: Locale): GridCell[] {
       sparkColor: '#60a5fa',
     },
     {
-      label: locale === 'zh' ? '会话' : 'SESSIONS',
-      value: sessionsStr,
-      iconChar: 'S',
+      label: locale === 'zh' ? 'PROMPT 数' : 'PROMPTS',
+      value: promptsStr,
+      iconChar: 'P',
       iconBg: '#fb923c',
       iconFg: '#1c1917',
       valueColor: '#fed7aa',
-      series: card.series.sessions,
+      series: card.series.prompts,
       sparkColor: '#fb923c',
     },
   ];

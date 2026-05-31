@@ -192,7 +192,7 @@ export function Dashboard({
   const queryToolFilter = searchParams.get('agent');
   const resolvedToolFilter = isToolFilter(queryToolFilter) ? queryToolFilter : initialToolFilter;
   const [toolFilter, setToolFilter] = useState<ToolFilter>(resolvedToolFilter);
-  const [datePreset, setDatePreset] = useState<DatePreset>('all');
+  const [datePreset, setDatePreset] = useState<DatePreset>('30d');
   const [refreshState, setRefreshState] = useState<'idle' | 'refreshing' | 'done' | 'error'>('idle');
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
   // ROI card local state. The card defaults to the "All projects" view; the

@@ -8,4 +8,6 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   const { startAlertsTicker } = await import('@/lib/alerts/ticker');
   startAlertsTicker();
+  const { startTelemetryTicker } = await import('@/lib/telemetry/ticker');
+  startTelemetryTicker();
 }

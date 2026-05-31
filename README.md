@@ -92,10 +92,11 @@ On Linux, run `vibemeter install` and it'll print a systemd-user unit you can dr
 | --------------------- | ---------------- |
 | `PORT`                | `9527`           |
 | `VIBEMETER_DATA_DIR`  | `~/.vibemeter`   |
+| `VIBEMETER_TELEMETRY` | unset (off). Set `1` to opt in to the anonymous daily heartbeat |
 
 ## Where the data comes from
 
-Vibemeter reads these files directly. Nothing is sent anywhere.
+Vibemeter reads these files directly — your usage data stays on your machine.
 
 | Tool        | Source                                                                       |
 | ----------- | ---------------------------------------------------------------------------- |
@@ -105,6 +106,10 @@ Vibemeter reads these files directly. Nothing is sent anywhere.
 | Codex       | `~/.codex/sessions/**/rollout-*.jsonl` (rate-limit windows)                  |
 
 If a tool's files don't exist, its cards just show "no data yet". Everything else still works.
+
+### Anonymous usage heartbeat (opt-in, off by default)
+
+Telemetry is **off by default** — nothing is sent unless you turn it on. If you opt in with `VIBEMETER_TELEMETRY=1`, once a day Vibemeter sends a small anonymous heartbeat so we can see roughly how many people use it: a random install id, the app version, your platform (`darwin`/`linux`), locale, and coarse usage counts (active tools + sessions today). **No project names, paths, token counts, or session content are ever sent.** Deleting `~/.vibemeter/telemetry-state.json` resets the random id.
 
 ## Claude Code 5h / 7-day cards (optional setup)
 

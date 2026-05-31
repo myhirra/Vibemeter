@@ -55,6 +55,7 @@ function card(overrides: Partial<RecapCardData> = {}): RecapCardData {
       value: [3.2, 5.1, 4.8, 6.7, 8.0, 7.5, 7.2],
       tokens: [4_000, 7_000, 6_500, 9_000, 11_000, 9_500, 7_000],
       sessions: [1, 1, 1, 1, 1, 1, 1],
+      prompts: [2, 3, 2, 4, 3, 2, 2],
       cacheHit: [85, 90, 88, 92, 91, 94, 91],
     },
     minimumData: { ok: true, reason: 'ok' },
@@ -121,7 +122,7 @@ test('recap renderer grid style outputs four metric cells with labels', () => {
   assert.match(svg, /VALUE \(API\)/);
   assert.match(svg, /TOKENS/);
   assert.match(svg, /CACHE/);
-  assert.match(svg, /SESSIONS/);
+  assert.match(svg, /PROMPTS/);
   assert.match(svg, /54K/);
   // Sparklines should render when series has ≥ 2 points.
   assert.match(svg, /<path d="M/);
@@ -152,7 +153,7 @@ test('recap renderer grid style works in landscape with the same labels', () => 
 
 test('recap renderer grid style omits sparkline path on degenerate series', () => {
   const svg = renderRecapSvg(card({
-    series: { value: [], tokens: [], sessions: [], cacheHit: [] },
+    series: { value: [], tokens: [], sessions: [], prompts: [], cacheHit: [] },
   }), 'square', { style: 'grid' });
   // No <path d="M ..." stroke-width tag should be present when series is empty.
   assert.doesNotMatch(svg, /<path d="M[^"]+" fill="none"/);

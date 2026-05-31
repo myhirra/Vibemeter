@@ -47,6 +47,8 @@ export interface RecapSeries {
   tokens: number[];
   /** Per-day session count. */
   sessions: number[];
+  /** Per-day observed user prompt count. */
+  prompts: number[];
   /** Per-day cache hit rate (0–100 integer). */
   cacheHit: number[];
 }
@@ -357,6 +359,7 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
     value: dailyPoints.map((p) => p.valueUsd),
     tokens: dailyPoints.map((p) => p.tokens),
     sessions: dailyPoints.map((p) => p.sessions),
+    prompts: dailyPoints.map((p) => p.prompts),
     cacheHit: dailyPoints.map((p) => p.cacheHitPct),
   };
 

@@ -10,6 +10,10 @@
 //                    + countdown + source + dismiss)
 //   info → single-line strip (icon + title + source link + dismiss)
 //
+// Special case: when there's exactly ONE non-urgent item, we collapse it to a
+// single compact row (everything inline, body truncated) so a lone notice
+// doesn't take a tall card — see `AnnouncementSingleLine`.
+//
 // The fetch/filter/dismiss/seen pipeline still lives in `useAnnouncements`;
 // this component only owns layout + per-row chrome.
 
@@ -219,6 +223,61 @@ function AnnouncementInfoStrip({ item, onDismiss, locale, t }: CardProps) {
   );
 }
 
+/**
+ * Compact one-row variant for a lone non-urgent announcement: icon · title ·
+ * kind chip · countdown · body (truncated, takes the slack) · source · dismiss,
+ * all on a single line. Keeps the card's severity palette but none of its
+ * vertical bulk.
+ */
+function AnnouncementSingleLine({ item, onDismiss, locale, now, t }: CardProps) {
+  const palette = severityPalette(item.severity);
+  const title = pickLocalized(item.title, locale);
+  const body = pickLocalized(item.body, locale);
+  const rel = relativeUntil(item.occurs_at, now, t);
+  const sourceUrl = item.source?.url;
+  const sourceLabel = item.source?.label ?? sourceUrl;
+
+  return (
+    <div className={`flex items-center gap-2.5 rounded-lg border px-4 py-2 md:col-span-2 ${palette.ring}`}>
+      <span aria-hidden className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full ${palette.dot} text-[11px] font-bold text-zinc-950`}>
+        {kindIcon(item.kind)}
+      </span>
+      <p className={`shrink-0 text-sm font-semibold ${palette.text}`}>{title}</p>
+      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wider ${palette.chip}`}>
+        {t(kindKey(item.kind))}
+      </span>
+      {rel && <span className="shrink-0 text-[11px] tabular-nums text-zinc-400">{rel}</span>}
+      {body && <p className="min-w-0 flex-1 truncate text-xs text-zinc-400">{body}</p>}
+      {(sourceLabel || sourceUrl) && (
+        <span className="shrink-0 text-[11px] text-zinc-500">
+          {t('ann.source')}:{' '}
+          {sourceUrl ? (
+            <a
+              href={sourceUrl}
+              target="_blank"
+              rel="noreferrer noopener"
+              className="text-zinc-300 underline-offset-2 transition-colors hover:text-zinc-100 hover:underline"
+            >
+              {sourceLabel}
+            </a>
+          ) : (
+            <span className="text-zinc-300">{sourceLabel}</span>
+          )}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => onDismiss(item.id)}
+        aria-label={t('ann.dismiss')}
+        title={t('ann.dismiss')}
+        className="shrink-0 rounded-full border border-zinc-800 px-1.5 text-xs leading-none text-zinc-500 transition-colors hover:border-zinc-600 hover:text-zinc-200"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 interface BannerProps {
   /**
    * Providers the user actually has data for. When unknown, pass `null` and
@@ -251,9 +310,22 @@ export function AnnouncementsBanner({ userProviders = null }: BannerProps) {
 
   if (items.length === 0) return null;
 
+  // A lone non-urgent announcement collapses to one compact row; urgent always
+  // keeps its full card so it can't be missed even when it's the only item.
+  const lone = items.length === 1 && items[0].severity !== 'urgent' ? items[0] : null;
+
   return (
     <section className="mb-4 grid grid-cols-1 gap-2 md:grid-cols-2" aria-label="announcements">
-      {items.map((item) => (
+      {lone ? (
+        <AnnouncementSingleLine
+          key={lone.id}
+          item={lone}
+          onDismiss={dismiss}
+          locale={locale}
+          now={now}
+          t={t}
+        />
+      ) : items.map((item) => (
         item.severity === 'info' ? (
           <AnnouncementInfoStrip
             key={item.id}

@@ -567,6 +567,7 @@ export interface RecapDailyPoint {
   valueUsd: number;
   tokens: number;
   sessions: number;
+  prompts: number;
   /** 0–100, integer; 0 on days with no eligible sessions. */
   cacheHitPct: number;
 }
@@ -631,6 +632,7 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
                  + COALESCE(output_tokens, 0)
              END
            ), 0) AS tokens,
+           COALESCE(SUM(COALESCE(prompt_count, 0)), 0)          AS prompts,
            COALESCE(SUM(COALESCE(input_tokens, 0)), 0)          AS input,
            COALESCE(SUM(COALESCE(cache_creation_tokens, 0)), 0) AS creation,
            COALESCE(SUM(COALESCE(cache_read_tokens, 0)), 0)     AS read_tokens
@@ -643,6 +645,7 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
     day: string;
     sessions: number;
     tokens: number;
+    prompts: number;
     input: number;
     creation: number;
     read_tokens: number;
@@ -666,6 +669,7 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
       valueUsd: Math.round((valueByDay.get(key) ?? 0) * 100) / 100,
       tokens: row?.tokens ?? 0,
       sessions: row?.sessions ?? 0,
+      prompts: row?.prompts ?? 0,
       cacheHitPct: hitPct,
     });
   }
