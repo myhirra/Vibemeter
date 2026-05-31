@@ -160,6 +160,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "action.mute": "静音 30m",
         "action.dashboard": "仪表盘",
         "action.openLast": "打开上次",
+        "action.openLastMissing": "已删除",
         "action.switchCodex": "切 Codex",
         "menu.collapse": "收起",
         "menu.expand": "展开",
@@ -207,6 +208,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "action.mute": "Mute 30m",
         "action.dashboard": "Dashboard",
         "action.openLast": "Open last",
+        "action.openLastMissing": "Gone",
         "action.switchCodex": "Switch Codex",
         "menu.collapse": "Collapse",
         "menu.expand": "Expand",
@@ -264,6 +266,13 @@ final class FloatView: NSView {
 
     var stats: FloatStats?
     var statusTextKey = "status.loading"
+    // Transient override for the "打开上次" button label — the openLastTranscript
+    // POST silently 404s when the recorded transcript file got cleaned up, so we
+    // flash a "not found" label on the button itself for a couple seconds. Kept
+    // separate from statusTextKey because that only shows when there's no quota
+    // snapshot at all.
+    var openLastFlashKey: String?
+    private var openLastFlashTimer: Timer?
     var language: FloatLanguage = .zh
     var isExpanded = false
     var displayStyle = "ball"
@@ -307,6 +316,16 @@ final class FloatView: NSView {
 
     func setStatus(_ key: String) {
         statusTextKey = key
+    }
+
+    func flashOpenLastLabel(_ key: String, durationSec: TimeInterval = 2.0) {
+        openLastFlashKey = key
+        openLastFlashTimer?.invalidate()
+        openLastFlashTimer = Timer.scheduledTimer(withTimeInterval: durationSec, repeats: false) { [weak self] _ in
+            self?.openLastFlashKey = nil
+            self?.needsDisplay = true
+        }
+        needsDisplay = true
     }
 
     func tr(_ key: String, _ vars: [String: String] = [:]) -> String {
@@ -490,7 +509,8 @@ final class FloatView: NSView {
         x = dashboardRect.maxX + 6
 
         if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
-            let openRect = drawActionButton(label: tr("action.openLast"), x: x, y: y, accent: false)
+            let openLabel = tr(openLastFlashKey ?? "action.openLast")
+            let openRect = drawActionButton(label: openLabel, x: x, y: y, accent: false)
             hitRects.openTranscript = openRect
             x = openRect.maxX + 6
         }
@@ -1414,7 +1434,19 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let body: [String: String] = ["path": path]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: request).resume()
+        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
+            // Surface failures in the button itself — silent failures here are
+            // confusing because pressing the button can do nothing visible:
+            // /api/open 404s when Claude Code has rotated the transcript file
+            // off disk, and macOS may have no `.jsonl` handler either.
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let ok = error == nil && (200...299).contains(code)
+            if !ok {
+                DispatchQueue.main.async {
+                    self?.contentView?.flashOpenLastLabel("action.openLastMissing")
+                }
+            }
+        }.resume()
     }
 
     private func cycleCodex() {
