@@ -22,7 +22,7 @@ Install and launch with one command:
 curl -fsSL 'https://vibemeter.siney.top/install.sh?src=readme' | bash
 ```
 
-The installer downloads Vibemeter from npm, registers the local background service, waits for it to start, and opens the macOS floating widget. The full dashboard runs locally at <http://localhost:9527> for history, settings, reports, and debugging.
+The installer downloads the Vibemeter tarball from <https://vibemeter.siney.top>, registers the local background service, waits for it to start, and opens the macOS floating widget. The full dashboard runs locally at <http://localhost:9527> for history, settings, reports, and debugging.
 
 ## What you get
 
@@ -45,13 +45,17 @@ The installer downloads Vibemeter from npm, registers the local background servi
 
 The one-command installer is the recommended path for new users. It keeps everything local: data lives in `~/.vibemeter/`, and nothing is sent to Vibemeter or any cloud service.
 
-Prefer doing it manually?
+Prefer doing it manually? Fetch the tarball, install it globally, then register and launch:
 
 ```bash
-npm install -g @hirra/vibemeter
+curl -fsSL https://vibemeter.siney.top/vibemeter.tgz -o /tmp/vibemeter.tgz
+npm install -g /tmp/vibemeter.tgz
+rm /tmp/vibemeter.tgz
 vibemeter install
 vibemeter float
 ```
+
+> Vibemeter is no longer published to the npm registry — the old `@hirra/vibemeter` package on npm is frozen at 0.2.1 and unmaintained. Both paths above pull the current release from <https://vibemeter.siney.top>.
 
 ## Run in the foreground
 
