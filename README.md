@@ -6,6 +6,8 @@
 
 ![vibemeter guard — will my next task finish before quota or context runs out?](docs/guard-demo.gif)
 
+![Dashboard + floating widget popover side-by-side: live runway, redact mode on, Claude 9% with exhausts-in-30m alert](docs/dashboard-widget-demo.gif)
+
 ![Vibemeter dashboard](docs/demo1.png)
 
 <p align="center">
