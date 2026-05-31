@@ -265,6 +265,16 @@ const zh: Messages = {
   'card.sessions.commitsLoading': '正在读取 commits…',
   'card.sessions.commitsError': '读取 commits 失败',
   'card.sessions.commitsEmpty': '暂无关联 commit',
+  'card.sessions.outcome': '结果',
+  'card.sessions.outcomeEmpty': '设结果',
+  'card.sessions.outcomeAutoTitle': '自动判定 · 点击切换',
+  'card.sessions.outcomeClearTitle': '右键清除',
+  'outcome.shipped': '上线',
+  'outcome.failed': '失败',
+  'outcome.discarded': '弃用',
+  'outcome.refactor': '重构',
+  'outcome.explore': '探索',
+  'outcome.bugfix': '修 bug',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter · 管理',
@@ -950,6 +960,16 @@ const en: Messages = {
   'card.sessions.commitsLoading': 'Loading commits…',
   'card.sessions.commitsError': 'Failed to load commits',
   'card.sessions.commitsEmpty': 'No linked commits',
+  'card.sessions.outcome': 'outcome',
+  'card.sessions.outcomeEmpty': 'set',
+  'card.sessions.outcomeAutoTitle': 'Auto-classified · click to override',
+  'card.sessions.outcomeClearTitle': 'Right-click to clear',
+  'outcome.shipped': 'shipped',
+  'outcome.failed': 'failed',
+  'outcome.discarded': 'discarded',
+  'outcome.refactor': 'refactor',
+  'outcome.explore': 'explore',
+  'outcome.bugfix': 'bugfix',
 
   // ── admin ─────────────────────────────────────────────────────────────
   'admin.title': 'Vibemeter Admin',

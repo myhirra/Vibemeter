@@ -2,6 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { useT } from '@/lib/i18n/client';
+import type { Outcome } from '@/lib/schema';
 
 export interface SessionEntry {
   id: string;
@@ -13,9 +14,38 @@ export interface SessionEntry {
   summary: string | null;
   ai_title: string | null;
   tags: string | null;
+  outcome: Outcome | null;
+  outcome_source: 'user' | 'auto' | null;
+  outcome_set_at: number | null;
   /** Commits attributed to this session by the local git scanner. */
   commit_count?: number;
 }
+
+// Click-to-cycle order. `null` is in the cycle so users can clear via clicks
+// alone; right-click / × hover also clears.
+const OUTCOME_CYCLE: (Outcome | null)[] = [
+  null,
+  'shipped',
+  'bugfix',
+  'refactor',
+  'explore',
+  'discarded',
+  'failed',
+];
+
+function nextOutcome(cur: Outcome | null): Outcome | null {
+  const idx = OUTCOME_CYCLE.indexOf(cur);
+  return OUTCOME_CYCLE[(idx + 1) % OUTCOME_CYCLE.length];
+}
+
+const OUTCOME_PILL_CLASSES: Record<Outcome, string> = {
+  shipped: 'bg-emerald-900/40 text-emerald-300 border-emerald-700/50',
+  bugfix: 'bg-blue-900/40 text-blue-300 border-blue-700/50',
+  refactor: 'bg-amber-900/40 text-amber-300 border-amber-700/50',
+  explore: 'bg-zinc-800/40 text-zinc-300 border-zinc-700/50',
+  discarded: 'bg-zinc-900/40 text-zinc-500 border-zinc-800/50',
+  failed: 'bg-rose-900/40 text-rose-300 border-rose-700/50',
+};
 
 interface SessionCommitEntry {
   sha: string;
@@ -54,6 +84,69 @@ function ToolBadge({ tool }: { tool: string }) {
   return <span className="text-xs px-1.5 py-0.5 rounded bg-violet-900/40 text-violet-400 border border-violet-800/50">claude</span>;
 }
 
+function OutcomeCell({
+  outcome,
+  source,
+  emptyLabel,
+  labelFor,
+  autoTitle,
+  clearTitle,
+  onCycle,
+  onClear,
+}: {
+  outcome: Outcome | null;
+  source: 'user' | 'auto' | null;
+  emptyLabel: string;
+  labelFor: (o: Outcome) => string;
+  autoTitle: string;
+  clearTitle: string;
+  onCycle: () => void;
+  onClear: () => void;
+}) {
+  // Empty-state pill: dashed, low-contrast, click to enter the cycle.
+  if (outcome == null) {
+    return (
+      <button
+        type="button"
+        onClick={onCycle}
+        onContextMenu={(e) => { e.preventDefault(); onClear(); }}
+        className="text-xs px-2 py-0.5 rounded border border-dashed border-zinc-700 text-zinc-600 hover:text-zinc-400 hover:border-zinc-500"
+        title={clearTitle}
+      >
+        {emptyLabel}
+      </button>
+    );
+  }
+  const cls = OUTCOME_PILL_CLASSES[outcome];
+  return (
+    <span className="inline-flex items-center gap-1 group">
+      <button
+        type="button"
+        onClick={onCycle}
+        onContextMenu={(e) => { e.preventDefault(); onClear(); }}
+        className={`text-xs px-2 py-0.5 rounded border ${cls} hover:brightness-110`}
+        title={source === 'auto' ? autoTitle : undefined}
+      >
+        {labelFor(outcome)}
+        {source === 'auto' && (
+          <span
+            aria-hidden
+            className="ml-1 inline-block w-1 h-1 rounded-full bg-current opacity-60"
+          />
+        )}
+      </button>
+      <button
+        type="button"
+        onClick={onClear}
+        className="opacity-0 group-hover:opacity-100 text-zinc-600 hover:text-zinc-300 text-xs leading-none"
+        title={clearTitle}
+      >
+        &times;
+      </button>
+    </span>
+  );
+}
+
 function TagChip({ label, onRemove }: { label: string; onRemove?: () => void }) {
   const colors: Record<string, string> = {
     blocked: 'bg-red-900/40 text-red-400 border-red-800/50',
@@ -81,6 +174,11 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
   const [tagOpen, setTagOpen] = useState<string | null>(null);
   const [commitOpen, setCommitOpen] = useState<string | null>(null);
   const [commitCache, setCommitCache] = useState<Record<string, SessionCommitEntry[] | 'loading' | 'error'>>({});
+  // Optimistic outcome state: { sessionId: { outcome, source } }. We keep the
+  // source here too so the auto-vs-user dot stays in sync after a click.
+  const [outcomeStates, setOutcomeStates] = useState<
+    Record<string, { outcome: Outcome | null; source: 'user' | 'auto' | null }>
+  >({});
 
   async function toggleCommits(sessionId: string) {
     if (commitOpen === sessionId) {
@@ -134,6 +232,25 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
     saveTags(s.id, getTags(s).filter((t) => t !== tag));
   }
 
+  function getOutcome(s: SessionEntry): { outcome: Outcome | null; source: 'user' | 'auto' | null } {
+    return outcomeStates[s.id] ?? { outcome: s.outcome, source: s.outcome_source };
+  }
+
+  async function setOutcome(s: SessionEntry, outcome: Outcome | null) {
+    // Optimistic — flip in-place so the pill renders immediately. Any explicit
+    // user click is 'user' even when cycling back to the same value as auto.
+    setOutcomeStates((m) => ({ ...m, [s.id]: { outcome, source: outcome == null ? null : 'user' } }));
+    try {
+      await fetch(`/api/sessions/${s.id}/outcome`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ outcome }),
+      });
+    } catch {
+      // Swallow — the next page refresh will re-fetch authoritative state.
+    }
+  }
+
   return (
     <div className="rounded-lg border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800 gap-4">
@@ -161,6 +278,7 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
               <th className="px-4 py-2 text-left font-normal">{t('card.sessions.project')}</th>
               <th className="px-4 py-2 text-left font-normal">{t('card.sessions.duration')}</th>
               <th className="px-4 py-2 text-left font-normal">{t('card.sessions.status')}</th>
+              <th className="px-4 py-2 text-left font-normal">{t('card.sessions.outcome')}</th>
               <th className="px-4 py-2 text-left font-normal">{t('card.sessions.tags')}</th>
             </tr>
           </thead>
@@ -218,6 +336,18 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                       )}
                     </td>
                     <td className="px-4 py-2">
+                      <OutcomeCell
+                        outcome={getOutcome(s).outcome}
+                        source={getOutcome(s).source}
+                        emptyLabel={t('card.sessions.outcomeEmpty')}
+                        labelFor={(o) => t(`outcome.${o}`)}
+                        autoTitle={t('card.sessions.outcomeAutoTitle')}
+                        clearTitle={t('card.sessions.outcomeClearTitle')}
+                        onCycle={() => setOutcome(s, nextOutcome(getOutcome(s).outcome))}
+                        onClear={() => setOutcome(s, null)}
+                      />
+                    </td>
+                    <td className="px-4 py-2">
                       <div className="flex flex-wrap gap-1 items-center">
                         {tags.map((t) => (
                           <TagChip key={t} label={t} onRemove={() => removeTag(s, t)} />
@@ -254,7 +384,7 @@ export function SessionsTable({ sessions }: { sessions: SessionEntry[] }) {
                   </tr>
                   {commitOpen === s.id && (
                     <tr className="border-b border-zinc-800/40 bg-zinc-950/50">
-                      <td colSpan={6} className="px-4 py-3">
+                      <td colSpan={7} className="px-4 py-3">
                         {commitCache[s.id] === 'loading' && (
                           <p className="text-xs text-zinc-500">{t('card.sessions.commitsLoading')}</p>
                         )}

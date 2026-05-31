@@ -47,7 +47,7 @@ function anonymize<T extends { cwd: string | null; ai_title: string | null; id: 
   });
 }
 
-function injectMockCursorSessions<T extends { id: string; tool: string; started_at: number; ended_at: number | null; cwd: string | null; confidence: string; summary: string | null; ai_title: string | null; tags: string | null }>(
+function injectMockCursorSessions<T extends { id: string; tool: string; started_at: number; ended_at: number | null; cwd: string | null; confidence: string; summary: string | null; ai_title: string | null; tags: string | null; outcome: string | null; outcome_source: string | null; outcome_set_at: number | null }>(
   rows: T[],
 ): T[] {
   const now = Date.now();
@@ -66,6 +66,9 @@ function injectMockCursorSessions<T extends { id: string; tool: string; started_
       summary: null,
       ai_title: DEMO_TITLES[i % DEMO_TITLES.length],
       tags: null,
+      outcome: null,
+      outcome_source: null,
+      outcome_set_at: null,
     } as T);
   }
   return [...rows, ...extra].sort((a, b) => b.started_at - a.started_at);
@@ -137,10 +140,11 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       : null;
 
   let sessions = db.prepare(`
-    SELECT id, tool, started_at, ended_at, cwd, confidence, summary, ai_title, tags
+    SELECT id, tool, started_at, ended_at, cwd, confidence, summary, ai_title, tags,
+           outcome, outcome_source, outcome_set_at
     FROM sessions
     ORDER BY started_at DESC
-  `).all() as Pick<SessionRow, 'id' | 'tool' | 'started_at' | 'ended_at' | 'cwd' | 'confidence' | 'summary' | 'ai_title' | 'tags'>[];
+  `).all() as Pick<SessionRow, 'id' | 'tool' | 'started_at' | 'ended_at' | 'cwd' | 'confidence' | 'summary' | 'ai_title' | 'tags' | 'outcome' | 'outcome_source' | 'outcome_set_at'>[];
 
   if (demo) {
     sessions = anonymize(sessions);
