@@ -10,11 +10,14 @@
     />
     <meta
       name="keywords"
-      content="claude code quota, claude code usage tracker, codex rate limit, codex usage tracker, cursor usage tracker, ai coding usage tracker, session tracker, local-first, macOS"
+      content="claude code quota, claude code usage tracker, codex rate limit, codex usage tracker, cursor usage tracker, gemini cli usage, opencode usage tracker, ai coding usage tracker, ai coding spend budget, session tracker, local-first, macOS"
     />
     <link rel="canonical" href="https://vibemeter.siney.top/" />
     <meta name="theme-color" content="#9b7cff" />
     <meta name="author" content="hirra" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="preconnect" href="https://hm.baidu.com" crossorigin />
+    <link rel="dns-prefetch" href="https://hm.baidu.com" />
 
     <!-- Open Graph (Facebook / LinkedIn / 微信 / Slack) -->
     <meta property="og:type" content="website" />
@@ -22,14 +25,16 @@
     <meta property="og:title" content="Vibemeter — macOS runway console for AI coding" />
     <meta
       property="og:description"
-      content="开跑前知道任务能不能跑完，运行中看到额度和上下文风险，完成后收到提醒。Vibemeter 本地运行，零遥测、零云端。"
+      content="See if your next Claude Code, Codex, Gemini or OpenCode task can finish before quota, context, or reset timing cuts it off. 100% local, opt-in telemetry."
     />
     <meta property="og:image" content="https://vibemeter.siney.top/og.png" />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1440" />
     <meta property="og:image:height" content="900" />
-    <meta property="og:image:alt" content="Vibemeter dashboard screenshot" />
+    <meta property="og:image:alt" content="Vibemeter dashboard and floating runway meter for AI coding agents" />
     <meta property="og:site_name" content="Vibemeter" />
     <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="zh_CN" />
 
     <!-- Twitter / X Card -->
     <meta name="twitter:card" content="summary_large_image" />
@@ -39,6 +44,7 @@
       content="Know if a long Claude Code or Codex task can finish before quota or context cuts it off — 100% local."
     />
     <meta name="twitter:image" content="https://vibemeter.siney.top/og.png" />
+    <meta name="twitter:image:alt" content="Vibemeter dashboard and floating runway meter for AI coding agents" />
 
     <!-- Favicon (inline SVG with brand purple V) -->
     <link
@@ -52,18 +58,77 @@
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "SoftwareApplication",
-        "name": "Vibemeter",
-        "description": "Local macOS runway console for Claude Code, Codex and Cursor heavy users, with task guard checks, a floating meter, and optional completion notifications.",
-        "url": "https://vibemeter.siney.top/",
-        "applicationCategory": "DeveloperApplication",
-        "operatingSystem": "macOS, Linux, Windows (CLI)",
-        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-        "softwareVersion": "0.2.4",
-        "author": { "@type": "Person", "name": "hirra" },
-        "downloadUrl": "https://vibemeter.siney.top/install.sh",
-        "image": "https://vibemeter.siney.top/og.png",
-        "license": "https://github.com/myhirra/Vibemeter/blob/main/LICENSE"
+        "@graph": [
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://vibemeter.siney.top/#app",
+            "name": "Vibemeter",
+            "description": "Local macOS runway console for Claude Code, Codex, Cursor, Gemini and OpenCode heavy users — start-task guard checks, a floating quota meter, budget alerts, and optional completion notifications.",
+            "url": "https://vibemeter.siney.top/",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "macOS, Linux",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+            "softwareVersion": "0.2.32",
+            "datePublished": "2025-12-01",
+            "dateModified": "2026-05-31",
+            "inLanguage": ["en", "zh"],
+            "author": { "@type": "Person", "name": "hirra" },
+            "publisher": { "@type": "Person", "name": "hirra" },
+            "downloadUrl": "https://vibemeter.siney.top/install.sh",
+            "image": "https://vibemeter.siney.top/og.png",
+            "screenshot": "https://vibemeter.siney.top/float-expanded.png",
+            "license": "https://github.com/myhirra/Vibemeter/blob/main/LICENSE",
+            "featureList": [
+              "Claude Code 5h / weekly quota tracking",
+              "Codex rate-limit tracking",
+              "Cursor / Gemini / OpenCode session activity",
+              "Start-task guard: will it finish before quota or context runs out",
+              "Floating macOS runway meter",
+              "Budget ($ spend) alerts",
+              "Completion notifications",
+              "100% local, opt-in telemetry"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://vibemeter.siney.top/#website",
+            "url": "https://vibemeter.siney.top/",
+            "name": "Vibemeter",
+            "inLanguage": "en",
+            "publisher": { "@type": "Person", "name": "hirra" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://vibemeter.siney.top/#faq",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Does Vibemeter send my code or usage data anywhere?",
+                "acceptedAnswer": { "@type": "Answer", "text": "No. By default it only reads files your tools already write on your machine — nothing leaves your computer. An anonymous usage heartbeat is strictly opt-in (off unless you set VIBEMETER_TELEMETRY=1) and never includes paths, project names, tokens, or code." }
+              },
+              {
+                "@type": "Question",
+                "name": "Which AI coding tools does Vibemeter track?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Claude Code and Codex with full quota / rate-limit runway, plus Cursor, Gemini CLI, and OpenCode as session activity in the dashboard. All from local files — no accounts or API keys." }
+              },
+              {
+                "@type": "Question",
+                "name": "How does it know if a task will finish before my quota runs out?",
+                "acceptedAnswer": { "@type": "Answer", "text": "The start-task guard compares how fast you're burning your Claude Code 5h / weekly window and context against what's left, so you find out before a long agent run gets cut off mid-way." }
+              },
+              {
+                "@type": "Question",
+                "name": "Can Vibemeter alert me before I hit a limit or budget?",
+                "acceptedAnswer": { "@type": "Answer", "text": "Yes — threshold alerts, window-reset reminders, and budget ($ spend) alerts for today / last 7 days / this month, pushed to a WeChat Work bot or any webhook." }
+              },
+              {
+                "@type": "Question",
+                "name": "Is Vibemeter free, and does it work on Linux?",
+                "acceptedAnswer": { "@type": "Answer", "text": "It's free. macOS gets the full experience including the floating meter; Linux runs the local dashboard and CLI. Install with one command and Node.js 20+." }
+              }
+            ]
+          }
+        ]
       }
     </script>
     <script>
@@ -337,6 +402,30 @@
         border-color: rgba(155, 124, 255, 0.5);
       }
 
+      .faq {
+        margin-top: 44px;
+        display: grid;
+        gap: 12px;
+      }
+
+      .faq-title {
+        margin: 0 0 4px;
+        font-size: 14px;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .faq .card h3 {
+        font-size: 14px;
+      }
+
+      code.inline {
+        display: inline;
+        padding: 1px 6px;
+        font-size: 0.92em;
+      }
+
       .paths {
         margin-top: 14px;
         display: flex;
@@ -492,6 +581,30 @@
           <h3>AI coding usage tracker</h3>
           <p>Use one local runway console for Claude Code, Codex, and Cursor sessions, project history, cache insight, and install options.</p>
         </a>
+      </section>
+
+      <section class="faq" aria-label="Frequently asked questions">
+        <h2 class="faq-title">FAQ</h2>
+        <div class="card">
+          <h3>Does Vibemeter send my code or usage data anywhere?</h3>
+          <p>No. By default it only reads files your tools already write on your machine — nothing leaves your computer. An anonymous usage heartbeat is strictly opt-in (off unless you set <code class="inline">VIBEMETER_TELEMETRY=1</code>) and never includes paths, project names, tokens, or code.</p>
+        </div>
+        <div class="card">
+          <h3>Which AI coding tools does it track?</h3>
+          <p>Claude Code and Codex with full quota / rate-limit runway, plus Cursor, Gemini CLI, and OpenCode as session activity in the dashboard. All from local files — no accounts or API keys.</p>
+        </div>
+        <div class="card">
+          <h3>How does it know if a task will finish before my quota runs out?</h3>
+          <p>The start-task guard compares how fast you're burning your Claude Code 5h / weekly window and context against what's left, so you find out <em>before</em> a long agent run gets cut off mid-way.</p>
+        </div>
+        <div class="card">
+          <h3>Can it alert me before I hit a limit or budget?</h3>
+          <p>Yes — threshold alerts, window-reset reminders, and budget ($ spend) alerts for today / last 7 days / this month, pushed to a WeChat Work bot or any webhook.</p>
+        </div>
+        <div class="card">
+          <h3>Is Vibemeter free, and does it work on Linux?</h3>
+          <p>It's free. macOS gets the full experience including the floating meter; Linux runs the local dashboard and CLI. Install with one command and Node.js 20+.</p>
+        </div>
       </section>
 
       <footer>
