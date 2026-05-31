@@ -1326,6 +1326,27 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.refreshNow()
         }
+        // Display config changed (monitor plugged/unplugged, resolution
+        // change). If the bubble's last frame is now off every screen, drag
+        // it back to the main display.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.ensurePanelOnScreen()
+        }
+        // The CLI singleton path (`vibemeter float` while already running)
+        // calls `existing.activate()` and exits. Use the resulting
+        // didBecomeActive to also rescue an off-screen panel — otherwise the
+        // user sees "already running — focused" but no bubble.
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.ensurePanelOnScreen()
+        }
     }
 
     private func setupStatusItem(initialView: FloatView) {
@@ -1378,11 +1399,37 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     @objc private func showPanelFromMenu() {
         guard let panel else { return }
-        if panel.frame.origin.x < 0 || panel.frame.origin.y < 0 {
+        if !isPanelOnAnyScreen(panel) {
             placeAtTopRight(panel)
         }
         panel.orderFrontRegardless()
         refreshNow()
+    }
+
+    /// Returns true iff the panel rect overlaps any current screen's visible
+    /// area by at least `minOverlap` pixels in both dimensions. The
+    /// `origin.x < 0 || origin.y < 0` check this replaces missed the common
+    /// case where the user had dragged the bubble onto a secondary display
+    /// that was later disconnected — the saved frame stays at e.g. x=1740
+    /// on a 1680-wide main display and the bubble is invisible.
+    private func isPanelOnAnyScreen(_ panel: NSPanel) -> Bool {
+        let minOverlap: CGFloat = 24
+        let frame = panel.frame
+        for screen in NSScreen.screens {
+            let hit = frame.intersection(screen.visibleFrame)
+            if hit.width >= minOverlap && hit.height >= minOverlap {
+                return true
+            }
+        }
+        return false
+    }
+
+    private func ensurePanelOnScreen() {
+        guard let panel else { return }
+        if !isPanelOnAnyScreen(panel) {
+            placeAtTopRight(panel)
+            panel.orderFrontRegardless()
+        }
     }
 
     @objc private func refreshFromMenu() {
