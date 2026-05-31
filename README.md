@@ -1,6 +1,6 @@
 # Vibemeter
 
-> Know if your next AI coding task can finish before quota, context, or reset timing cuts it off. Vibemeter is a local macOS runway console for Claude Code, Codex, and Cursor heavy users.
+> Know if your next AI coding task can finish before quota, context, or reset timing cuts it off. Vibemeter is a local macOS runway console for Claude Code and Codex heavy users.
 
 > 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and shows quota runway, sessions, and completion alerts from them. That's it.
 
@@ -109,7 +109,6 @@ Vibemeter reads these files directly. Nothing is sent anywhere.
 | Claude Code | `~/.claude/sessions/*.json` (active-session flag)                            |
 | Codex       | `~/.codex/state_5.sqlite` (thread metadata)                                  |
 | Codex       | `~/.codex/sessions/**/rollout-*.jsonl` (rate-limit windows)                  |
-| Cursor      | `~/Library/Application Support/Cursor/User/workspaceStorage/**/state.vscdb`  |
 
 If a tool's files don't exist, its cards just show "no data yet". Everything else still works.
 
