@@ -4,19 +4,9 @@
 
 > 🔒 **Everything runs locally. No data ever leaves your machine.** No telemetry, no tracking, no cloud, no API calls out. Vibemeter reads files already on your disk and shows quota runway, sessions, and completion alerts from them. That's it.
 
-![vibemeter guard — will my next task finish before quota or context runs out?](docs/guard-demo.gif)
-
 ![Dashboard + floating widget popover side-by-side: live runway, redact mode on, Claude 9% with exhausts-in-30m alert](docs/dashboard-widget-demo.gif)
 
-![Vibemeter dashboard](docs/demo1.png)
-
-<p align="center">
-  <img src="public/float-ball.png" alt="Vibemeter floating ball" width="380">
-  &nbsp;&nbsp;
-  <img src="public/float-expanded.png" alt="Vibemeter floating widget expanded" width="380">
-</p>
-
-<p align="center"><sub>Native macOS floating widget — always-on quota ring (left) and expanded panel (right). Stays above your editor so the full dashboard is only one click away.</sub></p>
+![Vibemeter homepage — hero with the floating meter expanded and collapsed views, install command, and the Before / During / After lifecycle](docs/site-homepage.png)
 
 Website: <https://vibemeter.siney.top>
 
@@ -175,3 +165,9 @@ Source mode uses `./.data/` instead of `~/.vibemeter/`. Override with `VIBEMETER
 ## License
 
 [MIT](./LICENSE)
+
+---
+
+![vibemeter guard — will my next task finish before quota or context runs out?](docs/guard-demo.gif)
+
+<sub>`vibemeter guard` runs a pre-flight on Claude Code's current 5h window, context, and burn-rate to answer the only question that matters mid-task: can this finish before something cuts it off.</sub>
