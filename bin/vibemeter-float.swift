@@ -765,7 +765,9 @@ final class FloatView: NSView {
         shadow.shadowColor = NSColor.black.withAlphaComponent(0.45)
         shadow.set()
 
-        NSColor(calibratedRed: 0.055, green: 0.057, blue: 0.067, alpha: 0.94).setFill()
+        // Dark tint sits over the NSVisualEffectView blur behind the panel, so
+        // keep it translucent — opaque would hide the frosted-glass material.
+        NSColor(calibratedRed: 0.055, green: 0.057, blue: 0.067, alpha: 0.62).setFill()
         let path = NSBezierPath(roundedRect: rect, xRadius: 26, yRadius: 26)
         path.fill()
 
@@ -1469,7 +1471,36 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         view.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         view.onCycleCodex = { [weak self] in self?.cycleCodex() }
 
-        panel.contentView = view
+        // Frosted-glass backdrop: a behind-window vibrancy view blurs the
+        // desktop behind the panel, clipped to the same rounded rect the
+        // FloatView paints its translucent tint onto. The 8pt inset matches the
+        // shadow margin used in drawPanel (bounds.insetBy(8,8)).
+        let container = NSView(frame: NSRect(origin: .zero, size: initial))
+        container.wantsLayer = true
+        container.autoresizingMask = [.width, .height]
+
+        let blur = NSVisualEffectView()
+        blur.material = .hudWindow
+        blur.blendingMode = .behindWindow
+        blur.state = .active
+        blur.wantsLayer = true
+        blur.layer?.cornerRadius = 26
+        blur.layer?.masksToBounds = true
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(blur)
+
+        view.frame = container.bounds
+        view.autoresizingMask = [.width, .height]
+        container.addSubview(view) // drawn on top of the blur
+
+        NSLayoutConstraint.activate([
+            blur.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            blur.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            blur.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            blur.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+        ])
+
+        panel.contentView = container
         placeAtTopRight(panel)
         panel.orderFrontRegardless()
         self.panel = panel
