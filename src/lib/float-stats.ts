@@ -5,7 +5,7 @@ import { getCodexAccounts } from './codex-auth';
 import { dataDir } from './data-dir';
 import { getDb } from './db';
 import { readLiveContext } from './parsers/session-log';
-import { getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
+import { getLatestQuotaSnapshot, getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
 import { normalizeQuotaWindow } from './quota-window';
 import { buildRecapCard, type RecapPeriod } from './recap-card';
 import { readRecapSettings } from './recap-settings';
@@ -476,7 +476,10 @@ export async function getFloatStats(): Promise<FloatStats> {
   const codexRow = currentCodex
     ? getLatestUsageSnapshot(db, 'codex', currentCodex.accountId)
     : getLatestUsageSnapshot(db, 'codex');
-  const claudeRow = getLatestUsageSnapshot(db, 'statusline');
+  // Use the latest snapshot that actually has quota (5h/weekly) — a proxy
+  // session has none, but the account quota from the last direct reading still
+  // applies. Falls back to null (ring hidden) only if there's never been one.
+  const claudeRow = getLatestQuotaSnapshot(db, 'statusline');
 
   const codexPace = codexRow ? predictPace(db, 'codex', currentCodex?.accountId ?? null, codexRow) : { pace5hExhaustMin: null, pace5hPctPerMin: null };
   const claudePace = claudeRow ? predictPace(db, 'statusline', null, claudeRow) : { pace5hExhaustMin: null, pace5hPctPerMin: null };

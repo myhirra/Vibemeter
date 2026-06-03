@@ -96,3 +96,33 @@ export function getLatestUsageSnapshot(
 
   return (row as UsageSnapshotRecord | undefined) ?? null;
 }
+
+/**
+ * Like getLatestUsageSnapshot but only considers snapshots that actually carry
+ * quota data (5h or weekly used_pct). When Claude Code runs through a proxy /
+ * custom ANTHROPIC_BASE_URL, its statusline has no Anthropic `rate_limits`, so
+ * the newest snapshot blanks the quota ring. The 5h/weekly quota belongs to the
+ * account, not the proxy session, so we fall back to the most recent real
+ * reading (e.g. from a direct-Anthropic session). Returns null only when no
+ * quota-bearing snapshot exists at all — then the ring is simply not shown.
+ */
+export function getLatestQuotaSnapshot(
+  db: Database.Database,
+  source: UsageSource,
+  accountId?: string | null,
+): UsageSnapshotRecord | null {
+  const where = accountId != null
+    ? 'source = ? AND account_id = ?'
+    : 'source = ?';
+  const params = accountId != null ? [source, accountId] : [source];
+  const row = db.prepare(`
+    SELECT id, captured_at, source, account_id, window_5h_used_pct, window_weekly_used_pct,
+           reset_at_5h, reset_at_weekly, raw_output, confidence
+    FROM usage_snapshots
+    WHERE ${where}
+      AND (window_5h_used_pct IS NOT NULL OR window_weekly_used_pct IS NOT NULL)
+    ORDER BY captured_at DESC
+    LIMIT 1
+  `).get(...params);
+  return (row as UsageSnapshotRecord | undefined) ?? null;
+}
