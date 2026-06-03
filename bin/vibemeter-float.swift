@@ -490,9 +490,9 @@ final class FloatView: NSView {
         }
         switch (displayStyle, agentDisplay) {
         case ("pill", "both"):
-            return NSSize(width: 280, height: 96)
+            return NSSize(width: 224, height: 96)
         case ("pill", _):
-            return NSSize(width: 280, height: 56)
+            return NSSize(width: 224, height: 56)
         case (_, "both"):
             return NSSize(width: 132, height: 220)
         default:

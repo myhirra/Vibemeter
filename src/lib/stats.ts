@@ -160,20 +160,54 @@ export interface SpendingStats {
   daily: DailySpend[]; // last 14 days
 }
 
+/**
+ * Fallback $/M for Claude sessions where Claude Code reports no real cost —
+ * e.g. routed through a proxy / custom-model ANTHROPIC_BASE_URL it can't price,
+ * so `cost.total_cost_usd` is 0/absent. Cache-heavy coding blend (~95% cache
+ * read, ~4% fresh input, ~1% output), Opus-leaning to match the common setup:
+ *   0.95 * 1.5 + 0.04 * 15 + 0.01 * 75 ≈ 2.78 USD/M  (rounded down, under-claim).
+ * Real-cost sessions never hit this path, so normal installs are unaffected.
+ * Tune down if your proxy serves a cheaper model (Sonnet blend ≈ 0.56/M).
+ */
+const CLAUDE_FALLBACK_USD_PER_MILLION = 2.5;
+
 export function claudeApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): number {
-  const row = getDb().prepare(`
-    SELECT COALESCE(SUM(session_max), 0) AS total
-    FROM (
-      SELECT MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS session_max
-      FROM usage_snapshots
-      WHERE source = 'statusline'
-        AND captured_at >= ?
-        AND captured_at < ?
-        AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
-      GROUP BY json_extract(raw_output, '$.session_id')
-    )
-  `).get(startMs, endMs) as { total: number };
-  return row.total ?? 0;
+  const db = getDb();
+  // Best source: Claude Code's own per-session cost.total_cost_usd.
+  const realRows = db.prepare(`
+    SELECT json_extract(raw_output, '$.session_id') AS sid,
+           MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS cost
+    FROM usage_snapshots
+    WHERE source = 'statusline'
+      AND captured_at >= ? AND captured_at < ?
+      AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+    GROUP BY sid
+  `).all(startMs, endMs) as { sid: string | null; cost: number | null }[];
+
+  const counted = new Set<string>();
+  let total = 0;
+  for (const r of realRows) {
+    if (r.sid && r.cost && r.cost > 0) {
+      counted.add(r.sid);
+      total += r.cost;
+    }
+  }
+
+  // Fallback: Claude sessions in the window with no real $ (proxy / custom
+  // model). Estimate from token totals × blended rate so their value isn't 0.
+  const sessions = db.prepare(`
+    SELECT id,
+           COALESCE(input_tokens, 0) + COALESCE(cache_creation_tokens, 0)
+           + COALESCE(cache_read_tokens, 0) + COALESCE(output_tokens, 0) AS tokens
+    FROM sessions
+    WHERE tool = 'claude-code' AND started_at >= ? AND started_at < ?
+  `).all(startMs, endMs) as { id: string; tokens: number }[];
+  for (const s of sessions) {
+    if (counted.has(s.id)) continue;
+    if (s.tokens > 0) total += s.tokens * CLAUDE_FALLBACK_USD_PER_MILLION / 1_000_000;
+  }
+
+  return total;
 }
 
 /**
