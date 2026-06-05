@@ -182,11 +182,14 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "menu.displayStyle": "显示样式",
         "menu.styleBall": "圆球",
         "menu.stylePill": "横条",
+        "menu.styleMini": "极小",
+        "menu.styleNotch": "灵动岛",
         "menu.showAgents": "显示 Agent",
         "menu.claudeOnly": "仅 Claude",
         "menu.codexOnly": "仅 Codex",
         "menu.both": "两者",
         "menu.showFloat": "显示浮窗",
+        "menu.hideFloat": "隐藏浮窗",
         "menu.quit": "退出",
         "metric.tokens": "Token",
         "metric.prompts": "Prompt",
@@ -237,11 +240,14 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "menu.displayStyle": "Display Style",
         "menu.styleBall": "Ball",
         "menu.stylePill": "Pill (horizontal)",
+        "menu.styleMini": "Mini",
+        "menu.styleNotch": "Notch island",
         "menu.showAgents": "Show Agents",
         "menu.claudeOnly": "Claude only",
         "menu.codexOnly": "Codex only",
         "menu.both": "Both",
         "menu.showFloat": "Show Float",
+        "menu.hideFloat": "Hide Float",
         "menu.quit": "Quit",
         "metric.tokens": "Tokens",
         "metric.prompts": "Prompts",
@@ -290,7 +296,9 @@ final class FloatView: NSView {
     static let localeKey = "VMFloatLocale"
     static let metricPeriodKey = "VMFloatMetricPeriod"
 
-    var stats: FloatStats?
+    var stats: FloatStats? {
+        didSet { reconcileMiniDangerSize() }
+    }
     var statusTextKey = "status.loading"
     // Transient override for the "打开上次" button label — the openLastTranscript
     // POST silently 404s when the recorded transcript file got cleaned up, so we
@@ -314,6 +322,12 @@ final class FloatView: NSView {
     private var dragMouseStart: NSPoint?
     private var dragWindowStart: NSPoint?
     private var didDrag = false
+    private var notchCollapseWork: DispatchWorkItem?
+    // When a drag leaves more than half the bubble off-screen we collapse to the
+    // "mini" style automatically; this remembers the style to restore once the
+    // bubble is dragged back. nil means the current mini (if any) was chosen
+    // manually via the menu, so we must not silently revert it.
+    private var styleBeforeAutoMini: String?
     private var hitRects = HitRects()
 
     override var isFlipped: Bool { true }
@@ -321,7 +335,7 @@ final class FloatView: NSView {
 
     func loadSettings(defaultLanguage: FloatLanguage? = nil) {
         let defaults = UserDefaults.standard
-        if let style = defaults.string(forKey: Self.displayStyleKey), style == "ball" || style == "pill" {
+        if let style = defaults.string(forKey: Self.displayStyleKey), style == "ball" || style == "pill" || style == "mini" || style == "notch" {
             displayStyle = style
         }
         if let agent = defaults.string(forKey: Self.agentDisplayKey),
@@ -473,6 +487,37 @@ final class FloatView: NSView {
         return agentDisplay
     }
 
+    // Quota at/below this remaining percentage counts as "danger".
+    private let dangerThreshold: Double = 10
+
+    private var isInDanger: Bool {
+        agentsToShow.contains { agent in
+            guard let r = quotaWindow(quota(for: agent)).remaining else { return false }
+            return r <= dangerThreshold
+        }
+    }
+
+    /// Style actually rendered. A "mini" bubble temporarily expands back to the
+    /// full ball while quota is in the danger zone, so a critical state can't
+    /// hide inside the dot. The user's saved `displayStyle` is left untouched —
+    /// this is a render-time override that reverts on its own once quota recovers.
+    private var effectiveDisplayStyle: String {
+        if displayStyle == "mini" && isInDanger { return "ball" }
+        return displayStyle
+    }
+
+    /// Keep the window sized to `effectiveDisplayStyle` as quota crosses the
+    /// danger threshold (mini ⇄ ball). Called from `stats`' didSet; only resizes
+    /// when the target size actually changes, and never while expanded.
+    private func reconcileMiniDangerSize() {
+        guard !isExpanded, displayStyle == "mini", let window else { return }
+        let want = preferredSize()
+        if abs(window.frame.width - want.width) > 0.5 || abs(window.frame.height - want.height) > 0.5 {
+            resizeWindowKeepingTopRight(want)
+            needsDisplay = true
+        }
+    }
+
     func preferredSize() -> NSSize {
         if isExpanded {
             // Header + ring block + period switcher + metric tiles. Mute &
@@ -488,7 +533,18 @@ final class FloatView: NSView {
             let height = contentBottom + 24 /* bottom margin */ + 16 /* 8px inset ×2 */ + (dual ? 94 : 0)
             return NSSize(width: 420, height: height)
         }
-        switch (displayStyle, agentDisplay) {
+        let style = effectiveDisplayStyle
+        if style == "mini" {
+            // Quota ring(s) as small dots, no text. "both" stacks two dots.
+            return agentDisplay == "both"
+                ? NSSize(width: 52, height: 96)
+                : NSSize(width: 52, height: 52)
+        }
+        switch (style, agentDisplay) {
+        case ("notch", "both"):
+            return NSSize(width: 188, height: 36)
+        case ("notch", _):
+            return NSSize(width: 120, height: 36)
         case ("pill", "both"):
             return NSSize(width: 224, height: 96)
         case ("pill", _):
@@ -509,7 +565,19 @@ final class FloatView: NSView {
         drawPanel(in: rect)
 
         if !isExpanded {
-            if displayStyle == "pill" {
+            let style = effectiveDisplayStyle
+            if style == "mini" {
+                if agentDisplay == "both" {
+                    let half = rect.height / 2
+                    drawMiniBall(context: context, in: NSRect(x: rect.minX, y: rect.minY, width: rect.width, height: half), agent: "claude-code")
+                    drawMiniBall(context: context, in: NSRect(x: rect.minX, y: rect.minY + half, width: rect.width, height: half), agent: "codex")
+                } else {
+                    drawMiniBall(context: context, in: rect, agent: focusAgent)
+                }
+                hitRects.ring = [rect]
+            } else if style == "notch" {
+                drawNotchCollapsed(context: context, in: rect)
+            } else if style == "pill" {
                 drawPillsCollapsed(context: context, in: rect)
             } else if agentDisplay == "both" {
                 drawDualBallCollapsed(context: context, in: rect)
@@ -600,6 +668,8 @@ final class FloatView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        // The notch island is pinned under the notch — not draggable.
+        guard displayStyle != "notch" else { return }
         guard let window, let mouseStart = dragMouseStart, let windowStart = dragWindowStart else { return }
         let current = NSEvent.mouseLocation
         let dx = current.x - mouseStart.x
@@ -610,10 +680,53 @@ final class FloatView: NSView {
         window.setFrameOrigin(NSPoint(x: windowStart.x + dx, y: windowStart.y + dy))
     }
 
+    // ── Notch island hover-to-expand ──────────────────────────────────────────
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        for area in trackingAreas { removeTrackingArea(area) }
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.activeAlways, .mouseEnteredAndExited, .inVisibleRect],
+            owner: self,
+            userInfo: nil,
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        guard displayStyle == "notch" else { return }
+        notchCollapseWork?.cancel()
+        if !isExpanded { setExpandedState(true) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        guard displayStyle == "notch", isExpanded else { return }
+        // Small delay so brushing past the edge doesn't collapse mid-interaction.
+        notchCollapseWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.displayStyle == "notch", self.isExpanded else { return }
+            // Don't collapse if the cursor is still over the (now larger) panel.
+            if let window = self.window, window.frame.contains(NSEvent.mouseLocation) { return }
+            self.setExpandedState(false)
+        }
+        notchCollapseWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+    }
+
+    private func setExpandedState(_ value: Bool) {
+        guard isExpanded != value else { return }
+        isExpanded = value
+        applyWindowSize()
+        toolTip = isExpanded ? nil : tooltipText()
+        needsDisplay = true
+    }
+
     override func mouseUp(with event: NSEvent) {
         dragMouseStart = nil
         dragWindowStart = nil
-        if didDrag { return }
+        if didDrag {
+            applyAutoMiniIfNeeded()
+            return
+        }
         if event.clickCount != 1 { return }
 
         let point = convert(event.locationInWindow, from: nil)
@@ -676,6 +789,40 @@ final class FloatView: NSView {
         needsDisplay = true
     }
 
+    /// After a drag, if more than half the bubble's area sits outside every
+    /// screen's visible frame, collapse to the "mini" dot (remembering the prior
+    /// style). Dragging it back mostly on-screen restores that style. Only
+    /// applies while collapsed; the auto switch is intentionally NOT persisted to
+    /// UserDefaults so the user's chosen style survives a restart.
+    private func applyAutoMiniIfNeeded() {
+        guard !isExpanded, let window else { return }
+        let frame = window.frame
+        let total = frame.width * frame.height
+        guard total > 0 else { return }
+        var maxVisible: CGFloat = 0
+        for screen in NSScreen.screens {
+            let hit = frame.intersection(screen.visibleFrame)
+            maxVisible = max(maxVisible, hit.width * hit.height)
+        }
+        let mostlyOffScreen = maxVisible < total / 2
+        if mostlyOffScreen {
+            // Don't touch a manually-selected mini (styleBeforeAutoMini stays nil
+            // then, so we'd have nothing to restore anyway).
+            if displayStyle != "mini" {
+                styleBeforeAutoMini = displayStyle
+                displayStyle = "mini"
+                resizeWindowKeepingCenter()
+                clampWindowIntoScreen()
+                needsDisplay = true
+            }
+        } else if let prev = styleBeforeAutoMini {
+            displayStyle = prev
+            styleBeforeAutoMini = nil
+            resizeWindowKeepingCenter()
+            needsDisplay = true
+        }
+    }
+
     override func rightMouseUp(with event: NSEvent) {
         let menu = NSMenu()
         let toggle = NSMenuItem(title: isExpanded ? tr("menu.collapse") : tr("menu.expand"), action: #selector(toggleFromMenu), keyEquivalent: "e")
@@ -691,6 +838,9 @@ final class FloatView: NSView {
         menu.addItem(buildDisplayStyleMenuItem())
         menu.addItem(buildAgentDisplayMenuItem())
         menu.addItem(NSMenuItem.separator())
+        let hide = NSMenuItem(title: tr("menu.hideFloat"), action: #selector(hideFromMenu), keyEquivalent: "h")
+        hide.target = self
+        menu.addItem(hide)
         let quit = NSMenuItem(title: tr("menu.quitFloat"), action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
@@ -700,7 +850,7 @@ final class FloatView: NSView {
     func buildDisplayStyleMenuItem() -> NSMenuItem {
         let item = NSMenuItem(title: tr("menu.displayStyle"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
-        for (title, value) in [(tr("menu.styleBall"), "ball"), (tr("menu.stylePill"), "pill")] {
+        for (title, value) in [(tr("menu.styleBall"), "ball"), (tr("menu.stylePill"), "pill"), (tr("menu.styleMini"), "mini"), (tr("menu.styleNotch"), "notch")] {
             let mi = NSMenuItem(title: title, action: #selector(setDisplayStyleFromMenu(_:)), keyEquivalent: "")
             mi.target = self
             mi.representedObject = value
@@ -742,10 +892,15 @@ final class FloatView: NSView {
 
     @objc private func setDisplayStyleFromMenu(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
+        // An explicit choice overrides any auto-mini state: don't silently
+        // revert it the next time the bubble is dragged back on-screen.
+        styleBeforeAutoMini = nil
         setDisplayStyle(value)
         applyWindowSize()
         needsDisplay = true
     }
+
+    @objc private func hideFromMenu() { onHide?() }
 
     @objc private func setAgentDisplayFromMenu(_ sender: NSMenuItem) {
         guard let value = sender.representedObject as? String else { return }
@@ -756,6 +911,29 @@ final class FloatView: NSView {
 
     func applyWindowSize() {
         resizeWindowKeepingTopRight(preferredSize())
+        if displayStyle == "notch" { dockAtNotch() }
+    }
+
+    /// Screen the notch island docks to: prefer a screen with a physical notch
+    /// (safe-area top inset), so on a laptop+external-monitor setup it lands on
+    /// the MacBook's notched display; otherwise the main screen.
+    private func notchScreen() -> NSScreen? {
+        if #available(macOS 12.0, *) {
+            if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
+                return notched
+            }
+        }
+        return NSScreen.main ?? NSScreen.screens.first
+    }
+
+    /// Pin the panel to the top-center of the notch screen (top edge flush with
+    /// the screen top), so it reads as hanging from the notch and the expanded
+    /// panel grows downward.
+    private func dockAtNotch() {
+        guard let window, let screen = notchScreen() else { return }
+        let f = screen.frame
+        let origin = NSPoint(x: f.midX - window.frame.width / 2, y: f.maxY - window.frame.height)
+        window.setFrameOrigin(origin)
     }
 
     private func drawPanel(in rect: NSRect) {
@@ -830,6 +1008,31 @@ final class FloatView: NSView {
         NSBezierPath(roundedRect: rect, xRadius: 13.5, yRadius: 13.5).stroke()
         drawText("Claude", rect: NSRect(x: rect.minX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(agentDisplay == "claude-code" ? 0.92 : 0.52), alignment: .center)
         drawText("Codex", rect: NSRect(x: rect.midX, y: rect.minY + 7, width: rect.width / 2, height: 12), size: 9.5, weight: .medium, color: NSColor.white.withAlphaComponent(isCodex ? 0.92 : 0.52), alignment: .center)
+    }
+
+    /// Compact dot for the "mini" style: just the quota ring (and the thin
+    /// elapsed ring), no percentage text. Used both as an explicit menu choice
+    /// and as the auto-collapsed form when the bubble is dragged half off-screen.
+    private func drawMiniBall(context: CGContext, in rect: NSRect, agent: String) {
+        let q = quota(for: agent)
+        let window = quotaWindow(q)
+        let remaining = window.remaining
+        let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius: CGFloat = min(rect.width, rect.height) / 2 - 5
+        let color = ringColor(for: agent, remaining: remaining)
+
+        context.setLineWidth(5)
+        context.setLineCap(.round)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
+        context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
+        context.strokePath()
+
+        context.setStrokeColor(color.cgColor)
+        context.addArc(center: center, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
+        context.strokePath()
+
+        drawElapsedRing(context: context, center: center, radius: radius + 4, window: window, lineWidth: 1.2)
     }
 
     private func drawBallCollapsed(context: CGContext, in rect: NSRect, agent: String) {
@@ -917,6 +1120,41 @@ final class FloatView: NSView {
         drawText(toolName(agent), rect: NSRect(x: rect.minX, y: center.y + 8, width: rect.width, height: 12), size: 9, weight: .semibold, color: NSColor.white.withAlphaComponent(0.55), alignment: .center)
     }
 
+    /// Collapsed "notch island": a compact pill that docks under the notch and
+    /// shows each agent's 5h ring + %. Expands on hover into the full panel.
+    private func drawNotchCollapsed(context: CGContext, in rect: NSRect) {
+        let agents = agentsToShow
+        let cellWidth = rect.width / CGFloat(max(1, agents.count))
+        for (i, agent) in agents.enumerated() {
+            let cell = NSRect(x: rect.minX + CGFloat(i) * cellWidth, y: rect.minY, width: cellWidth, height: rect.height)
+            drawNotchAgent(context: context, in: cell, agent: agent)
+        }
+        hitRects.ring = [rect]
+    }
+
+    private func drawNotchAgent(context: CGContext, in rect: NSRect, agent: String) {
+        let q = quota(for: agent)
+        let window = quotaWindow(q)
+        let remaining = window.remaining
+        let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
+        let color = ringColor(for: agent, remaining: remaining)
+        let radius: CGFloat = min(rect.height / 2 - 3, 10)
+        let ringCenter = CGPoint(x: rect.minX + radius + 7, y: rect.midY)
+
+        context.setLineWidth(3)
+        context.setLineCap(.round)
+        context.setStrokeColor(NSColor.white.withAlphaComponent(0.12).cgColor)
+        context.addArc(center: ringCenter, radius: radius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
+        context.strokePath()
+        context.setStrokeColor(color.cgColor)
+        context.addArc(center: ringCenter, radius: radius, startAngle: -.pi / 2, endAngle: -.pi / 2 + progress * 2 * .pi, clockwise: false)
+        context.strokePath()
+
+        let textX = ringCenter.x + radius + 5
+        let textRect = NSRect(x: textX, y: rect.midY - 8, width: rect.maxX - textX - 4, height: 16)
+        drawText(remainingPercentText(remaining), rect: textRect, size: 12, weight: .bold, color: .white, alignment: .left)
+    }
+
     private func drawPillsCollapsed(context: CGContext, in rect: NSRect) {
         let agents = agentsToShow
         let pillHeight: CGFloat = 36
@@ -954,11 +1192,11 @@ final class FloatView: NSView {
         let pctRect = NSRect(x: rect.minX + 66, y: rect.minY + 10, width: 38, height: 15)
         drawText(pctText, rect: pctRect, size: 12, weight: .bold, color: .white)
 
-        let iconSize: CGFloat = 22
-        let iconRect = NSRect(x: rect.maxX - iconSize - 8, y: rect.minY + (rect.height - iconSize) / 2, width: iconSize, height: iconSize)
-
+        // Progress bar now runs to the right edge — the refresh button is gone
+        // (tap the pill to expand for refresh, or use the right-click / menu-bar
+        // refresh). A little right margin leaves room for the reset outline.
         let barX = rect.minX + 108
-        let barRight = iconRect.minX - 8
+        let barRight = rect.maxX - 16
         let barWidth = max(0, barRight - barX)
         let barHeight: CGFloat = 8
         let barY = rect.minY + (rect.height - barHeight) / 2
@@ -972,35 +1210,40 @@ final class FloatView: NSView {
             NSBezierPath(roundedRect: fillRect, xRadius: barHeight / 2, yRadius: barHeight / 2).fill()
         }
 
-        // 5h (or weekly) elapsed ring around the refresh button — full ring
-        // means the window is about to reset. Subtle white so the underlying
-        // purple button stays the primary affordance. API timestamps are
-        // milliseconds; convert before comparing.
+        // 5h (or weekly) reset progress, drawn as a thin outline tracing the
+        // progress bar (replaces the old ring around the refresh button). The
+        // bar fill shows remaining quota; this outer outline fills up as the
+        // reset window elapses — a full outline means it's about to reset.
+        // API timestamps are milliseconds; convert before comparing.
         let now = Date().timeIntervalSince1970
         if let resetAtMs = window.resetAt {
             let resetAt = resetAtMs / 1000
             if resetAt > now {
-            let windowSeconds: TimeInterval = window.label.hasPrefix("5h") ? 5 * 3600 : 7 * 24 * 3600
-            let elapsedRatio = max(0, min(1, (windowSeconds - (resetAt - now)) / windowSeconds))
-            let center = CGPoint(x: iconRect.midX, y: iconRect.midY)
-            let ringRadius: CGFloat = iconRect.width / 2 + 2.5
-            context.saveGState()
-            context.setLineWidth(1.5)
-            context.setLineCap(.round)
-            context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
-            context.addArc(center: center, radius: ringRadius, startAngle: -.pi / 2, endAngle: 1.5 * .pi, clockwise: false)
-            context.strokePath()
-            if elapsedRatio > 0.005 {
-                context.setStrokeColor(NSColor.white.withAlphaComponent(0.55).cgColor)
-                context.addArc(center: center, radius: ringRadius, startAngle: -.pi / 2, endAngle: -.pi / 2 + CGFloat(elapsedRatio) * 2 * .pi, clockwise: false)
+                let windowSeconds: TimeInterval = window.label.hasPrefix("5h") ? 5 * 3600 : 7 * 24 * 3600
+                let elapsedRatio = max(0, min(1, (windowSeconds - (resetAt - now)) / windowSeconds))
+                let borderRect = trackRect.insetBy(dx: -2.5, dy: -2.5)
+                let r = borderRect.height / 2
+                let outline = CGPath(roundedRect: borderRect, cornerWidth: r, cornerHeight: r, transform: nil)
+                context.saveGState()
+                context.setLineWidth(1.5)
+                context.setLineCap(.round)
+                context.addPath(outline)
+                context.setStrokeColor(NSColor.white.withAlphaComponent(0.10).cgColor)
                 context.strokePath()
-            }
-            context.restoreGState()
+                if elapsedRatio > 0.005 {
+                    // Straight edges: 2×(w−h); the two semicircular caps (r=h/2)
+                    // together make one circle: π×h. Dash so only the elapsed
+                    // fraction of that perimeter is drawn.
+                    let perimeter = 2 * (borderRect.width - borderRect.height) + .pi * borderRect.height
+                    context.addPath(outline)
+                    context.setStrokeColor(NSColor.white.withAlphaComponent(0.55).cgColor)
+                    context.setLineDash(phase: 0, lengths: [CGFloat(elapsedRatio) * perimeter, perimeter])
+                    context.strokePath()
+                    context.setLineDash(phase: 0, lengths: [])
+                }
+                context.restoreGState()
             }
         }
-
-        drawIconButton("↻", rect: iconRect, active: true)
-        hitRects.refresh.append(iconRect)
     }
 
     private func drawRingBlock(context: CGContext, in rect: NSRect, agent: String, yOffset: CGFloat) {
@@ -1307,6 +1550,43 @@ final class FloatView: NSView {
         window.setFrame(next, display: true, animate: false)
     }
 
+    /// Nudge the window fully back inside the nearest screen's visible area.
+    /// Used after auto-collapsing to mini so a bubble dragged off the edge
+    /// shrinks and sticks to the edge instead of vanishing past it.
+    private func clampWindowIntoScreen() {
+        guard let window else { return }
+        var frame = window.frame
+        let area: (NSRect) -> CGFloat = { max(0, $0.width) * max(0, $0.height) }
+        let center = NSPoint(x: frame.midX, y: frame.midY)
+        let target = NSScreen.screens.first(where: { $0.frame.contains(center) })
+            ?? NSScreen.screens.max(by: { area(frame.intersection($0.visibleFrame)) < area(frame.intersection($1.visibleFrame)) })
+            ?? NSScreen.main
+        guard let vf = target?.visibleFrame else { return }
+        if frame.maxX > vf.maxX { frame.origin.x = vf.maxX - frame.width }
+        if frame.minX < vf.minX { frame.origin.x = vf.minX }
+        if frame.maxY > vf.maxY { frame.origin.y = vf.maxY - frame.height }
+        if frame.minY < vf.minY { frame.origin.y = vf.minY }
+        window.setFrameOrigin(frame.origin)
+    }
+
+    /// Resize to `preferredSize()` while keeping the window centred. Used by the
+    /// auto-mini switch so a bubble that's half off-screen shrinks in place
+    /// (the visible sliver stays visible) instead of collapsing toward its
+    /// top-right corner and disappearing past the screen edge.
+    func resizeWindowKeepingCenter() {
+        guard let window else { return }
+        let old = window.frame
+        let center = NSPoint(x: old.midX, y: old.midY)
+        let size = preferredSize()
+        let next = NSRect(
+            x: center.x - size.width / 2,
+            y: center.y - size.height / 2,
+            width: size.width,
+            height: size.height
+        )
+        window.setFrame(next, display: true, animate: false)
+    }
+
     private func drawText(_ text: String, rect: NSRect, size: CGFloat, weight: NSFont.Weight, color: NSColor, alignment: NSTextAlignment = .left) {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = alignment
@@ -1505,6 +1785,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         panel.orderFrontRegardless()
         self.panel = panel
         self.contentView = view
+        // Notch island docks under the notch instead of restoring the saved
+        // free-float frame.
+        if view.displayStyle == "notch" { view.applyWindowSize() }
         setupStatusItem(initialView: view)
 
         refreshNow()
