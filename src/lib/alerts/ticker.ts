@@ -2,6 +2,7 @@
 // the Next.js server boots. Re-invocations are no-ops (idempotent under HMR).
 
 import { runAlertsOnce } from './runner';
+import { refreshSessions } from '../session-refresh';
 
 const TICK_INTERVAL_MS = 60_000;
 const FIRST_TICK_DELAY_MS = 5_000; // let the server finish booting before the first quota read
@@ -19,6 +20,16 @@ export function startAlertsTicker(): void {
   if (g[GLOBAL_KEY]) return;
 
   const tick = async () => {
+    // Import sessions server-side on every tick so token/session stats stay
+    // fresh even when no web page is open. The dashboard and web floater POST
+    // /api/import-sessions on interaction, but the native macOS floater never
+    // does — relying on that left the DB stale for days. Separate try so an
+    // import failure never blocks the alerts run.
+    try {
+      await refreshSessions();
+    } catch (err) {
+      console.error('[vibemeter:import] tick failed:', err instanceof Error ? err.message : err);
+    }
     try {
       await runAlertsOnce();
     } catch (err) {

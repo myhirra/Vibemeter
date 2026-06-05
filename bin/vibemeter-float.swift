@@ -505,15 +505,18 @@ final class FloatView: NSView {
         let count = waitingCount
         guard count > 0 else { return }
         let label = count > 9 ? "9+" : "\(count)"
-        let size: CGFloat = 16
-        let badge = NSRect(x: rect.maxX - size + 3, y: rect.maxY - size + 3, width: size, height: size)
+        let size: CGFloat = 15
+        // isFlipped view: minY is the TOP. Pin to the top-right corner, nudged
+        // slightly outward so it reads as a corner badge (the old code used
+        // maxY, which is the bottom here — that's why it sat "dropped down").
+        let badge = NSRect(x: rect.maxX - size - 1, y: rect.minY - 2, width: size, height: size)
+        NSColor(calibratedRed: 0.035, green: 0.037, blue: 0.045, alpha: 1).setStroke()
+        let ring = NSBezierPath(ovalIn: badge.insetBy(dx: -1.5, dy: -1.5))
+        ring.lineWidth = 2.5
+        ring.stroke()
         NSColor.systemOrange.setFill()
         NSBezierPath(ovalIn: badge).fill()
-        NSColor(calibratedRed: 0.035, green: 0.037, blue: 0.045, alpha: 1).setStroke()
-        let ring = NSBezierPath(ovalIn: badge.insetBy(dx: -1, dy: -1))
-        ring.lineWidth = 2
-        ring.stroke()
-        drawText(label, rect: NSRect(x: badge.minX, y: badge.minY + 1, width: badge.width, height: 13), size: 10, weight: .bold, color: .black, alignment: .center)
+        drawText(label, rect: NSRect(x: badge.minX, y: badge.minY + 1, width: badge.width, height: 13), size: 10, weight: .bold, color: .white, alignment: .center)
     }
 
     // Quota at/below this remaining percentage counts as "danger".
@@ -1724,6 +1727,9 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private var contentView: FloatView?
     private var timer: Timer?
     private var statusItem: NSStatusItem?
+    // Built by rebuildStatusMenu but NOT attached to statusItem.menu, so a left
+    // click can run the toggle action; right-click attaches it transiently.
+    private var statusMenu: NSMenu?
     private var refreshInFlight = false
 
     init(pageURL: URL) {
@@ -1882,13 +1888,44 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem(initialView: FloatView) {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        item.button?.title = "Vibe"
+        let icon = NSImage(systemSymbolName: "gauge.medium", accessibilityDescription: "Vibemeter")
+            ?? NSImage(systemSymbolName: "gauge", accessibilityDescription: "Vibemeter")
+        icon?.isTemplate = true
+        item.button?.image = icon
+        item.button?.imagePosition = .imageLeading
+        item.button?.title = ""
+        item.button?.target = self
+        item.button?.action = #selector(statusItemClicked)
+        item.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         statusItem = item
         rebuildStatusMenu()
     }
 
+    @objc private func statusItemClicked() {
+        let ev = NSApp.currentEvent
+        let isRight = ev?.type == .rightMouseUp || ev?.modifierFlags.contains(.control) == true
+        if isRight {
+            guard let menu = statusMenu, let item = statusItem else { return }
+            // Attach the menu just long enough to pop it, then detach so the next
+            // left click triggers the toggle action again instead of the menu.
+            item.menu = menu
+            item.button?.performClick(nil)
+            item.menu = nil
+        } else {
+            togglePanelVisible()
+        }
+    }
+
+    private func togglePanelVisible() {
+        guard let panel else { return }
+        if panel.isVisible {
+            hidePanel()
+        } else {
+            showPanelFromMenu()
+        }
+    }
+
     private func rebuildStatusMenu() {
-        guard let statusItem else { return }
         let menu = NSMenu()
         let show = NSMenuItem(title: menuText("menu.showFloat"), action: #selector(showPanelFromMenu), keyEquivalent: "s")
         show.target = self
@@ -1908,7 +1945,7 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         let quit = NSMenuItem(title: menuText("menu.quit"), action: #selector(quitFromMenu), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
-        statusItem.menu = menu
+        statusMenu = menu
     }
 
     private func menuText(_ key: String) -> String {
@@ -1926,6 +1963,8 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     private func hidePanel() {
         panel?.orderOut(nil)
+        // Bubble's gone — surface the numbers in the menu bar as the fallback.
+        if let stats = contentView?.stats { updateStatusItem(stats) }
     }
 
     @objc private func showPanelFromMenu() {
@@ -2113,6 +2152,14 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
 
     private func updateStatusItem(_ stats: FloatStats) {
         guard let view = contentView else { return }
+        // Show menu-bar numbers only when the bubble isn't already showing them
+        // (i.e. it's hidden, or collapsed to the mini dot) — otherwise the text
+        // just duplicates the bubble. The gauge icon stays put either way.
+        let bubbleShowsNumbers = (panel?.isVisible == true) && view.displayStyle != "mini"
+        if bubbleShowsNumbers {
+            statusItem?.button?.title = ""
+            return
+        }
         if view.agentDisplay == "both" {
             let c = stats.quotas.first(where: { $0.agent == "claude-code" })?.remaining5h
             let x = stats.quotas.first(where: { $0.agent == "codex" })?.remaining5h
