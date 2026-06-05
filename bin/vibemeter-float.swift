@@ -110,10 +110,17 @@ struct PeriodMetric: Decodable {
     let cacheHitPct: Double
 }
 
+struct WaitingSession: Decodable {
+    let sessionId: String
+    let project: String?
+    let at: Double
+}
+
 struct FloatStats: Decodable {
     let generatedAt: Double
     let primary: FloatQuota?
     let quotas: [FloatQuota]
+    let waiting: [WaitingSession]?
     let liveByAgent: [AgentLive]
     let recentSessions: [RecentSession]?
     let projectStats: [ProjectSummary]?
@@ -165,6 +172,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "window.noSnapshot": "暂无快照",
         "window.fiveHRemaining": "5h 剩余",
         "window.fiveHShort": "5h",
+        "waiting.line": "{n} 个会话在等你",
         "window.weeklyRemaining": "本周剩余",
         "window.weeklyShort": "7d",
         "window.noQuota": "暂无 quota",
@@ -223,6 +231,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "window.noSnapshot": "no snapshot",
         "window.fiveHRemaining": "5h remaining",
         "window.fiveHShort": "5h",
+        "waiting.line": "{n} waiting on you",
         "window.weeklyRemaining": "weekly remaining",
         "window.weeklyShort": "7d",
         "window.noQuota": "no quota",
@@ -487,6 +496,26 @@ final class FloatView: NSView {
         return agentDisplay
     }
 
+    // Number of sessions currently blocked waiting for the user.
+    private var waitingCount: Int { stats?.waiting?.count ?? 0 }
+
+    /// Small badge ("N") at the top-right of a collapsed bubble when sessions
+    /// are waiting on the user — borrowed from the "needs you" idea.
+    private func drawWaitingBadge(in rect: NSRect) {
+        let count = waitingCount
+        guard count > 0 else { return }
+        let label = count > 9 ? "9+" : "\(count)"
+        let size: CGFloat = 16
+        let badge = NSRect(x: rect.maxX - size + 3, y: rect.maxY - size + 3, width: size, height: size)
+        NSColor.systemOrange.setFill()
+        NSBezierPath(ovalIn: badge).fill()
+        NSColor(calibratedRed: 0.035, green: 0.037, blue: 0.045, alpha: 1).setStroke()
+        let ring = NSBezierPath(ovalIn: badge.insetBy(dx: -1, dy: -1))
+        ring.lineWidth = 2
+        ring.stroke()
+        drawText(label, rect: NSRect(x: badge.minX, y: badge.minY + 1, width: badge.width, height: 13), size: 10, weight: .bold, color: .black, alignment: .center)
+    }
+
     // Quota at/below this remaining percentage counts as "danger".
     private let dangerThreshold: Double = 10
 
@@ -584,6 +613,7 @@ final class FloatView: NSView {
             } else {
                 drawBallCollapsed(context: context, in: rect, agent: agentDisplay)
             }
+            drawWaitingBadge(in: rect)
             return
         }
 
@@ -966,6 +996,13 @@ final class FloatView: NSView {
         drawText("↗", rect: arrow, size: 12, weight: .semibold, color: linkColor.withAlphaComponent(0.9))
         hitRects.title = NSRect(x: title.minX, y: rect.minY + 12, width: arrow.maxX - title.minX, height: 26)
         hitRects.openDashboard = .zero
+
+        // "Needs you": sessions blocked waiting for the user, inline after the title.
+        if waitingCount > 0 {
+            let txt = "🔔 " + tr("waiting.line", ["n": "\(waitingCount)"])
+            let w = textPixelWidth(txt, size: 11, weight: .semibold) + 4
+            drawText(txt, rect: NSRect(x: arrow.maxX + 12, y: rect.minY + 19, width: w, height: 16), size: 11, weight: .semibold, color: NSColor.systemOrange)
+        }
 
         // Right cluster (right → left): close ×, refresh ↻, mute.
         let closeGlyph = NSRect(x: rect.maxX - 22, y: rect.minY + 14, width: 14, height: 16)

@@ -6,6 +6,7 @@ import { dataDir } from './data-dir';
 import { getDb } from './db';
 import { readLiveContext } from './parsers/session-log';
 import { getLatestQuotaSnapshot, getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
+import { readWaitingSessions, type WaitingSession } from './attention';
 import { normalizeQuotaWindow } from './quota-window';
 import { buildRecapCard, type RecapPeriod } from './recap-card';
 import { readRecapSettings } from './recap-settings';
@@ -54,6 +55,8 @@ export interface FloatStats {
   generatedAt: number;
   primary: FloatQuota | null;
   quotas: FloatQuota[];
+  /** Sessions blocked waiting for you (Claude needs input/permission). */
+  waiting: WaitingSession[];
   liveByAgent: FloatAgentLive[];
   recentSessions: FloatRecentSession[];
   projectStats: FloatProjectStats[];
@@ -566,6 +569,7 @@ export async function getFloatStats(): Promise<FloatStats> {
     generatedAt: Date.now(),
     primary,
     quotas,
+    waiting: readWaitingSessions(),
     liveByAgent: [
       getAgentLive(db, 'claude-code', claudeQuota),
       getAgentLive(db, 'codex', codexQuota),

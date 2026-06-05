@@ -853,6 +853,57 @@ function installClaudeHooks({ stop, notification, locale = 'zh', soundMode = 'vo
   return { changed: true, backup };
 }
 
+// ── One-command setup: statusline snapshot + "needs you" attention hooks ──────
+const STATUSLINE_MARKER = 'vibemeter-statusline';
+const ATTENTION_MARKER = 'vibemeter-attention';
+const STATUSLINE_COMMAND = `node -e "const fs=require('fs'),os=require('os'),p=require('path');const d=p.join(os.homedir(),'.vibemeter');fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p.join(d,'statusline-latest.json'),fs.readFileSync(0));" # ${STATUSLINE_MARKER}`;
+const ATTENTION_SET_COMMAND = `node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const fs=require('fs'),os=require('os'),p=require('path'),j=JSON.parse(s||'{}'),id=j.session_id;if(!id)return;const dir=p.join(os.homedir(),'.vibemeter','attention');fs.mkdirSync(dir,{recursive:true});fs.writeFileSync(p.join(dir,id+'.json'),JSON.stringify({cwd:j.cwd||null,at:Date.now()}))}catch(e){}})" # ${ATTENTION_MARKER}`;
+const ATTENTION_CLEAR_COMMAND = `node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const fs=require('fs'),os=require('os'),p=require('path'),j=JSON.parse(s||'{}'),id=j.session_id;if(!id)return;fs.rmSync(p.join(os.homedir(),'.vibemeter','attention',id+'.json'),{force:true})}catch(e){}})" # ${ATTENTION_MARKER}`;
+
+function ensureMarkerHook(settings, eventName, command, marker) {
+  if (!settings.hooks || typeof settings.hooks !== 'object') settings.hooks = {};
+  const list = Array.isArray(settings.hooks[eventName]) ? settings.hooks[eventName] : [];
+  const filtered = list
+    .map((entry) => {
+      if (!Array.isArray(entry?.hooks)) return entry;
+      const kept = entry.hooks.filter((h) => !(typeof h?.command === 'string' && h.command.includes(marker)));
+      return kept.length ? { ...entry, hooks: kept } : null;
+    })
+    .filter(Boolean);
+  filtered.push({ hooks: [{ type: 'command', command, async: true }] });
+  settings.hooks[eventName] = filtered;
+}
+
+function setupStatusline({ force = false } = {}) {
+  const settings = readJsonSafe(CLAUDE_SETTINGS_PATH) ?? {};
+
+  // statusLine is a single slot — never clobber a user's custom one.
+  let statusline;
+  const existing = settings.statusLine;
+  const existingCmd = existing && typeof existing.command === 'string' ? existing.command : '';
+  if (existingCmd.includes(STATUSLINE_MARKER)) {
+    settings.statusLine = { type: 'command', command: STATUSLINE_COMMAND };
+    statusline = 'already-ours';
+  } else if (existingCmd && !force) {
+    let fresh = null;
+    try { fresh = statSync(join(DATA_DIR, 'statusline-latest.json')).mtimeMs; } catch { /* none */ }
+    statusline = fresh && Date.now() - fresh < 3600_000 ? 'kept-working' : 'kept-custom';
+  } else {
+    settings.statusLine = { type: 'command', command: STATUSLINE_COMMAND };
+    statusline = 'installed';
+  }
+
+  // Attention hooks live in array slots, safe to append next to other hooks.
+  ensureMarkerHook(settings, 'Notification', ATTENTION_SET_COMMAND, ATTENTION_MARKER);
+  for (const ev of ['UserPromptSubmit', 'PostToolUse', 'Stop']) {
+    ensureMarkerHook(settings, ev, ATTENTION_CLEAR_COMMAND, ATTENTION_MARKER);
+  }
+
+  const backup = backupOnce(CLAUDE_SETTINGS_PATH, timestampTag());
+  writeJsonPretty(CLAUDE_SETTINGS_PATH, settings);
+  return { statusline, backup };
+}
+
 function uninstallClaudeHooks() {
   const settings = readJsonSafe(CLAUDE_SETTINGS_PATH);
   if (!settings) return { changed: false, backup: null };
@@ -1150,6 +1201,25 @@ switch (cmd) {
     const rawMode = smIdx >= 0 ? argv[smIdx + 1] : 'voice';
     const soundMode = ['voice', 'beep', 'off'].includes(rawMode) ? rawMode : 'voice';
     notifyInstall({ stop: true, notification: false, codex: true, soundMode });
+    break;
+  }
+  case 'setup-statusline':
+  case 'setup': {
+    const force = process.argv.includes('--force');
+    const r = setupStatusline({ force });
+    console.error('');
+    console.error('  Vibemeter · Claude Code 集成');
+    const slMsg = {
+      installed: '✓ statusLine hook 已安装（开始写额度快照）',
+      'already-ours': '✓ statusLine hook 已是最新',
+      'kept-working': '· 你有自定义 statusLine，且已在写额度快照 → 保持不动',
+      'kept-custom': '⚠ 你有自定义 statusLine 但未写额度快照。加 --force 让 Vibemeter 接管，\n    或在你的 statusline 末尾 tee 到 ~/.vibemeter/statusline-latest.json',
+    }[r.statusline];
+    console.error('  ' + slMsg);
+    console.error('  ✓ 「有会话在等你」hooks 已安装（Notification + UserPromptSubmit/PostToolUse/Stop）');
+    if (r.backup) console.error('  备份: ' + r.backup);
+    console.error('  → 重开 Claude Code 会话后生效。');
+    console.error('');
     break;
   }
   case 'notify-uninstall':

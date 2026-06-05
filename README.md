@@ -83,6 +83,7 @@ On Linux, run `vibemeter install` and it'll print a systemd-user unit you can dr
 | `vibemeter report`         | print a local Markdown share report                  |
 | `vibemeter doctor`         | check local data sources and setup gaps              |
 | `vibemeter pulse --json`   | print current 5h/weekly usage as JSON                |
+| `vibemeter setup-statusline` | one-command Claude Code setup: quota statusline + "needs you" hooks |
 | `vibemeter notify-install` | wire voice + macOS-notification hooks (Claude+Codex) |
 | `vibemeter notify-status`  | show which voice hooks are installed                 |
 | `vibemeter notify-uninstall` | remove the voice + notification hooks              |
@@ -111,9 +112,20 @@ If a tool's files don't exist, its cards just show "no data yet". Everything els
 
 Telemetry is **off by default** — nothing is sent unless you turn it on. If you opt in with `VIBEMETER_TELEMETRY=1`, once a day Vibemeter sends a small anonymous heartbeat so we can see roughly how many people use it: a random install id, the app version, your platform (`darwin`/`linux`), locale, and coarse usage counts (active tools + sessions today). **No project names, paths, token counts, or session content are ever sent.** Deleting `~/.vibemeter/telemetry-state.json` resets the random id.
 
-## Claude Code 5h / 7-day cards (optional setup)
+## Claude Code 5h / 7-day cards + "needs you" (optional setup)
 
-These cards need a statusline hook. Add this to `~/.claude/settings.json`:
+One command wires up everything:
+
+```bash
+vibemeter setup-statusline
+```
+
+This installs (idempotent, and it **won't clobber a custom `statusLine`** — use `--force` to override):
+
+- the **statusline snapshot** hook, so Claude Code writes `~/.vibemeter/statusline-latest.json` on every render and Vibemeter reads your 5h / weekly quota from it;
+- the **"needs you"** hooks: when Claude blocks on permission or goes idle, the float shows a 🔔 badge / `N 个会话在等你`, cleared the moment you respond.
+
+Re-open your Claude Code sessions after running it. To do it by hand instead, add just the statusLine to `~/.claude/settings.json`:
 
 ```json
 {
@@ -123,8 +135,6 @@ These cards need a statusline hook. Add this to `~/.claude/settings.json`:
   }
 }
 ```
-
-Claude Code starts writing `~/.vibemeter/statusline-latest.json` on every status-line render. Vibemeter picks it up automatically.
 
 Codex needs **no setup** — its 5h/7d data lives in `~/.codex/sessions/**/rollout-*.jsonl` already.
 
