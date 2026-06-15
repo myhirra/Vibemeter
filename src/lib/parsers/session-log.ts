@@ -109,6 +109,9 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
   let lastTurnAt: number | null = null;
   let userPromptCount = 0;
   let lastPromptCount = 0;
+  // carry-forward：最近见过的行时间戳。last-prompt marker 等行可能没有自己的 timestamp，
+  // 用它兜底归到正确的天，避免按天 prompt 丢失。
+  let lastMs: number | null = null;
   const daily = new Map<number, DayBucket>();
   const bucketFor = (dayMs: number): DayBucket => {
     let b = daily.get(dayMs);
@@ -137,6 +140,7 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
       const ms = new Date(data.timestamp).getTime();
       if (!Number.isNaN(ms)) {
         lineMs = ms;
+        lastMs = ms;
         if (startedAt === null || ms < startedAt) startedAt = ms;
         if (lastSeenAt === null || ms > lastSeenAt) lastSeenAt = ms;
       }
@@ -151,12 +155,13 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
       if (titleParsed.success) aiTitle = titleParsed.data.aiTitle;
     }
 
+    const promptMs = lineMs ?? lastMs;
     if (isLastPromptEvent(parsed)) {
       lastPromptCount += 1;
-      if (lineMs != null) bucketFor(floorLocalDayMs(lineMs)).lastPrompt += 1;
+      if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).lastPrompt += 1;
     } else if (isUserPrompt(parsed)) {
       userPromptCount += 1;
-      if (lineMs != null) bucketFor(floorLocalDayMs(lineMs)).userPrompt += 1;
+      if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).userPrompt += 1;
     }
 
     if (data.type === 'assistant') {
@@ -170,8 +175,9 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
         cacheCreationTokens += cc;
         cacheReadTokens += cr;
         outputTokens += out;
-        if (lineMs != null) {
-          const b = bucketFor(floorLocalDayMs(lineMs));
+        const assistantMs = lineMs ?? lastMs;
+        if (assistantMs != null) {
+          const b = bucketFor(floorLocalDayMs(assistantMs));
           b.input += inp;
           b.cacheCreation += cc;
           b.cacheRead += cr;
