@@ -710,24 +710,46 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
   return out;
 }
 
+/** 本地该天 0 点 unix ms，匹配 session_daily.day_ms（与 recap-card 同口径）。 */
+function floorLocalDayMs(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
 export function cacheStatsForRange(startMs: number, endMs = Date.now(), tool: RecapToolFilter = 'all'): CacheStats {
   const db = getDb();
   const filter = meteredToolWhere(tool);
 
-  const totals = db.prepare(`
-    SELECT
-      COALESCE(SUM(input_tokens), 0)          AS input,
-      COALESCE(SUM(cache_creation_tokens), 0) AS creation,
-      COALESCE(SUM(cache_read_tokens), 0)     AS read,
-      COALESCE(SUM(output_tokens), 0)         AS output,
-      COUNT(*)                                AS sessions
+  // Claude 按消息发生日（session_daily），与 token/prompt 同口径；其余 metered tool 从 sessions
+  // 按 started_at（排除 claude-code 避免与 session_daily 重复计）。命中率主要由 Claude 的 cache 决定。
+  const wantClaude = tool === 'all' || tool === 'claude-code';
+  const claudeT = wantClaude
+    ? db.prepare(`
+        SELECT COALESCE(SUM(input_tokens), 0) AS input, COALESCE(SUM(cache_creation_tokens), 0) AS creation,
+               COALESCE(SUM(cache_read_tokens), 0) AS read, COALESCE(SUM(output_tokens), 0) AS output,
+               COUNT(DISTINCT session_id) AS sessions
+        FROM session_daily WHERE day_ms >= ? AND day_ms < ?
+      `).get(floorLocalDayMs(startMs), endMs) as { input: number; creation: number; read: number; output: number; sessions: number }
+    : { input: 0, creation: 0, read: 0, output: 0, sessions: 0 };
+  const otherT = db.prepare(`
+    SELECT COALESCE(SUM(input_tokens), 0) AS input, COALESCE(SUM(cache_creation_tokens), 0) AS creation,
+           COALESCE(SUM(cache_read_tokens), 0) AS read, COALESCE(SUM(output_tokens), 0) AS output,
+           COUNT(*) AS sessions
     FROM sessions
     WHERE 1 = 1
       ${filter.sql}
+      AND tool != 'claude-code'
       AND started_at > ?
       AND started_at < ?
       AND (input_tokens IS NOT NULL OR cache_read_tokens IS NOT NULL)
   `).get(...filter.params, startMs, endMs) as { input: number; creation: number; read: number; output: number; sessions: number };
+  const totals = {
+    input: claudeT.input + otherT.input,
+    creation: claudeT.creation + otherT.creation,
+    read: claudeT.read + otherT.read,
+    output: claudeT.output + otherT.output,
+    sessions: claudeT.sessions + otherT.sessions,
+  };
 
   const hitRatePct = ratePct(totals.read, totals.input, totals.creation);
   // cache_read costs 0.1x of normal input tokens → saved ≈ 0.9 * cache_read tokens worth of input

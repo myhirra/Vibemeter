@@ -75,10 +75,24 @@ export function bootstrap(db: Database.Database): void {
       UNIQUE(session_id, sha)
     );
 
+    -- 按「消息实际发生日」归集的 token/prompt（仅 Claude，每 turn 的 timestamp 决定归到哪天）。
+    -- 解决跨天长会话把全部 token 算到 started_at 那天、导致"今天 token"恒为 0 的问题。
+    CREATE TABLE IF NOT EXISTS session_daily (
+      session_id TEXT NOT NULL,
+      day_ms INTEGER NOT NULL,          -- 本地该天 0 点的 unix ms
+      input_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+      cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+      output_tokens INTEGER NOT NULL DEFAULT 0,
+      prompt_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, day_ms)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_captured ON usage_snapshots(captured_at DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_source_account_captured ON usage_snapshots(source, account_id, captured_at DESC);
     CREATE INDEX IF NOT EXISTS idx_session_commits_session ON session_commits(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_commits_repo_at ON session_commits(repo, committed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_daily_day ON session_daily(day_ms);
   `);
 }

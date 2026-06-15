@@ -17,6 +17,17 @@ const AiTitleLine = z.object({
   sessionId: z.string(),
 });
 
+/** 按「消息实际发生日」归集的一天用量（解决跨天长会话把 token 全算到 started_at 那天的问题）。 */
+export interface SessionDailyUsage {
+  /** 本地该天 0 点的 unix ms */
+  dayMs: number;
+  inputTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  promptCount: number;
+}
+
 export interface SessionLogMeta {
   sessionId: string;
   cwd: string | null;
@@ -49,6 +60,23 @@ export interface SessionLogMeta {
   lastTurnAt: number | null;
   /** Count of top-level user prompts. Prompt text is never returned. */
   promptCount: number;
+  /** 按消息实际发生日归集的 token/prompt 明细（每天一项）。 */
+  dailyUsage: SessionDailyUsage[];
+}
+
+/** 本地该天 0 点的 unix ms。用于把每条消息按其 timestamp 归到自然日。 */
+function floorLocalDayMs(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+interface DayBucket {
+  input: number;
+  cacheCreation: number;
+  cacheRead: number;
+  output: number;
+  lastPrompt: number;
+  userPrompt: number;
 }
 
 export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
@@ -79,7 +107,17 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
   let peakContextTokens: number | null = null;
   let lastContextTokens: number | null = null;
   let lastTurnAt: number | null = null;
-  let promptCount = 0;
+  let userPromptCount = 0;
+  let lastPromptCount = 0;
+  const daily = new Map<number, DayBucket>();
+  const bucketFor = (dayMs: number): DayBucket => {
+    let b = daily.get(dayMs);
+    if (!b) {
+      b = { input: 0, cacheCreation: 0, cacheRead: 0, output: 0, lastPrompt: 0, userPrompt: 0 };
+      daily.set(dayMs, b);
+    }
+    return b;
+  };
 
   for (const line of lines) {
     let parsed: Record<string, unknown>;
@@ -113,8 +151,12 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
       if (titleParsed.success) aiTitle = titleParsed.data.aiTitle;
     }
 
-    if (isUserPrompt(parsed)) {
-      promptCount += 1;
+    if (isLastPromptEvent(parsed)) {
+      lastPromptCount += 1;
+      if (lineMs != null) bucketFor(floorLocalDayMs(lineMs)).lastPrompt += 1;
+    } else if (isUserPrompt(parsed)) {
+      userPromptCount += 1;
+      if (lineMs != null) bucketFor(floorLocalDayMs(lineMs)).userPrompt += 1;
     }
 
     if (data.type === 'assistant') {
@@ -128,6 +170,13 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
         cacheCreationTokens += cc;
         cacheReadTokens += cr;
         outputTokens += out;
+        if (lineMs != null) {
+          const b = bucketFor(floorLocalDayMs(lineMs));
+          b.input += inp;
+          b.cacheCreation += cc;
+          b.cacheRead += cr;
+          b.output += out;
+        }
         const turnContext = inp + cc + cr + out;
         if (turnContext > 0) {
           if (peakContextTokens === null || turnContext > peakContextTokens) peakContextTokens = turnContext;
@@ -153,7 +202,15 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
     peakContextTokens,
     lastContextTokens,
     lastTurnAt,
-    promptCount,
+    promptCount: lastPromptCount > 0 ? lastPromptCount : userPromptCount,
+    dailyUsage: [...daily.entries()].map(([dayMs, b]) => ({
+      dayMs,
+      inputTokens: b.input,
+      cacheCreationTokens: b.cacheCreation,
+      cacheReadTokens: b.cacheRead,
+      outputTokens: b.output,
+      promptCount: b.lastPrompt > 0 ? b.lastPrompt : b.userPrompt,
+    })),
   };
 }
 
@@ -180,6 +237,15 @@ function isUserPrompt(parsed: Record<string, unknown>): boolean {
     }
   }
   return hasText && !hasToolResult;
+}
+
+function isLastPromptEvent(parsed: Record<string, unknown>): boolean {
+  if (parsed.type !== 'last-prompt') return false;
+  if (parsed.isSidechain === true) return false;
+  // Recent Claude Code logs emit one `last-prompt` marker per user turn, while
+  // tool results still appear as `type=user`. Count the marker instead of
+  // prompt text so we track turns without storing prompt content.
+  return typeof parsed.sessionId === 'string' || typeof parsed.leafUuid === 'string';
 }
 
 export interface LiveContext {

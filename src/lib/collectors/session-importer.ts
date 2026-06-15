@@ -161,6 +161,16 @@ export function importSessions(): ImportResult {
       last_turn_at          = excluded.last_turn_at
   `);
 
+  // 按天用量：每次重算该 session 的所有天桶（先清后插），保证重导入幂等。
+  const deleteDaily = db.prepare(`DELETE FROM session_daily WHERE session_id = ?`);
+  const insertDaily = db.prepare(`
+    INSERT INTO session_daily (
+      session_id, day_ms, input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens, prompt_count
+    ) VALUES (
+      @session_id, @day_ms, @input_tokens, @cache_creation_tokens, @cache_read_tokens, @output_tokens, @prompt_count
+    )
+  `);
+
   let inserted = 0;
   let skipped = 0;
 
@@ -191,6 +201,19 @@ export function importSessions(): ImportResult {
         last_context_tokens: meta.lastContextTokens,
         last_turn_at: meta.lastTurnAt,
       });
+
+      deleteDaily.run(meta.sessionId);
+      for (const d of meta.dailyUsage) {
+        insertDaily.run({
+          session_id: meta.sessionId,
+          day_ms: d.dayMs,
+          input_tokens: d.inputTokens,
+          cache_creation_tokens: d.cacheCreationTokens,
+          cache_read_tokens: d.cacheReadTokens,
+          output_tokens: d.outputTokens,
+          prompt_count: d.promptCount,
+        });
+      }
       inserted++;
     }
   });

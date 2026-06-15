@@ -214,59 +214,96 @@ export function proratedSubscriptionCost(monthlyUsd: number, period: RecapPeriod
   return Math.round((monthlyUsd * period.days / denominator) * 100) / 100;
 }
 
+/** 本地该天 0 点 unix ms — 把滚动窗口的起点对齐到自然日，匹配 session_daily.day_ms。 */
+function floorLocalDayMs(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+// Claude 的 token/prompt 按「消息实际发生日」(session_daily) 归集，解决跨天长会话把全部
+// 用量算到 started_at 那天、导致"今天 token=0"的问题。codex/cursor/gemini 仍按 sessions
+// 的 started_at（它们会话短、基本不跨天，影响可忽略）。
 function tokenTotals(startMs: number, endMs: number, tool: RecapToolFilter): { sessions: number; tokens: RecapTokenTotals } {
-  const filter = toolWhere(tool);
-  const row = getDb().prepare(`
-    SELECT
-      COUNT(*) AS sessions,
-      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(input_tokens, 0) ELSE 0 END), 0) AS input,
-      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(cache_creation_tokens, 0) ELSE 0 END), 0) AS creation,
-      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(cache_read_tokens, 0) ELSE 0 END), 0) AS read,
-      COALESCE(SUM(CASE WHEN tool != 'codex' THEN COALESCE(output_tokens, 0) ELSE 0 END), 0) AS output,
-      COALESCE(SUM(CASE
-        WHEN tool = 'codex' THEN
-          COALESCE(
-            tokens_used,
-            COALESCE(input_tokens, 0)
-            + COALESCE(cache_creation_tokens, 0)
-            + COALESCE(cache_read_tokens, 0)
-            + COALESCE(output_tokens, 0)
-          )
-        ELSE 0
-      END), 0) AS codex
-    FROM sessions
-    WHERE started_at >= ?
-      AND started_at < ?
-      ${filter.sql}
-  `).get(startMs, endMs, ...filter.params) as {
-    sessions: number;
-    input: number;
-    creation: number;
-    read: number;
-    output: number;
-    codex: number;
-  };
+  const db = getDb();
+  const wantClaude = tool === 'all' || tool === 'claude-code';
+  const wantCodex = tool === 'all' || tool === 'codex';
+  const wantOther = tool === 'all'; // cursor/gemini/opencode/qoder 仅 all 计入（保持原 tool!=codex 行为）
+
+  let input = 0, creation = 0, read = 0, output = 0, codex = 0;
+  const sessionIds = new Set<string>();
+
+  if (wantClaude) {
+    const dayStart = floorLocalDayMs(startMs);
+    const rows = db.prepare(`
+      SELECT session_id, input_tokens, cache_creation_tokens, cache_read_tokens, output_tokens
+      FROM session_daily WHERE day_ms >= ? AND day_ms < ?
+    `).all(dayStart, endMs) as { session_id: string; input_tokens: number; cache_creation_tokens: number; cache_read_tokens: number; output_tokens: number }[];
+    for (const r of rows) {
+      input += r.input_tokens; creation += r.cache_creation_tokens;
+      read += r.cache_read_tokens; output += r.output_tokens;
+      sessionIds.add(r.session_id);
+    }
+  }
+
+  const otherTools: string[] = [];
+  if (wantCodex) otherTools.push('codex');
+  if (wantOther) otherTools.push('cursor', 'gemini', 'opencode', 'qoder');
+  if (otherTools.length > 0) {
+    const placeholders = otherTools.map(() => '?').join(',');
+    const rows = db.prepare(`
+      SELECT id, tool,
+        COALESCE(input_tokens, 0) AS inp, COALESCE(cache_creation_tokens, 0) AS cc,
+        COALESCE(cache_read_tokens, 0) AS cr, COALESCE(output_tokens, 0) AS outp,
+        COALESCE(tokens_used, 0) AS tu
+      FROM sessions
+      WHERE started_at >= ? AND started_at < ? AND tool IN (${placeholders})
+    `).all(startMs, endMs, ...otherTools) as { id: string; tool: string; inp: number; cc: number; cr: number; outp: number; tu: number }[];
+    for (const r of rows) {
+      if (r.tool === 'codex') {
+        codex += r.tu || (r.inp + r.cc + r.cr + r.outp);
+      } else {
+        input += r.inp; creation += r.cc; read += r.cr; output += r.outp;
+      }
+      sessionIds.add(r.id);
+    }
+  }
+
   const tokens = {
-    input: row.input ?? 0,
-    cacheCreation: row.creation ?? 0,
-    cacheRead: row.read ?? 0,
-    output: row.output ?? 0,
-    codex: row.codex ?? 0,
-    total: (row.input ?? 0) + (row.creation ?? 0) + (row.read ?? 0) + (row.output ?? 0) + (row.codex ?? 0),
+    input, cacheCreation: creation, cacheRead: read, output, codex,
+    total: input + creation + read + output + codex,
   };
-  return { sessions: row.sessions ?? 0, tokens };
+  return { sessions: sessionIds.size, tokens };
 }
 
 function promptCount(startMs: number, endMs: number, tool: RecapToolFilter): number {
-  const filter = toolWhere(tool);
-  const row = getDb().prepare(`
-    SELECT COALESCE(SUM(COALESCE(prompt_count, 0)), 0) AS prompts
-    FROM sessions
-    WHERE started_at >= ?
-      AND started_at < ?
-      ${filter.sql}
-  `).get(startMs, endMs, ...filter.params) as { prompts: number };
-  return row.prompts ?? 0;
+  const db = getDb();
+  const wantClaude = tool === 'all' || tool === 'claude-code';
+  const wantCodex = tool === 'all' || tool === 'codex';
+  const wantOther = tool === 'all';
+  let prompts = 0;
+
+  if (wantClaude) {
+    const dayStart = floorLocalDayMs(startMs);
+    const r = db.prepare(`
+      SELECT COALESCE(SUM(prompt_count), 0) AS prompts
+      FROM session_daily WHERE day_ms >= ? AND day_ms < ?
+    `).get(dayStart, endMs) as { prompts: number };
+    prompts += r.prompts ?? 0;
+  }
+
+  const otherTools: string[] = [];
+  if (wantCodex) otherTools.push('codex');
+  if (wantOther) otherTools.push('cursor', 'gemini', 'opencode', 'qoder');
+  if (otherTools.length > 0) {
+    const placeholders = otherTools.map(() => '?').join(',');
+    const r = db.prepare(`
+      SELECT COALESCE(SUM(COALESCE(prompt_count, 0)), 0) AS prompts
+      FROM sessions WHERE started_at >= ? AND started_at < ? AND tool IN (${placeholders})
+    `).get(startMs, endMs, ...otherTools) as { prompts: number };
+    prompts += r.prompts ?? 0;
+  }
+
+  return prompts;
 }
 
 function topProjects(startMs: number, endMs: number, tool: RecapToolFilter, limit = 3): RecapProject[] {
