@@ -49,6 +49,14 @@ export interface FloatContext {
   capturedAt: number;
   /** true once we cross the soft "you should /compact" line. */
   warning: boolean;
+  /** 综合建议（context 膨胀分级 + Opus 倍率提示），null = 健康无需提示 */
+  advice: string | null;
+  /** 浮窗 label 用的短建议（≤4 字），如「该清」「宜分流」「⚡Opus」 */
+  adviceShort: string | null;
+  /** 建议级别，用于浮窗染色 */
+  adviceLevel: "watch" | "high" | "critical" | null;
+  /** 当前会话最近一个 turn 的模型名 */
+  model: string | null;
 }
 
 export interface FloatStats {
@@ -264,6 +272,40 @@ function findJsonlForSession(sessionId: string): string | null {
   return null;
 }
 
+// 把 context 占比 + 模型倍率合成一句可执行建议。context 膨胀优先（越满越该清/分流），
+// context 还健康但在用 Opus 时给倍率提示。short 给浮窗窄 label 用，full 是完整文案。
+function buildContextAdvice(
+  pct: number,
+  model: string | null,
+): Pick<FloatContext, "advice" | "adviceShort" | "adviceLevel"> {
+  const isOpus = !!model && /opus/i.test(model);
+  if (pct >= 88) {
+    return {
+      advice: `上下文 ${pct}%，该 /clear 重开${isOpus ? "（还在用 Opus，倍率高）" : ""}`,
+      adviceShort: "该清",
+      adviceLevel: "critical",
+    };
+  }
+  if (pct >= 75) {
+    return {
+      advice: `上下文 ${pct}%，独立任务宜开新窗口或丢给 subagent`,
+      adviceShort: "宜分流",
+      adviceLevel: "high",
+    };
+  }
+  if (pct >= 60) {
+    return { advice: `上下文 ${pct}%，渐满，留意`, adviceShort: "渐满", adviceLevel: "watch" };
+  }
+  if (isOpus) {
+    return {
+      advice: "正在用 Opus，倍率高，简单活可切 Sonnet 省额度",
+      adviceShort: "⚡Opus",
+      adviceLevel: "watch",
+    };
+  }
+  return { advice: null, adviceShort: null, adviceLevel: null };
+}
+
 function getActiveContext(): FloatContext | null {
   const active = findActiveClaudeSessionId();
   if (!active) return null;
@@ -280,6 +322,8 @@ function getActiveContext(): FloatContext | null {
     pct,
     capturedAt: live.capturedAt,
     warning: pct >= 80,
+    model: live.model,
+    ...buildContextAdvice(pct, live.model),
   };
 }
 

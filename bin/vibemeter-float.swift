@@ -2,6 +2,8 @@ import Cocoa
 import Foundation
 import UserNotifications
 
+private let showFloatNotificationName = Notification.Name("com.hirra.vibemeter.showFloat")
+
 struct FloatQuota: Decodable {
     let agent: String
     let label: String
@@ -99,6 +101,10 @@ struct ActiveContext: Decodable {
     let pct: Int
     let capturedAt: Double
     let warning: Bool
+    let advice: String?
+    let adviceShort: String?
+    let adviceLevel: String?
+    let model: String?
 }
 
 struct PeriodMetric: Decodable {
@@ -179,8 +185,6 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "action.muted": "已静音 · {n}m",
         "action.mute": "静音 30m",
         "action.dashboard": "仪表盘",
-        "action.openLast": "打开上次会话",
-        "action.openLastMissing": "已删除",
         "action.switchCodex": "切账号",
         "menu.collapse": "收起",
         "menu.expand": "展开",
@@ -238,8 +242,6 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "action.muted": "Muted · {n}m",
         "action.mute": "Mute 30m",
         "action.dashboard": "Dashboard",
-        "action.openLast": "Open last session",
-        "action.openLastMissing": "Gone",
         "action.switchCodex": "Switch acct",
         "menu.collapse": "Collapse",
         "menu.expand": "Expand",
@@ -295,7 +297,6 @@ final class FloatView: NSView {
         var claudeToggle: NSRect = .zero
         var codexToggle: NSRect = .zero
         var pause: NSRect = .zero
-        var openTranscript: NSRect = .zero
         var switchCodex: NSRect = .zero
         var periodTabs: [(rect: NSRect, value: String)] = []
     }
@@ -309,13 +310,6 @@ final class FloatView: NSView {
         didSet { reconcileMiniDangerSize() }
     }
     var statusTextKey = "status.loading"
-    // Transient override for the "打开上次" button label — the openLastTranscript
-    // POST silently 404s when the recorded transcript file got cleaned up, so we
-    // flash a "not found" label on the button itself for a couple seconds. Kept
-    // separate from statusTextKey because that only shows when there's no quota
-    // snapshot at all.
-    var openLastFlashKey: String?
-    private var openLastFlashTimer: Timer?
     var language: FloatLanguage = .zh
     var isExpanded = false
     var displayStyle = "ball"
@@ -324,9 +318,9 @@ final class FloatView: NSView {
     var onRefresh: (() -> Void)?
     var onOpenDashboard: (() -> Void)?
     var onHide: (() -> Void)?
+    var onShow: (() -> Void)?
     var onSettingsChanged: (() -> Void)?
     var onTogglePause: (() -> Void)?
-    var onOpenLastTranscript: (() -> Void)?
     var onCycleCodex: (() -> Void)?
     private var dragMouseStart: NSPoint?
     private var dragWindowStart: NSPoint?
@@ -392,16 +386,6 @@ final class FloatView: NSView {
 
     func setStatus(_ key: String) {
         statusTextKey = key
-    }
-
-    func flashOpenLastLabel(_ key: String, durationSec: TimeInterval = 2.0) {
-        openLastFlashKey = key
-        openLastFlashTimer?.invalidate()
-        openLastFlashTimer = Timer.scheduledTimer(withTimeInterval: durationSec, repeats: false) { [weak self] _ in
-            self?.openLastFlashKey = nil
-            self?.needsDisplay = true
-        }
-        needsDisplay = true
     }
 
     func tr(_ key: String, _ vars: [String: String] = [:]) -> String {
@@ -516,7 +500,7 @@ final class FloatView: NSView {
         ring.stroke()
         NSColor.systemOrange.setFill()
         NSBezierPath(ovalIn: badge).fill()
-        drawText(label, rect: NSRect(x: badge.minX, y: badge.minY + 1, width: badge.width, height: 13), size: 10, weight: .bold, color: .white, alignment: .center)
+        drawCenteredText(label, rect: badge, size: 10, weight: .bold, color: .white, alignment: .center)
     }
 
     // Quota at/below this remaining percentage counts as "danger".
@@ -553,15 +537,12 @@ final class FloatView: NSView {
     func preferredSize() -> NSSize {
         if isExpanded {
             // Header + ring block + period switcher + metric tiles. Mute &
-            // dashboard moved into the header, so the action row is usually
-            // empty — only the optional "open last transcript" button adds a
-            // row. Size to content so there's no dead space at the bottom.
-            // The +94 in dual mode mirrors the second ring's offset.
+            // dashboard live in the header; there's no action row anymore, so
+            // size straight to the metric tiles with no dead space at the
+            // bottom. The +94 in dual mode mirrors the second ring's offset.
             let dual = agentDisplay == "both"
-            let hasTranscript = !((stats?.lastSession?.transcriptPath ?? "").isEmpty)
-            // Relative to the inset rect's minY: metric tiles end at 236; the
-            // transcript button (when shown) extends the content to ~268.
-            let contentBottom: CGFloat = hasTranscript ? 268 : 236
+            // Relative to the inset rect's minY: metric tiles end at 236.
+            let contentBottom: CGFloat = 236
             let height = contentBottom + 24 /* bottom margin */ + 16 /* 8px inset ×2 */ + (dual ? 94 : 0)
             return NSSize(width: 420, height: height)
         }
@@ -628,40 +609,6 @@ final class FloatView: NSView {
             drawRingBlock(context: context, in: rect, agent: agentDisplay, yOffset: 0)
         }
         drawStats(in: rect)
-        drawActions(in: rect)
-    }
-
-    private func drawActions(in rect: NSRect) {
-        let dual = agentDisplay == "both"
-        let offset: CGFloat = dual ? 94 : 0
-        let y = rect.minY + 246 + offset
-
-        // Mute + dashboard now live in the header; switch-Codex lives on the
-        // Codex ring. The action row is left with just the optional "open last
-        // transcript" button. Clear its hit target so a stale rect can't catch
-        // clicks, and bail early when there's nothing to show.
-        hitRects.openTranscript = .zero
-
-        var buttons: [(label: String, accent: Bool, assign: (NSRect) -> Void)] = []
-        if let session = stats?.lastSession, let path = session.transcriptPath, !path.isEmpty {
-            let openLabel = tr(openLastFlashKey ?? "action.openLast")
-            buttons.append((openLabel, false, { self.hitRects.openTranscript = $0 }))
-        }
-        if buttons.isEmpty { return }
-
-        let totalButtons = buttons.reduce(0) { $0 + actionButtonWidth($1.label) }
-        let avail = rect.width - 40
-        // Even gaps, capped so a sparse row (2 buttons) doesn't drift absurdly
-        // far apart; whatever's left over is split as outer margin to center it.
-        let rawGap = buttons.count > 1 ? (avail - totalButtons) / CGFloat(buttons.count - 1) : 0
-        let gap = min(max(rawGap, 6), 28)
-        let usedWidth = totalButtons + gap * CGFloat(max(0, buttons.count - 1))
-        var x = rect.minX + 20 + max(0, (avail - usedWidth) / 2)
-        for btn in buttons {
-            let r = drawActionButton(label: btn.label, x: x, y: y, accent: btn.accent)
-            btn.assign(r)
-            x = r.maxX + gap
-        }
     }
 
     private func actionButtonWidth(_ label: String) -> CGFloat {
@@ -783,10 +730,6 @@ final class FloatView: NSView {
             }
             if hitRects.openDashboard != .zero && hitRects.openDashboard.contains(point) {
                 onOpenDashboard?()
-                return
-            }
-            if hitRects.openTranscript != .zero && hitRects.openTranscript.contains(point) {
-                onOpenLastTranscript?()
                 return
             }
             if hitRects.switchCodex != .zero && hitRects.switchCodex.contains(point) {
@@ -930,6 +873,7 @@ final class FloatView: NSView {
         styleBeforeAutoMini = nil
         setDisplayStyle(value)
         applyWindowSize()
+        if window?.isVisible != true { onShow?() }
         needsDisplay = true
     }
 
@@ -965,7 +909,15 @@ final class FloatView: NSView {
     private func dockAtNotch() {
         guard let window, let screen = notchScreen() else { return }
         let f = screen.frame
-        let origin = NSPoint(x: f.midX - window.frame.width / 2, y: f.maxY - window.frame.height)
+        // In collapsed notch mode the painted pill sits inside an 8pt shadow
+        // inset. Let the borderless window extend slightly above the screen so
+        // the visible pill, not the full shadow canvas, is centered in the menu
+        // bar. Expanded mode stays flush with the screen top.
+        let collapsedVisualNudge: CGFloat = isExpanded ? 0 : 3
+        let origin = NSPoint(
+            x: f.midX - window.frame.width / 2,
+            y: f.maxY - window.frame.height + collapsedVisualNudge
+        )
         window.setFrameOrigin(origin)
     }
 
@@ -1191,8 +1143,8 @@ final class FloatView: NSView {
         context.strokePath()
 
         let textX = ringCenter.x + radius + 5
-        let textRect = NSRect(x: textX, y: rect.midY - 8, width: rect.maxX - textX - 4, height: 16)
-        drawText(remainingPercentText(remaining), rect: textRect, size: 12, weight: .bold, color: .white, alignment: .left)
+        let textRect = NSRect(x: textX, y: rect.minY, width: rect.maxX - textX - 4, height: rect.height)
+        drawCenteredText(remainingPercentText(remaining), rect: textRect, size: 12, weight: .bold, color: .white)
     }
 
     private func drawPillsCollapsed(context: CGContext, in rect: NSRect) {
@@ -1476,6 +1428,15 @@ final class FloatView: NSView {
         return NSColor.systemGreen
     }
 
+    private func adviceColor(_ level: String?) -> NSColor {
+        switch level {
+        case "critical": return NSColor.systemPink
+        case "high": return NSColor.systemOrange
+        case "watch": return NSColor(calibratedRed: 0.66, green: 0.39, blue: 0.95, alpha: 1)
+        default: return NSColor.white.withAlphaComponent(0.50)
+        }
+    }
+
     private func formatTokens(_ n: Int) -> String {
         if n >= 1_000_000_000 { return String(format: "%.1fB", Double(n) / 1_000_000_000) }
         if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
@@ -1491,7 +1452,12 @@ final class FloatView: NSView {
 
     private func drawContextBar(in rect: NSRect, ctx: ActiveContext) {
         let labelRect = NSRect(x: rect.minX, y: rect.minY, width: 50, height: rect.height)
-        drawText(tr("context"), rect: labelRect, size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.50))
+        if let short = ctx.adviceShort, !short.isEmpty {
+            // context 膨胀 / Opus 倍率时，label 位置换成可执行短建议并染色（健康时仍显示「上下文」）
+            drawText(short, rect: labelRect, size: 9, weight: .bold, color: adviceColor(ctx.adviceLevel))
+        } else {
+            drawText(tr("context"), rect: labelRect, size: 9, weight: .medium, color: NSColor.white.withAlphaComponent(0.50))
+        }
 
         let tokensText = "\(formatTokens(ctx.tokens))/\(formatTokens(ctx.limit))"
         let tokensWidth: CGFloat = 78
@@ -1721,7 +1687,6 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     private let apiURL: URL
     private let importURL: URL
     private let pauseURL: URL
-    private let openURL: URL
     private let codexAccountsURL: URL
     private var panel: FloatingPanel?
     private var contentView: FloatView?
@@ -1747,8 +1712,6 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         self.importURL = components.url!
         components.path = "/api/pause"
         self.pauseURL = components.url!
-        components.path = "/api/open"
-        self.openURL = components.url!
         components.path = "/api/codex-accounts"
         self.codexAccountsURL = components.url!
     }
@@ -1774,7 +1737,13 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         panel.backgroundColor = .clear
         panel.isOpaque = false
         panel.hasShadow = false
-        panel.setFrameAutosaveName("VibemeterFloatingWindow")
+        // The notch island is always docked top-center in code; restoring a
+        // saved free-float frame would yank it to wherever it last sat and
+        // fight the dock — that's what read as the panel jumping after launch
+        // and on first hover. Only free-floating styles persist their frame.
+        if view.displayStyle != "notch" {
+            panel.setFrameAutosaveName("VibemeterFloatingWindow")
+        }
 
         view.frame = panel.contentView?.bounds ?? NSRect(origin: .zero, size: initial)
         view.autoresizingMask = [.width, .height]
@@ -1786,12 +1755,12 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
             self?.rebuildStatusMenu()
         }
         view.onHide = { [weak self] in self?.hidePanel() }
+        view.onShow = { [weak self] in self?.showPanelFromMenu() }
         view.onOpenDashboard = { [weak self] in
             guard let self else { return }
             NSWorkspace.shared.open(self.pageURL.deletingLastPathComponent())
         }
         view.onTogglePause = { [weak self] in self?.togglePause() }
-        view.onOpenLastTranscript = { [weak self] in self?.openLastTranscript() }
         view.onCycleCodex = { [weak self] in self?.cycleCodex() }
 
         // Frosted-glass backdrop: a behind-window vibrancy view blurs the
@@ -1824,13 +1793,20 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         ])
 
         panel.contentView = container
-        placeAtTopRight(panel)
-        panel.orderFrontRegardless()
         self.panel = panel
         self.contentView = view
-        // Notch island docks under the notch instead of restoring the saved
-        // free-float frame.
-        if view.displayStyle == "notch" { view.applyWindowSize() }
+        // Position before the first paint so the panel appears at its final
+        // spot instead of flashing at the top-right and then jumping. The notch
+        // island docks top-center (no autosave frame is set for it); every other
+        // style free-floats, restoring its autosaved frame or defaulting to the
+        // top-right.
+        if view.displayStyle == "notch" {
+            view.applyWindowSize()
+        } else {
+            placeAtTopRight(panel)
+            view.applyWindowSize()
+        }
+        panel.orderFrontRegardless()
         setupStatusItem(initialView: view)
 
         refreshNow()
@@ -1884,6 +1860,18 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         ) { [weak self] _ in
             self?.ensurePanelOnScreen()
         }
+        DistributedNotificationCenter.default().addObserver(
+            forName: showFloatNotificationName,
+            object: bundleId,
+            queue: .main
+        ) { [weak self] _ in
+            self?.showPanelFromMenu()
+        }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        showPanelFromMenu()
+        return true
     }
 
     private func setupStatusItem(initialView: FloatView) {
@@ -1968,12 +1956,18 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showPanelFromMenu() {
+        revealPanel()
+    }
+
+    private func revealPanel(refresh: Bool = true) {
         guard let panel else { return }
+        contentView?.applyWindowSize()
         if !isPanelOnAnyScreen(panel) {
             placeAtTopRight(panel)
+            contentView?.applyWindowSize()
         }
         panel.orderFrontRegardless()
-        refreshNow()
+        if refresh { refreshNow() }
     }
 
     /// Returns true iff the panel rect overlaps any current screen's visible
@@ -2041,28 +2035,6 @@ final class FloatingWindowController: NSObject, NSApplicationDelegate {
         }
         URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
             DispatchQueue.main.async { self?.refreshNow() }
-        }.resume()
-    }
-
-    private func openLastTranscript() {
-        guard let path = contentView?.stats?.lastSession?.transcriptPath, !path.isEmpty else { return }
-        var request = URLRequest(url: openURL)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body: [String: String] = ["path": path]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        URLSession.shared.dataTask(with: request) { [weak self] _, response, error in
-            // Surface failures in the button itself — silent failures here are
-            // confusing because pressing the button can do nothing visible:
-            // /api/open 404s when Claude Code has rotated the transcript file
-            // off disk, and macOS may have no `.jsonl` handler either.
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
-            let ok = error == nil && (200...299).contains(code)
-            if !ok {
-                DispatchQueue.main.async {
-                    self?.contentView?.flashOpenLastLabel("action.openLastMissing")
-                }
-            }
         }.resume()
     }
 
@@ -2245,6 +2217,12 @@ let myPid = ProcessInfo.processInfo.processIdentifier
 let peers = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId)
     .filter { $0.processIdentifier != myPid }
 if let existing = peers.first {
+    DistributedNotificationCenter.default().postNotificationName(
+        showFloatNotificationName,
+        object: bundleId,
+        userInfo: nil,
+        deliverImmediately: true
+    )
     if #available(macOS 14.0, *) {
         existing.activate()
     } else {

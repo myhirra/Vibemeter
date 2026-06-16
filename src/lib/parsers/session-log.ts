@@ -259,6 +259,8 @@ export interface LiveContext {
   cwd: string | null;
   tokens: number;
   capturedAt: number;
+  /** 最近一个 assistant turn 的模型名（如 claude-opus-4-…），用于倍率提示 */
+  model: string | null;
 }
 
 /**
@@ -292,6 +294,7 @@ export function readLiveContext(jsonlPath: string): LiveContext | null {
   let cwd: string | null = null;
   let tokens = 0;
   let capturedAt = 0;
+  let model: string | null = null;
 
   for (const line of lines) {
     let parsed: Record<string, unknown>;
@@ -306,13 +309,15 @@ export function readLiveContext(jsonlPath: string): LiveContext | null {
       + numberOrZero(usage.output_tokens);
     if (turn > 0) {
       tokens = turn;
+      const m = (parsed.message as Record<string, unknown> | undefined)?.model;
+      if (typeof m === 'string' && m) model = m;
       const ts = typeof parsed.timestamp === 'string' ? new Date(parsed.timestamp).getTime() : 0;
       if (!Number.isNaN(ts)) capturedAt = ts;
     }
   }
 
   if (tokens === 0) return null;
-  return { sessionId, cwd, tokens, capturedAt: capturedAt || stat.mtimeMs };
+  return { sessionId, cwd, tokens, model, capturedAt: capturedAt || stat.mtimeMs };
 }
 
 export interface ConversationTurn {
