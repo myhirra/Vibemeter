@@ -34,6 +34,11 @@ export interface FloatQuota {
   resetAt5h: number | null;
   resetAtWeekly: number | null;
   capturedAt: number | null;
+  /** True when the underlying snapshot is older than a full quota window, so the
+   * numbers are a last-known reading rather than a live one (e.g. Codex quota
+   * with no recent session). The UI should de-emphasise the ring and show age
+   * instead of a confident countdown. */
+  stale: boolean;
   /** Predicted minutes until 5h window hits 100%, based on last 30 min slope. null if slope ≤ 0 or insufficient data. */
   pace5hExhaustMin: number | null;
   /** % per minute, rounded to 2 decimals. */
@@ -211,8 +216,11 @@ function quotaFromSnapshot(
   pace: { pace5hExhaustMin: number | null; pace5hPctPerMin: number | null },
 ): FloatQuota | null {
   if (!row) return null;
-  const fiveHour = normalizeQuotaWindow(row.window_5h_used_pct, row.reset_at_5h, FIVE_HOUR_WINDOW_MS);
-  const weekly = normalizeQuotaWindow(row.window_weekly_used_pct, row.reset_at_weekly, WEEKLY_WINDOW_MS);
+  const fiveHour = normalizeQuotaWindow(row.window_5h_used_pct, row.reset_at_5h, FIVE_HOUR_WINDOW_MS, Date.now(), row.captured_at);
+  const weekly = normalizeQuotaWindow(row.window_weekly_used_pct, row.reset_at_weekly, WEEKLY_WINDOW_MS, Date.now(), row.captured_at);
+  // Once the freshest (5h) reading has gone stale, the whole card is a
+  // last-known snapshot — flag it so the UI stops projecting a live countdown.
+  const stale = fiveHour.stale || weekly.stale;
   return {
     agent,
     label,
@@ -224,8 +232,9 @@ function quotaFromSnapshot(
     resetAt5h: fiveHour.resetAt,
     resetAtWeekly: weekly.resetAt,
     capturedAt: row.captured_at,
-    pace5hExhaustMin: fiveHour.rolledOver ? null : pace.pace5hExhaustMin,
-    pace5hPctPerMin: fiveHour.rolledOver ? null : pace.pace5hPctPerMin,
+    stale,
+    pace5hExhaustMin: fiveHour.rolledOver || stale ? null : pace.pace5hExhaustMin,
+    pace5hPctPerMin: fiveHour.rolledOver || stale ? null : pace.pace5hPctPerMin,
   };
 }
 

@@ -17,6 +17,7 @@ function stats(remaining5h: number | null, remainingWeekly: number | null, pace5
       resetAt5h: null,
       resetAtWeekly: null,
       capturedAt: 1,
+      stale: false,
       pace5hExhaustMin,
       pace5hPctPerMin: null,
     }],

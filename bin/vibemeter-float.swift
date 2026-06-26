@@ -15,6 +15,7 @@ struct FloatQuota: Decodable {
     let resetAt5h: Double?
     let resetAtWeekly: Double?
     let capturedAt: Double?
+    let stale: Bool?
     let pace5hExhaustMin: Int?
     let pace5hPctPerMin: Double?
 }
@@ -220,6 +221,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.none": "无重置时间",
         "reset.expired": "快照已过期",
         "reset.in": "{time} 后重置",
+        "stale.line": "⚠ 数据陈旧 · {n}前",
         "pace.exhausts": "约 {n} 后耗尽",
         "pace.exhaustsInline": "约 {n} 耗尽",
     ],
@@ -277,6 +279,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "reset.none": "no reset time",
         "reset.expired": "snapshot expired",
         "reset.in": "resets in {time}",
+        "stale.line": "⚠ stale · {n} ago",
         "pace.exhausts": "exhausts in ~{n}",
         "pace.exhaustsInline": "~{n} to 0",
     ],
@@ -443,6 +446,19 @@ final class FloatView: NSView {
 
     private func quotaWindow(_ quota: FloatQuota?) -> (remaining: Double?, resetAt: Double?, label: String) {
         guard let quota else { return (nil, nil, tr("window.noSnapshot")) }
+        // Stale snapshots already carry the server's last-known remaining. Do NOT
+        // run them through normalizeWindow — its rollover branch would see the
+        // (past) reset time and re-inflate the ring back to 100%, re-introducing
+        // exactly the fake-fresh reading the server just suppressed.
+        if quota.stale == true {
+            if let five = quota.remaining5h {
+                return (max(0, min(100, five)), quota.resetAt5h, tr("window.fiveHRemaining"))
+            }
+            if let weekly = quota.remainingWeekly {
+                return (max(0, min(100, weekly)), quota.resetAtWeekly, tr("window.weeklyRemaining"))
+            }
+            return (nil, nil, tr("window.noQuota"))
+        }
         if let five = quota.remaining5h {
             return normalizeWindow(remaining: five, resetAt: quota.resetAt5h, windowSeconds: 5 * 3600, label: tr("window.fiveHRemaining"))
         }
@@ -1246,7 +1262,12 @@ final class FloatView: NSView {
         let progress = CGFloat(max(0, min(100, remaining ?? 0)) / 100)
         let center = CGPoint(x: rect.minX + 70, y: rect.minY + 99 + yOffset)
         let radius: CGFloat = dual ? 34 : 43
-        let color = ringColor(for: agent, remaining: remaining)
+        let isStale = q?.stale == true
+        // A stale ring is a last-known reading, not a live one — desaturate it to
+        // grey so it never reads as a confident green/purple "all good".
+        let color = isStale
+            ? NSColor.white.withAlphaComponent(0.28)
+            : ringColor(for: agent, remaining: remaining)
 
         context.setLineWidth(dual ? 7 : 9)
         context.setLineCap(.round)
@@ -1289,11 +1310,20 @@ final class FloatView: NSView {
         // Falls back so the primary row is never blank when a window is missing.
         let fiveHLine: String? = {
             guard let five = q?.remaining5h else { return nil }
+            // Stale: the reset countdown would be fabricated from dead data, so
+            // surface the snapshot age instead ("5h 90% · ⚠ 数据陈旧 · 3d前").
+            if isStale {
+                return "\(tr("window.fiveHShort")) \(remainingPercentText(five)) · \(tr("stale.line", ["n": staleAgeText(q?.capturedAt)]))"
+            }
             return "\(tr("window.fiveHShort")) \(remainingPercentText(five)) · \(resetText(q?.resetAt5h))"
         }()
         let weeklyLine: String? = {
             guard let weekly = q?.remainingWeekly else { return nil }
             let pct = remainingPercentText(weekly)
+            // Stale: drop the countdown; the 5h line already carries the age badge.
+            if isStale {
+                return "\(tr("window.weeklyShort")) \(pct)"
+            }
             if let rel = weeklyResetText(q?.resetAtWeekly) {
                 return "\(tr("window.weeklyShort")) \(pct) · \(tr("reset.in", ["time": rel]))"
             }
@@ -1645,6 +1675,19 @@ final class FloatView: NSView {
         let minutes = (Int(diff) % 3600) / 60
         let rel = hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
         return tr("reset.in", ["time": rel])
+    }
+
+    /// Relative age of a snapshot, e.g. "3d" / "5h" / "12m". Used to label a
+    /// quota whose source data went stale instead of showing a fake countdown.
+    private func staleAgeText(_ capturedAt: Double?) -> String {
+        guard let capturedAt else { return "?" }
+        let diff = Date().timeIntervalSince1970 - (capturedAt / 1000)
+        let minutes = max(0, Int(diff) / 60)
+        let days = minutes / (24 * 60)
+        let hours = (minutes % (24 * 60)) / 60
+        if days > 0 { return "\(days)d" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(minutes)m"
     }
 
     private func paceText(_ minutes: Int) -> String {
