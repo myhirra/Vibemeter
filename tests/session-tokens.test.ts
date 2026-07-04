@@ -59,6 +59,65 @@ test('parseSessionLog aggregates token totals across assistant turns', () => {
   assert.equal(meta!.promptCount, 2);
 });
 
+test('parseSessionLog uses Claude last-prompt markers when present', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vm-last-prompt-'));
+  const file = writeJsonl(dir, '44444444-4444-4444-4444-444444444444', [
+    { type: 'meta', timestamp: '2026-01-01T00:00:00Z', cwd: '/work' },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:10Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'text', text: 'first turn' }] },
+    },
+    { type: 'last-prompt', sessionId: '44444444-4444-4444-4444-444444444444', leafUuid: 'leaf-1' },
+    {
+      type: 'assistant',
+      timestamp: '2026-01-01T00:00:20Z',
+      message: { content: [{ type: 'tool_use', id: 'tool-1' }] },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:30Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' }] },
+    },
+    { type: 'last-prompt', sessionId: '44444444-4444-4444-4444-444444444444', leafUuid: 'leaf-2' },
+  ]);
+
+  const meta = parseSessionLog(file);
+  assert.ok(meta);
+  assert.equal(meta!.promptCount, 2);
+});
+
+test('parseSessionLog falls back to user text prompts for older Claude logs', () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'vm-user-prompt-'));
+  const file = writeJsonl(dir, '55555555-5555-5555-5555-555555555555', [
+    { type: 'meta', timestamp: '2026-01-01T00:00:00Z', cwd: '/work' },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:10Z',
+      isSidechain: false,
+      message: { role: 'user', content: 'first turn' },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:20Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'tool_result', content: 'ok' }] },
+    },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T00:00:30Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'text', text: 'follow up' }] },
+    },
+  ]);
+
+  const meta = parseSessionLog(file);
+  assert.ok(meta);
+  assert.equal(meta!.promptCount, 2);
+});
+
 test('readLiveContext returns the last assistant turn even from a tail read', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'vm-live-'));
   // Add a lot of filler to push the read past a fresh boundary
