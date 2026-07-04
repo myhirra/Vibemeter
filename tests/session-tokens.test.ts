@@ -89,6 +89,31 @@ test('parseSessionLog uses Claude last-prompt markers when present', () => {
   assert.equal(meta!.promptCount, 2);
 });
 
+test('parseSessionLog dedups repeated last-prompt markers with identical text', () => {
+  // Claude Code 每个 assistant turn 都会重写 last-prompt marker：leafUuid 每轮变、
+  // 但 lastPrompt 原文不变。按原文去重，一条输入的多轮执行只算一次真实输入。
+  const dir = mkdtempSync(path.join(tmpdir(), 'vm-marker-dedup-'));
+  const sid = '66666666-6666-6666-6666-666666666666';
+  const file = writeJsonl(dir, sid, [
+    { type: 'meta', timestamp: '2026-01-01T00:00:00Z', cwd: '/work' },
+    // 第 1 条真实输入 → 随后每个 turn 重写同一原文的 marker（leaf 变）
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-a1', lastPrompt: '修一下 stocks 南向数据' },
+    { type: 'assistant', timestamp: '2026-01-01T00:00:10Z', message: { usage: { output_tokens: 5 } } },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-a2', lastPrompt: '修一下 stocks 南向数据' },
+    { type: 'assistant', timestamp: '2026-01-01T00:00:20Z', message: { usage: { output_tokens: 5 } } },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-a3', lastPrompt: '修一下 stocks 南向数据' },
+    // 第 2 条真实输入：原文变了 → 计第 2 次
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-b1', lastPrompt: '再部署一下' },
+    { type: 'assistant', timestamp: '2026-01-01T00:00:30Z', message: { usage: { output_tokens: 5 } } },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-b2', lastPrompt: '再部署一下' },
+  ]);
+
+  const meta = parseSessionLog(file);
+  assert.ok(meta);
+  // 5 个 marker、2 段原文 → 2 次真实输入（旧逻辑会错误计成 5）
+  assert.equal(meta!.promptCount, 2);
+});
+
 test('parseSessionLog falls back to user text prompts for older Claude logs', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'vm-user-prompt-'));
   const file = writeJsonl(dir, '55555555-5555-5555-5555-555555555555', [

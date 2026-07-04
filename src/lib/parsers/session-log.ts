@@ -109,6 +109,9 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
   let lastTurnAt: number | null = null;
   let userPromptCount = 0;
   let lastPromptCount = 0;
+  // 上一个已计入的 last-prompt 原文（去重用）。Claude Code 每个 assistant turn 都会
+  // 重写 marker（leafUuid 变、lastPrompt 原文不变），只有原文变化才是一次真正的新输入。
+  let prevPromptKey: string | null = null;
   // carry-forward：最近见过的行时间戳。last-prompt marker 等行可能没有自己的 timestamp，
   // 用它兜底归到正确的天，避免按天 prompt 丢失。
   let lastMs: number | null = null;
@@ -157,8 +160,15 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
 
     const promptMs = lineMs ?? lastMs;
     if (isLastPromptEvent(parsed)) {
-      lastPromptCount += 1;
-      if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).lastPrompt += 1;
+      // 同一条输入会在后续每个 turn 被重复写成 marker——按原文相邻去重，只计真正的新提交。
+      // 无 lastPrompt 原文的旧格式 marker 回退用 leafUuid，保证每个仍各计一次（不误合并）。
+      const text = typeof parsed.lastPrompt === 'string' ? parsed.lastPrompt.trim() : '';
+      const key = text || (typeof parsed.leafUuid === 'string' ? (parsed.leafUuid as string) : `#${lastPromptCount}`);
+      if (key !== prevPromptKey) {
+        lastPromptCount += 1;
+        if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).lastPrompt += 1;
+        prevPromptKey = key;
+      }
     } else if (isUserPrompt(parsed)) {
       userPromptCount += 1;
       if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).userPrompt += 1;
@@ -248,9 +258,9 @@ function isUserPrompt(parsed: Record<string, unknown>): boolean {
 function isLastPromptEvent(parsed: Record<string, unknown>): boolean {
   if (parsed.type !== 'last-prompt') return false;
   if (parsed.isSidechain === true) return false;
-  // Recent Claude Code logs emit one `last-prompt` marker per user turn, while
-  // tool results still appear as `type=user`. Count the marker instead of
-  // prompt text so we track turns without storing prompt content.
+  // 注意：Claude Code 每个 assistant turn 都会重写一个 `last-prompt` marker——leafUuid
+  // 每轮变，但 lastPrompt 原文只在你真正键入新内容时才变。所以调用方按 lastPrompt 原文
+  // 相邻去重计数，而不是数 marker 行数（否则一条输入的多轮执行会被算成多个 prompt）。
   return typeof parsed.sessionId === 'string' || typeof parsed.leafUuid === 'string';
 }
 
