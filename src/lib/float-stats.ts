@@ -5,6 +5,7 @@ import { getCodexAccounts } from './codex-auth';
 import { dataDir } from './data-dir';
 import { getDb } from './db';
 import { readLiveContext } from './parsers/session-log';
+import { parseStatuslineJson } from './parsers/statusline-json';
 import { getLatestQuotaSnapshot, getLatestUsageSnapshot, type UsageSnapshotRecord } from './usage-snapshots';
 import { readWaitingSessions, type WaitingSession } from './attention';
 import { normalizeQuotaWindow } from './quota-window';
@@ -15,9 +16,10 @@ import { readRecapSettings } from './recap-settings';
 const FLOAT_METRIC_PERIODS: RecapPeriod[] = ['today', '7d', '30d'];
 
 /**
- * Claude conversation context window (tokens). Claude Sonnet 4.x / Opus 4.x
- * advertise 200k; values are deliberately conservative — we trip the
- * "compact soon" warning before the model hard-fails.
+ * Fallback context window (tokens) when statusline doesn't report a real
+ * used_percentage. Real占比优先走 Claude Code 直报值（见 getActiveContext），
+ * 与模型窗口无关，所以 Fable 5 的 1M 窗口无需在此登记。仅代理/无 statusline 的
+ * 会话才落到这个保守的 200k 自算路径。
  */
 const CLAUDE_CONTEXT_LIMIT = 200_000;
 const FIVE_HOUR_WINDOW_MS = 5 * 60 * 60_000;
@@ -287,10 +289,14 @@ function buildContextAdvice(
   pct: number,
   model: string | null,
 ): Pick<FloatContext, "advice" | "adviceShort" | "adviceLevel"> {
-  const isOpus = !!model && /opus/i.test(model);
+  // 倍率提示：数据源不给「模型倍率」，靠模型名判档。Fable 5 = $10/$50，正好是
+  // Opus 4.8（$5/$25）的 2×，是目前最贵的档，故比 Opus 更该提醒切便宜模型。
+  const isFable = !!model && /fable/i.test(model);
+  const isOpus = !isFable && !!model && /opus/i.test(model);
+  const premiumTag = isFable ? "Fable" : isOpus ? "Opus" : null;
   if (pct >= 88) {
     return {
-      advice: `上下文 ${pct}%，该 /clear 重开${isOpus ? "（还在用 Opus，倍率高）" : ""}`,
+      advice: `上下文 ${pct}%，该 /clear 重开${premiumTag ? `（还在用 ${premiumTag}，倍率高）` : ""}`,
       adviceShort: "该清",
       adviceLevel: "critical",
     };
@@ -305,10 +311,12 @@ function buildContextAdvice(
   if (pct >= 60) {
     return { advice: `上下文 ${pct}%，渐满，留意`, adviceShort: "渐满", adviceLevel: "watch" };
   }
-  if (isOpus) {
+  if (premiumTag) {
     return {
-      advice: "正在用 Opus，倍率高，简单活可切 Sonnet 省额度",
-      adviceShort: "⚡Opus",
+      advice: isFable
+        ? "正在用 Fable，倍率最高（Opus 2×），简单活可切 Sonnet 省额度"
+        : "正在用 Opus，倍率高，简单活可切 Sonnet 省额度",
+      adviceShort: `⚡${premiumTag}`,
       adviceLevel: "watch",
     };
   }
@@ -322,17 +330,36 @@ function getActiveContext(): FloatContext | null {
   if (!jsonl) return null;
   const live = readLiveContext(jsonl);
   if (!live) return null;
-  const pct = Math.min(100, Math.round((live.tokens / CLAUDE_CONTEXT_LIMIT) * 100));
+
+  // 优先用 Claude Code 直报的真实占比（statusline，confidence='high'）。它与模型
+  // 窗口无关——Fable 5 的 1M 窗口、以后任何新窗口都自动正确，不必再硬编码每个模型的
+  // 窗口大小。仅当 statusline 缺失/会话不匹配时，回退到「token ÷ 200k」自算。
+  const sl = parseStatuslineJson();
+  const slMatch = sl && sl.session_id === live.sessionId ? sl : null;
+  const model = slMatch?.model_id || live.model;
+
+  let tokens = live.tokens;
+  let limit = CLAUDE_CONTEXT_LIMIT;
+  let pct: number;
+  if (slMatch && slMatch.context_used_pct != null) {
+    pct = Math.min(100, Math.max(0, Math.round(slMatch.context_used_pct)));
+    tokens = slMatch.context_tokens ?? live.tokens;
+    // 由真实 tokens 与占比反推窗口，令浮窗「tokens / limit」与 pct 自洽（Fable→≈1M）。
+    limit = pct >= 1 ? Math.round(tokens / (pct / 100)) : CLAUDE_CONTEXT_LIMIT;
+  } else {
+    pct = Math.min(100, Math.round((live.tokens / CLAUDE_CONTEXT_LIMIT) * 100));
+  }
+
   return {
     sessionId: live.sessionId,
     project: projectName(live.cwd),
-    tokens: live.tokens,
-    limit: CLAUDE_CONTEXT_LIMIT,
+    tokens,
+    limit,
     pct,
     capturedAt: live.capturedAt,
     warning: pct >= 80,
-    model: live.model,
-    ...buildContextAdvice(pct, live.model),
+    model,
+    ...buildContextAdvice(pct, model),
   };
 }
 

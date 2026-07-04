@@ -80,6 +80,28 @@ test('parseStatuslineJson converts reset seconds to ms and maps fields', () => {
   assert.equal(out!.reset_at_weekly, null); // no resets_at provided
   assert.equal(out!.session_id, 's-1');
   assert.equal(out!.confidence, 'high');
+  // fixture 无 context_window/model → 真实占比字段留空，调用方回退自算
+  assert.equal(out!.context_used_pct, null);
+  assert.equal(out!.context_tokens, null);
+  assert.equal(out!.model_id, null);
+});
+
+test('parseStatuslineJson surfaces real context percentage, tokens and model id', () => {
+  writeFileSync(STATUSLINE_PATH, JSON.stringify({
+    session_id: 's-fable',
+    model: { id: 'claude-fable-5', display_name: 'Fable 5' },
+    // Fable 5 是 1M 窗口：20 万 token 只占 20%，绝不能被自算成 100%
+    context_window: {
+      total_input_tokens: 190_000,
+      total_output_tokens: 10_000,
+      used_percentage: 20,
+    },
+  }));
+  const out = parseStatuslineJson();
+  assert.ok(out);
+  assert.equal(out!.context_used_pct, 20);
+  assert.equal(out!.context_tokens, 200_000);
+  assert.equal(out!.model_id, 'claude-fable-5');
 });
 
 test('parseStatuslineJson returns null on invalid JSON', () => {

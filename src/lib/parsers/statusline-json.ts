@@ -48,6 +48,13 @@ export interface StatuslineUsage {
   session_id: string | null;
   session_name: string | null;
   cwd: string | null;
+  /** Claude Code 直接报的上下文占比（%），confidence='high'。模型窗口无关，
+   * 1M 窗口的 Fable 5 等新模型也自动正确。缺失时为 null，调用方回退到自算。 */
+  context_used_pct: number | null;
+  /** Claude Code 报的上下文已用 token 总数（input+output），和占比同源，自洽。 */
+  context_tokens: number | null;
+  /** 当前会话模型 id（如 claude-opus-4-8 / claude-fable-5），用于倍率提示。 */
+  model_id: string | null;
 }
 
 export function parseStatuslineJson(): StatuslineUsage | null {
@@ -82,5 +89,10 @@ export function parseStatuslineJson(): StatuslineUsage | null {
     session_id: d.session_id ?? null,
     session_name: d.session_name ?? null,
     cwd: d.cwd ?? null,
+    context_used_pct: d.context_window?.used_percentage ?? null,
+    context_tokens: d.context_window
+      ? d.context_window.total_input_tokens + d.context_window.total_output_tokens
+      : null,
+    model_id: d.model?.id ?? null,
   };
 }
