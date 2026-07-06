@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { buildRecapCard, type RecapCardData, type RecapHeroKind, type RecapPeriod, type RecapStyle, type RecapToolFilter, type RecapVariant } from '@/lib/recap-card';
 import { importUsageSnapshots } from '@/lib/collectors/session-importer';
 import { readRecapSettings } from '@/lib/recap-settings';
@@ -67,10 +68,20 @@ export async function GET(request: Request) {
   const locale = await getServerLocale();
   const card = buildRecapCard({ period, tool, settings: readRecapSettings() });
   const svg = renderRecapSvg(maybeRedact(card, redact, redact ? getRedactSalt() : ''), variant, { heroOverride, style, locale });
+  // 短缓存 + ETag：同一张卡 5 分钟内被浏览器/unfurl 反复拉取时不重复传内容；
+  // ETag 随 SVG 内容（含 generatedAt）变化自动失效。
+  const etag = `"${createHash('sha1').update(svg).digest('hex').slice(0, 16)}"`;
+  const cacheHeaders = {
+    'Cache-Control': 'private, max-age=300',
+    ETag: etag,
+  };
+  if (request.headers.get('if-none-match') === etag) {
+    return new Response(null, { status: 304, headers: cacheHeaders });
+  }
   return new Response(svg, {
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
-      'Cache-Control': 'no-store',
+      ...cacheHeaders,
     },
   });
 }

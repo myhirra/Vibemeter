@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { RecapCardData, RecapHeroKind, RecapPeriod, RecapStyle, RecapVariant } from '@/lib/recap-card';
 import { DEFAULT_RECAP_STYLE, availableHeroAngles, recapDimensions, renderRecapSvg } from '@/lib/recap-card-render';
+import { buildRecapShareText } from '@/lib/recap-share-text';
 import { useLocale, useT } from '@/lib/i18n/client';
 import type { Locale } from '@/lib/i18n';
 
@@ -222,6 +223,16 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
     }
   }
 
+  async function copyCaption() {
+    if (!card) return;
+    try {
+      await navigator.clipboard.writeText(buildRecapShareText(card, locale));
+      setMessage(t('recap.action.copiedCaption'));
+    } catch {
+      setMessage(t('recap.action.copyUnavailable'));
+    }
+  }
+
   function saveImage(variant: RecapVariant) {
     if (!generated) return;
     const item = generated[variant];
@@ -242,7 +253,12 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
     );
     try {
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: 'Vibemeter recap' });
+        // 配文里带回流链接（src=recap-card 归因）；不支持 text 的分享目标会只带图。
+        await navigator.share({
+          files: [file],
+          title: 'Vibemeter recap',
+          text: card ? buildRecapShareText(card, locale) : undefined,
+        });
         setMessage(t('recap.action.shared'));
       } else {
         saveImage('landscape');
@@ -353,6 +369,9 @@ export function RecapShareButton({ card: fixedCard, today, weekly, monthly, comp
             <div className="mt-3 flex flex-wrap gap-2">
               <button type="button" onClick={copyImage} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
                 {t('recap.action.copyImage')}
+              </button>
+              <button type="button" onClick={copyCaption} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
+                {t('recap.action.copyCaption')}
               </button>
               <button type="button" onClick={() => saveImage('landscape')} className="rounded-md border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:border-zinc-500">
                 {t('recap.action.save', { size: '1200x675' })}
