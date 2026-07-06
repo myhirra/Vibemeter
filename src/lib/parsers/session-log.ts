@@ -163,8 +163,11 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
       // 同一条输入会在后续每个 turn 被重复写成 marker——按原文相邻去重，只计真正的新提交。
       // 无 lastPrompt 原文的旧格式 marker 回退用 leafUuid，保证每个仍各计一次（不误合并）。
       const text = typeof parsed.lastPrompt === 'string' ? parsed.lastPrompt.trim() : '';
+      // 会话首行的续接指针也是无原文 marker，但先于本文件任何 user prompt——它指向
+      // 上一个会话的输入，不是本会话的 prompt，跳过（旧格式的无原文 marker 都在 user 行之后）。
+      const isContinuationPointer = !text && userPromptCount === 0;
       const key = text || (typeof parsed.leafUuid === 'string' ? (parsed.leafUuid as string) : `#${lastPromptCount}`);
-      if (key !== prevPromptKey) {
+      if (!isContinuationPointer && key !== prevPromptKey) {
         lastPromptCount += 1;
         if (promptMs != null) bucketFor(floorLocalDayMs(promptMs)).lastPrompt += 1;
         prevPromptKey = key;
@@ -225,7 +228,9 @@ export function parseSessionLog(jsonlPath: string): SessionLogMeta | null {
       cacheCreationTokens: b.cacheCreation,
       cacheReadTokens: b.cacheRead,
       outputTokens: b.output,
-      promptCount: b.lastPrompt > 0 ? b.lastPrompt : b.userPrompt,
+      // 口径跟全会话保持一致（lastPromptCount 存在就全用 marker 桶）：若按天各自回退，
+      // 「当天只有 user 行、marker 次日才落盘」的输入会在两天各计一次（跨天双计）。
+      promptCount: lastPromptCount > 0 ? b.lastPrompt : b.userPrompt,
     })),
   };
 }

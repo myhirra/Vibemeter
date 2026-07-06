@@ -65,7 +65,7 @@ export function activityStreak(): StreakInfo {
   for (let i = 83; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+    const key = localDayKey(d);
     heatmap.push({ date: key, count: byDay.get(key) ?? 0 });
   }
 
@@ -74,7 +74,7 @@ export function activityStreak(): StreakInfo {
   for (let i = 0; i < 365; i++) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+    const key = localDayKey(d);
     if (byDay.has(key)) { current++; } else { break; }
   }
 
@@ -299,7 +299,7 @@ export function spendingStats(): SpendingStats {
   for (let i = 13; i >= 0; i--) {
     const d = new Date(now);
     d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
+    const key = localDayKey(d);
     daily.push({
       date: key,
       claudeUsd: claudeByDay.get(key) ?? 0,
@@ -398,7 +398,7 @@ export function dayTimeline(dayOffset = 0): { dateLabel: string; sessions: Timel
   `).all(end, start) as { id: string; tool: string; cwd: string | null; started_at: number; ended_at: number | null; ai_title: string | null }[];
 
   return {
-    dateLabel: target.toISOString().slice(0, 10),
+    dateLabel: localDayKey(target),
     sessions: rows.map((r) => ({
       id: r.id,
       tool: r.tool,
@@ -695,7 +695,7 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
 
   const out: RecapDailyPoint[] = [];
   for (let d = new Date(startDay); d <= endDay; d.setDate(d.getDate() + 1)) {
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const key = localDayKey(d);
     const row = sessionsByDay.get(key);
     const hitPct = row ? ratePct(row.read_tokens, row.input, row.creation) : 0;
     out.push({
@@ -714,6 +714,14 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
 function floorLocalDayMs(ms: number): number {
   const d = new Date(ms);
   return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * 本地日历日的 YYYY-MM-DD 键，匹配 SQL 侧 DATE(..., 'localtime') 的输出。
+ * 不能用 toISOString()（UTC 日期）：东八区 0-8 点会整体错位一天。
+ */
+export function localDayKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export function cacheStatsForRange(startMs: number, endMs = Date.now(), tool: RecapToolFilter = 'all'): CacheStats {

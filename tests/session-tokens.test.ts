@@ -114,6 +114,57 @@ test('parseSessionLog dedups repeated last-prompt markers with identical text', 
   assert.equal(meta!.promptCount, 2);
 });
 
+test('parseSessionLog skips the session-head continuation pointer', () => {
+  // 新格式会话首行是续接指针：无 lastPrompt 原文、无 timestamp、先于任何 user 行。
+  // 它指向上一个会话的输入，不是本会话的 prompt——不计数（旧逻辑每会话虚计 +1）。
+  const dir = mkdtempSync(path.join(tmpdir(), 'vm-head-marker-'));
+  const sid = '77777777-7777-7777-7777-777777777777';
+  const file = writeJsonl(dir, sid, [
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'head-leaf' },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T12:00:10Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'text', text: '真实输入' }] },
+    },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-1', lastPrompt: '真实输入' },
+    { type: 'assistant', timestamp: '2026-01-01T12:00:20Z', message: { usage: { output_tokens: 5 } } },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-2', lastPrompt: '真实输入' },
+  ]);
+
+  const meta = parseSessionLog(file);
+  assert.ok(meta);
+  assert.equal(meta!.promptCount, 1);
+  const dailyTotal = meta!.dailyUsage.reduce((sum, d) => sum + d.promptCount, 0);
+  assert.equal(dailyTotal, 1);
+});
+
+test('parseSessionLog does not double-count a prompt whose marker lands on the next day', () => {
+  // 输入在 day1（user 行），回复跨天、marker 到 day2 才落盘。
+  // 按天口径必须跟全会话一致（有 marker 就全用 marker 桶），否则同一条输入两天各计一次。
+  const dir = mkdtempSync(path.join(tmpdir(), 'vm-cross-day-'));
+  const sid = '88888888-8888-8888-8888-888888888888';
+  const file = writeJsonl(dir, sid, [
+    { type: 'meta', timestamp: '2026-01-01T12:00:00Z', cwd: '/work' },
+    {
+      type: 'user',
+      timestamp: '2026-01-01T12:00:10Z',
+      isSidechain: false,
+      message: { role: 'user', content: [{ type: 'text', text: '跨天任务' }] },
+    },
+    // 相隔 48h，保证任意时区下都归属不同的本地日
+    { type: 'assistant', timestamp: '2026-01-03T12:00:00Z', message: { usage: { output_tokens: 5 } } },
+    { type: 'last-prompt', sessionId: sid, leafUuid: 'leaf-1', lastPrompt: '跨天任务' },
+  ]);
+
+  const meta = parseSessionLog(file);
+  assert.ok(meta);
+  assert.equal(meta!.promptCount, 1);
+  const dailyTotal = meta!.dailyUsage.reduce((sum, d) => sum + d.promptCount, 0);
+  // 旧逻辑：day1 回退 userPrompt 计 1 + day2 marker 计 1 = 2（双计）
+  assert.equal(dailyTotal, 1);
+});
+
 test('parseSessionLog falls back to user text prompts for older Claude logs', () => {
   const dir = mkdtempSync(path.join(tmpdir(), 'vm-user-prompt-'));
   const file = writeJsonl(dir, '55555555-5555-5555-5555-555555555555', [

@@ -46,6 +46,14 @@ npm run lint
 node --test tests/*.test.ts
 npm run build
 
+# 官网 JSON-LD 的 softwareVersion 必须跟着版本走（npm version 钩子会自动同步；
+# 手动改过 package.json 版本时这里兜底拦截）。
+STALE_SITE_VERSIONS="$(grep -rho '"softwareVersion": "[^"]*"' deploy/vibemeter-site --include='*.html' | grep -v "\"$VERSION\"" || true)"
+if [[ -n "$STALE_SITE_VERSIONS" ]]; then
+  echo "$STALE_SITE_VERSIONS"
+  fail "Marketing site softwareVersion != $VERSION — run: node scripts/sync-site-version.mjs && commit"
+fi
+
 step "Pack"
 rm -f hirra-vibemeter-*.tgz vibemeter*.tgz
 npm pack
@@ -66,6 +74,9 @@ for url in "$SITE_URL/vibemeter.tgz" "$SITE_URL/vibemeter-$VERSION.tgz"; do
   [[ "$got" == "$EXPECTED_SIZE" ]] || fail "$url content-length $got != $EXPECTED_SIZE"
   echo "  ✓ $url ($got bytes)"
 done
+
+step "Sync marketing site"
+bash scripts/deploy-marketing.sh
 
 step "Tag + push"
 git tag -a "$TAG" -m "$TAG"

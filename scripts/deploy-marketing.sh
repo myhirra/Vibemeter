@@ -38,6 +38,7 @@ copy_file "deploy/vibemeter-site/admin-server.mjs" "admin-server.mjs"
 copy_dir "deploy/vibemeter-site/claude-code-quota" "claude-code-quota"
 copy_dir "deploy/vibemeter-site/codex-rate-limit" "codex-rate-limit"
 copy_dir "deploy/vibemeter-site/ai-coding-usage-tracker" "ai-coding-usage-tracker"
+copy_dir "deploy/vibemeter-site/ai-coding-recap-card" "ai-coding-recap-card"
 copy_dir "deploy/vibemeter-site/pricing" "pricing"
 
 echo "[2/3] Reload nginx and admin"
@@ -48,6 +49,7 @@ curl -fsSI "$SITE_URL/" >/dev/null
 curl -fsSI "$SITE_URL/claude-code-quota/" >/dev/null
 curl -fsSI "$SITE_URL/codex-rate-limit/" >/dev/null
 curl -fsSI "$SITE_URL/ai-coding-usage-tracker/" >/dev/null
+curl -fsSI "$SITE_URL/ai-coding-recap-card/" >/dev/null
 curl -fsSI "$SITE_URL/pricing/" >/dev/null
 curl -fsSI "$SITE_URL/float-expanded.png" >/dev/null
 curl -fsSI "$SITE_URL/float-collapsed.png" >/dev/null
