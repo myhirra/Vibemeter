@@ -3,7 +3,7 @@ import { z } from 'zod';
 export const ConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type Confidence = z.infer<typeof ConfidenceSchema>;
 
-export const ToolSchema = z.enum(['claude-code', 'codex', 'cursor', 'gemini', 'opencode', 'qoder', 'other']);
+export const ToolSchema = z.enum(['claude-code', 'codex', 'cursor', 'gemini', 'glm', 'opencode', 'qoder', 'other']);
 export type Tool = z.infer<typeof ToolSchema>;
 
 export const ChangeTypeSchema = z.enum(['modified', 'created', 'deleted']);
