@@ -103,13 +103,17 @@ interface Props {
   redact: boolean;
 }
 
-const TOOLS = ['all', 'claude-code', 'codex', 'cursor'] as const satisfies readonly RecapToolFilter[];
+const TOOLS = ['all', 'claude-code', 'codex', 'cursor', 'gemini', 'glm', 'opencode', 'qoder'] as const satisfies readonly RecapToolFilter[];
 type ToolFilter = RecapToolFilter;
 const TOOL_LABEL_KEYS: Record<ToolFilter, string> = {
   all: 'dashboard.toolAll',
   'claude-code': 'dashboard.toolClaude',
   codex: 'dashboard.toolCodex',
   cursor: 'dashboard.toolCursor',
+  gemini: 'dashboard.toolGemini',
+  glm: 'dashboard.toolGlm',
+  opencode: 'dashboard.toolOpencode',
+  qoder: 'dashboard.toolQoder',
 };
 
 const DATE_PRESETS = ['today', '7d', '30d', 'all'] as const;

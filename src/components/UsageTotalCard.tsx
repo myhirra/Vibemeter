@@ -37,6 +37,10 @@ const TOOL_LABEL_KEYS: Record<RecapToolFilter, string> = {
   'claude-code': 'dashboard.toolClaude',
   codex: 'dashboard.toolCodex',
   cursor: 'dashboard.toolCursor',
+  gemini: 'dashboard.toolGemini',
+  glm: 'dashboard.toolGlm',
+  opencode: 'dashboard.toolOpencode',
+  qoder: 'dashboard.toolQoder',
 };
 
 function emptyCacheSummary(card: RecapCardData): CacheStats {

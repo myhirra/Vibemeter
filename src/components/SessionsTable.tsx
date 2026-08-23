@@ -81,7 +81,15 @@ function ToolBadge({ tool }: { tool: string }) {
     return <span className="text-xs px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-400 border border-emerald-800/50">codex</span>;
   if (tool === 'cursor')
     return <span className="text-xs px-1.5 py-0.5 rounded bg-sky-900/40 text-sky-400 border border-sky-800/50">cursor</span>;
-  return <span className="text-xs px-1.5 py-0.5 rounded bg-violet-900/40 text-violet-400 border border-violet-800/50">claude</span>;
+  if (tool === 'gemini')
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-blue-900/40 text-blue-400 border border-blue-800/50">gemini</span>;
+  if (tool === 'glm')
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-green-900/40 text-green-400 border border-green-800/50">glm</span>;
+  if (tool === 'opencode')
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400 border border-amber-800/50">opencode</span>;
+  if (tool === 'qoder')
+    return <span className="text-xs px-1.5 py-0.5 rounded bg-rose-900/40 text-rose-400 border border-rose-800/50">qoder</span>;
+  return <span className="text-xs px-1.5 py-0.5 rounded bg-violet-900/40 text-violet-400 border border-violet-800/50">claude-code</span>;
 }
 
 function OutcomeCell({

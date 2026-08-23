@@ -123,6 +123,9 @@ export interface FloatSessionStats {
   agent: string;
   todaySessions: number;
   totalSessions: number;
+  /** Sum of session durations that overlap today, ms. Lets the floater show
+   * activity ("今日 5 会话 · 1h20m") for tools that have no quota (opencode). */
+  todayDurationMs: number;
 }
 
 export interface FloatRecentSession {
@@ -604,13 +607,24 @@ export async function getFloatStats(): Promise<FloatStats> {
     GROUP BY tool
     ORDER BY count DESC
   `).all(todayEnd, Date.now(), todayStart) as { tool: string; count: number }[];
+  // 今日各 tool 的累计时长（会话与今日窗口的重叠部分），供无额度工具展示活跃度。
+  // scalar max()/min() 把每条会话裁到 [todayStart, now]，避免跨天会话把时长算爆。
+  const todayDurByTool = db.prepare(`
+    SELECT tool, SUM(MAX(0, MIN(COALESCE(ended_at, ?), ?) - MAX(started_at, ?))) AS ms
+    FROM sessions
+    WHERE started_at < ?
+      AND COALESCE(ended_at, ?) >= ?
+    GROUP BY tool
+  `).all(Date.now(), todayEnd, todayStart, todayEnd, Date.now(), todayStart) as { tool: string; ms: number | null }[];
   const totalByToolMap = new Map(totalByTool.map((row) => [row.tool, row.count]));
   const todayByToolMap = new Map(todayByTool.map((row) => [row.tool, row.count]));
+  const todayDurByToolMap = new Map(todayDurByTool.map((row) => [row.tool, row.ms ?? 0]));
   const sessionStatAgents = [...new Set(['claude-code', 'codex', ...totalByTool.map((row) => row.tool), ...todayByTool.map((row) => row.tool)])];
   const sessionStatsByAgent = sessionStatAgents.map((agent) => ({
     agent,
     todaySessions: todayByToolMap.get(agent) ?? 0,
     totalSessions: totalByToolMap.get(agent) ?? 0,
+    todayDurationMs: todayDurByToolMap.get(agent) ?? 0,
   }));
   const lastSession = db.prepare(`
     SELECT id, tool, cwd, ai_title, summary, started_at

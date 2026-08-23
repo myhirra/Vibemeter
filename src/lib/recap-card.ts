@@ -4,7 +4,7 @@ import { type RecapSettings, resolveRecapPlan } from './recap-settings';
 
 export type RecapPeriod = 'today' | '7d' | '30d' | 'month' | 'all';
 export type RecapDateFilter = 'today' | '7d' | '30d' | 'all';
-export type RecapToolFilter = 'all' | 'claude-code' | 'codex' | 'cursor';
+export type RecapToolFilter = 'all' | 'claude-code' | 'codex' | 'cursor' | 'gemini' | 'glm' | 'opencode' | 'qoder';
 export type RecapVariant = 'landscape' | 'square';
 export type RecapHeroKind = 'roi' | 'value' | 'tokens' | 'cache' | 'sessions' | 'not_enough_data';
 export type RecapStyle = 'hero' | 'grid';

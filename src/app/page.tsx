@@ -92,9 +92,9 @@ function redactRecap(card: RecapCardData, salt: string): RecapCardData {
   };
 }
 
-const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor']);
+const AGENTS = new Set(['all', 'claude-code', 'codex', 'cursor', 'gemini', 'glm', 'opencode', 'qoder']);
 const RECAP_PERIODS: RecapDateFilter[] = ['today', '7d', '30d', 'all'];
-const RECAP_TOOLS: RecapToolFilter[] = ['all', 'claude-code', 'codex', 'cursor'];
+const RECAP_TOOLS: RecapToolFilter[] = ['all', 'claude-code', 'codex', 'cursor', 'gemini', 'glm', 'opencode', 'qoder'];
 
 function buildRecapCardsByScope(settings: Parameters<typeof buildRecapCard>[0]['settings']): RecapCardsByScope {
   const out = {} as RecapCardsByScope;

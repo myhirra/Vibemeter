@@ -45,6 +45,7 @@ struct AgentSessionStats: Decodable {
     let agent: String
     let todaySessions: Int
     let totalSessions: Int
+    let todayDurationMs: Double?
 }
 
 struct LastSession: Decodable {
@@ -224,6 +225,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "stale.line": "⚠ 数据陈旧 · {n}前",
         "pace.exhausts": "约 {n} 后耗尽",
         "pace.exhaustsInline": "约 {n} 耗尽",
+        "stats.todayActivity": "今日 {n} 会话",
     ],
     .en: [
         "status.loading": "loading",
@@ -282,6 +284,7 @@ private let floatCopy: [FloatLanguage: [String: String]] = [
         "stale.line": "⚠ stale · {n} ago",
         "pace.exhausts": "exhausts in ~{n}",
         "pace.exhaustsInline": "~{n} to 0",
+        "stats.todayActivity": "{n} today",
     ],
 ]
 
@@ -444,6 +447,17 @@ final class FloatView: NSView {
         stats?.quotas.first(where: { $0.agent == agent })
     }
 
+    /// Tools that have activity today but no quota window (opencode / gemini / …).
+    /// They show as an activity line ("OpenCode · 今日 5 会话 · 1h20m") under the
+    /// metric tiles. Idle tools (0 sessions today) are omitted per design.
+    private func extraActiveTools() -> [AgentSessionStats] {
+        guard let all = stats?.sessionStatsByAgent else { return [] }
+        let hasQuota = Set((stats?.quotas ?? []).map { $0.agent } + ["claude-code", "codex"])
+        return all
+            .filter { $0.todaySessions > 0 && !hasQuota.contains($0.agent) }
+            .sorted { $0.todaySessions > $1.todaySessions }
+    }
+
     private func quotaWindow(_ quota: FloatQuota?) -> (remaining: Double?, resetAt: Double?, label: String) {
         guard let quota else { return (nil, nil, tr("window.noSnapshot")) }
         // Stale snapshots already carry the server's last-known remaining. Do NOT
@@ -558,7 +572,10 @@ final class FloatView: NSView {
             // bottom. The +94 in dual mode mirrors the second ring's offset.
             let dual = agentDisplay == "both"
             // Relative to the inset rect's minY: metric tiles end at 236.
-            let contentBottom: CGFloat = 236
+            // 无额度工具的活跃度行（opencode 等）接在下面，一行 18px、最多 3 行，动态加高。
+            let extraRows = min(extraActiveTools().count, 3)
+            let extraH: CGFloat = extraRows > 0 ? CGFloat(extraRows) * 18 + 12 : 0
+            let contentBottom: CGFloat = 236 + extraH
             let height = contentBottom + 24 /* bottom margin */ + 16 /* 8px inset ×2 */ + (dual ? 94 : 0)
             return NSSize(width: 420, height: height)
         }
@@ -1393,6 +1410,16 @@ final class FloatView: NSView {
         drawMetric(title: tr("metric.prompts"), value: promptsText, rect: NSRect(x: rect.minX + 20 + width + gap, y: top, width: width, height: 50))
         drawMetric(title: tr("metric.value"), value: valueText, rect: NSRect(x: rect.minX + 20 + (width + gap) * 2, y: top, width: width, height: 50))
         drawMetric(title: tr("metric.cacheHit"), value: cacheText, rect: NSRect(x: rect.minX + 20 + (width + gap) * 3, y: top, width: width, height: 50))
+
+        // 无额度工具的今日活跃度（opencode 等）——metric 卡片下方，一工具一行；今日无活动的不展示。
+        let extras = extraActiveTools()
+        var ay = top + 62
+        for stat in extras.prefix(3) {
+            var line = "\(toolName(stat.agent)) · " + tr("stats.todayActivity", ["n": "\(stat.todaySessions)"])
+            if let ms = stat.todayDurationMs, ms >= 60_000 { line += " · \(durationText(ms))" }
+            drawText(line, rect: NSRect(x: rect.minX + 22, y: ay, width: rect.width - 44, height: 14), size: 10.5, weight: .medium, color: NSColor.white.withAlphaComponent(0.55))
+            ay += 18
+        }
     }
 
     private func drawPeriodTabs(in rect: NSRect) {
@@ -1712,6 +1739,10 @@ final class FloatView: NSView {
         if value == "claude-code" { return "Claude" }
         if value == "codex" { return "Codex" }
         if value == "cursor" { return "Cursor" }
+        if value == "opencode" { return "OpenCode" }
+        if value == "gemini" { return "Gemini" }
+        if value == "glm" { return "GLM" }
+        if value == "qoder" { return "Qoder" }
         return value
     }
 
