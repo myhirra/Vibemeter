@@ -91,6 +91,15 @@ export function bootstrap(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_captured ON usage_snapshots(captured_at DESC);
     CREATE INDEX IF NOT EXISTS idx_usage_source_account_captured ON usage_snapshots(source, account_id, captured_at DESC);
+    -- Expression index: cost/session-id live inside raw_output JSON, and the
+    -- per-session cost rollups group/filter on these extracts. Without this,
+    -- every scan re-parses the JSON of all statusline rows (dashboard SSR
+    -- measured 15s+ before 0.2.48).
+    CREATE INDEX IF NOT EXISTS idx_usage_statusline_sid_cost ON usage_snapshots(
+      source,
+      json_extract(raw_output, '$.session_id'),
+      CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)
+    );
     CREATE INDEX IF NOT EXISTS idx_session_commits_session ON session_commits(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_commits_repo_at ON session_commits(repo, committed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_session_daily_day ON session_daily(day_ms);

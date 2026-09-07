@@ -358,14 +358,16 @@ export function buildRecapCard(options: RecapCardOptions): RecapCardData {
   const tool = options.tool ?? 'all';
   const period = resolvePeriod(options.period ?? '7d', tool, options.now);
   const plan = resolveRecapPlan(options.settings);
-  // Value now sums Claude + Codex API-equivalent. Cursor has no rate we trust,
-  // so it stays at 0. Per-tool filter drops the irrelevant side.
-  const claudeValue = tool === 'codex' || tool === 'cursor'
-    ? 0
-    : claudeApiEquivalentUsd(period.startMs, period.endMs);
-  const codexValue = tool === 'claude-code' || tool === 'cursor'
-    ? 0
-    : codexApiEquivalentUsd(period.startMs, period.endMs);
+  // Value now sums Claude + Codex API-equivalent. Only the tool's own side
+  // counts — an allowlist, so tools with no $ source (cursor, gemini, glm,
+  // opencode, qoder, and anything added later) stay at 0 instead of
+  // inheriting the global Claude/Codex totals.
+  const claudeValue = tool === 'all' || tool === 'claude-code'
+    ? claudeApiEquivalentUsd(period.startMs, period.endMs)
+    : 0;
+  const codexValue = tool === 'all' || tool === 'codex'
+    ? codexApiEquivalentUsd(period.startMs, period.endMs)
+    : 0;
   const valueAtApiRatesUsd = claudeValue + codexValue;
   const { sessions, tokens } = tokenTotals(period.startMs, period.endMs, tool);
   const prompts = promptCount(period.startMs, period.endMs, tool);

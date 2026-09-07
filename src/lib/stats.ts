@@ -164,12 +164,14 @@ export interface SpendingStats {
  * Fallback $/M for Claude sessions where Claude Code reports no real cost —
  * e.g. routed through a proxy / custom-model ANTHROPIC_BASE_URL it can't price,
  * so `cost.total_cost_usd` is 0/absent. Cache-heavy coding blend (~95% cache
- * read, ~4% fresh input, ~1% output), Opus-leaning to match the common setup:
- *   0.95 * 1.5 + 0.04 * 15 + 0.01 * 75 ≈ 2.78 USD/M  (rounded down, under-claim).
+ * read, ~4% fresh input, ~1% output) at current Opus-tier list price
+ * (Opus 5 / 4.8: $5 in / $25 out, cache read $0.50):
+ *   0.95 * 0.5 + 0.04 * 5 + 0.01 * 25 ≈ 0.93 USD/M  (rounded down, under-claim).
  * Real-cost sessions never hit this path, so normal installs are unaffected.
- * Tune down if your proxy serves a cheaper model (Sonnet blend ≈ 0.56/M).
+ * Tune per your proxy's model: Fable 5 blend ≈ 1.85/M, Sonnet 5 blend ≈ 0.55/M.
+ * (Was 2.5 through 0.2.47, derived from the retired $15/$75 Opus price sheet.)
  */
-const CLAUDE_FALLBACK_USD_PER_MILLION = 2.5;
+const CLAUDE_FALLBACK_USD_PER_MILLION = 0.9;
 
 export function claudeApiEquivalentUsd(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): number {
   const db = getDb();
@@ -323,6 +325,44 @@ function projectBasename(cwd: string | null): string {
 }
 
 /**
+ * Per-session max `cost.total_cost_usd` across ALL statusline snapshots, as a
+ * Map keyed by session id. One indexed GROUP BY pass replaces the correlated
+ * subquery that used to run once per session (O(sessions × snapshots) with a
+ * json_extract on every probed row — the dashboard SSR spent >15s there).
+ *
+ * Cached per process; the (MAX(id), COUNT(*)) fingerprint invalidates on any
+ * append or import-triggered rewrite, so a request that calls this 20+ times
+ * (projectRoi × windows) pays for one scan.
+ */
+let _costBySessionCache: { fingerprint: string; map: Map<string, number> } | null = null;
+
+export function statuslineCostBySession(): Map<string, number> {
+  const db = getDb();
+  const fp = db.prepare(`
+    SELECT COALESCE(MAX(id), 0) AS max_id, COUNT(*) AS n
+    FROM usage_snapshots WHERE source = 'statusline'
+  `).get() as { max_id: number; n: number };
+  const fingerprint = `${fp.max_id}:${fp.n}`;
+  if (_costBySessionCache && _costBySessionCache.fingerprint === fingerprint) {
+    return _costBySessionCache.map;
+  }
+  const rows = db.prepare(`
+    SELECT json_extract(raw_output, '$.session_id') AS sid,
+           MAX(CAST(json_extract(raw_output, '$.cost.total_cost_usd') AS REAL)) AS cost
+    FROM usage_snapshots
+    WHERE source = 'statusline'
+      AND json_extract(raw_output, '$.cost.total_cost_usd') IS NOT NULL
+    GROUP BY sid
+  `).all() as { sid: string | null; cost: number | null }[];
+  const map = new Map<string, number>();
+  for (const r of rows) {
+    if (r.sid && r.cost != null) map.set(r.sid, r.cost);
+  }
+  _costBySessionCache = { fingerprint, map };
+  return map;
+}
+
+/**
  * Per-project API-equivalent spend over an optional window. Claude cost is the
  * per-session max `cost.total_cost_usd` from statusline snapshots; Codex cost is
  * tokens × the blended rate. One row per session feeds `groupCostByProject`.
@@ -330,17 +370,15 @@ function projectBasename(cwd: string | null): string {
 export function costByProject(startMs = 0, endMs = Number.MAX_SAFE_INTEGER): ProjectCost[] {
   const db = getDb();
 
-  const claudeRows = db.prepare(`
-    SELECT s.cwd AS cwd,
-           (SELECT MAX(CAST(json_extract(us.raw_output, '$.cost.total_cost_usd') AS REAL))
-              FROM usage_snapshots us
-              WHERE us.source = 'statusline'
-                AND json_extract(us.raw_output, '$.session_id') = s.id) AS cost_usd
+  const costBySession = statuslineCostBySession();
+  const claudeRows = (db.prepare(`
+    SELECT s.id AS id, s.cwd AS cwd
     FROM sessions s
     WHERE s.tool = 'claude-code'
       AND s.cwd IS NOT NULL
       AND s.started_at >= ? AND s.started_at < ?
-  `).all(startMs, endMs) as { cwd: string | null; cost_usd: number | null }[];
+  `).all(startMs, endMs) as { id: string; cwd: string | null }[])
+    .map((r) => ({ cwd: r.cwd, cost_usd: costBySession.get(r.id) ?? null }));
 
   const codexRows = db.prepare(`
     SELECT s.cwd AS cwd,
@@ -498,17 +536,15 @@ export function sessionInsight(): SessionInsight {
   const db = getDb();
   const rework = retryRate7d();
 
-  const expensiveRows = db.prepare(`
-    SELECT s.id, s.tool, s.cwd, s.ai_title, s.started_at, s.ended_at,
-           (SELECT MAX(CAST(json_extract(us.raw_output, '$.cost.total_cost_usd') AS REAL))
-              FROM usage_snapshots us
-              WHERE us.source = 'statusline'
-                AND json_extract(us.raw_output, '$.session_id') = s.id) AS cost_usd
+  const costBySession = statuslineCostBySession();
+  const expensiveRows = (db.prepare(`
+    SELECT s.id, s.tool, s.cwd, s.ai_title, s.started_at, s.ended_at
     FROM sessions s
     WHERE s.tool = 'claude-code'
-    ORDER BY cost_usd IS NULL, cost_usd DESC
-    LIMIT 5
-  `).all() as { id: string; tool: string; cwd: string | null; ai_title: string | null; started_at: number; ended_at: number | null; cost_usd: number | null }[];
+  `).all() as { id: string; tool: string; cwd: string | null; ai_title: string | null; started_at: number; ended_at: number | null }[])
+    .map((r) => ({ ...r, cost_usd: costBySession.get(r.id) ?? null }))
+    .sort((a, b) => (b.cost_usd ?? -1) - (a.cost_usd ?? -1))
+    .slice(0, 5);
 
   const topExpensive: ExpensiveSession[] = expensiveRows
     .filter((r) => r.cost_usd != null && r.cost_usd > 0)
@@ -626,7 +662,10 @@ export function recapDailySeries(startMs: number, endMs = Date.now(), tool: Reca
   const db = getDb();
 
   // Claude API-equivalent USD: max(cost_total) per (day, session) → sum to day.
-  const claudeRows = tool === 'codex' || tool === 'cursor'
+  // Allowlist: only 'all' / 'claude-code' have Claude value — other tools used
+  // to fall through and both misreport Claude $ on their cards and pay a full
+  // usage_snapshots scan per card.
+  const claudeRows = tool !== 'all' && tool !== 'claude-code'
     ? []
     : db.prepare(`
       SELECT DATE(captured_at/1000, 'unixepoch', 'localtime') AS day,

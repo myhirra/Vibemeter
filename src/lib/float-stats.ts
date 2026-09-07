@@ -292,9 +292,10 @@ function buildContextAdvice(
   pct: number,
   model: string | null,
 ): Pick<FloatContext, "advice" | "adviceShort" | "adviceLevel"> {
-  // 倍率提示：数据源不给「模型倍率」，靠模型名判档。Fable 5 = $10/$50，正好是
-  // Opus 4.8（$5/$25）的 2×，是目前最贵的档，故比 Opus 更该提醒切便宜模型。
-  const isFable = !!model && /fable/i.test(model);
+  // 倍率提示：数据源不给「模型倍率」，靠模型名判档。Fable 5 / Mythos 5 = $10/$50，
+  // 正好是 Opus 档（Opus 5 / 4.8 / 4.7 / 4.6 均 $5/$25）的 2×，是目前最贵的档，
+  // 故比 Opus 更该提醒切便宜模型。模型名靠子串判，claude-opus-5 等新 ID 自动落对档。
+  const isFable = !!model && /fable|mythos/i.test(model);
   const isOpus = !isFable && !!model && /opus/i.test(model);
   const premiumTag = isFable ? "Fable" : isOpus ? "Opus" : null;
   if (pct >= 88) {
